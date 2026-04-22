@@ -1,31 +1,60 @@
 # vitalscan-ml
 
-Contactless heart-rate (HR) and respiratory-rate (RR) estimation from
-synthetic WiFi-CSI-like IQ samples. Pure-Python pipeline, XGBoost models,
-FastAPI service, Streamlit dashboard, Dockerized deploy.
+Contactless patient monitoring on ~$50 of commodity WiFi hardware per
+hospital bed. One pair of ESP32-S3 chips in the room extracts heart
+rate, respiratory rate, presence, gait, and falls from WiFi Channel
+State Information (CSI) — no wires, no adhesive, no line of sight, no
+patient compliance or discomfort required.
 
-- **Dataset:** 100% synthetic (no hardware)
-- **Targets:** HR 60–100 bpm, RR 12–30 bpm
-- **Accuracy:** ≥ 92% combined on held-out validation (HR ±5 bpm, RR ±2 bpm)
+- **Dataset today:** 100% synthetic (sanity-check benchmark)
+- **Hardware today:** 2× ESP32-S3-DevKitC-1U-N8R8 + dual-band RP-SMA antennas
+- **Shipped capabilities:** HR, RR (on synthetic data)
+- **Roadmap:** presence, apnea, gait, falls, multi-patient array — see [`ROADMAP.md`](./ROADMAP.md)
 
-## Milestones
+## Why this exists
 
-| # | File | Purpose |
-|---|------|---------|
-| M1 | `data_gen.py` / `test_data_gen.py` | Synthetic CSI IQ generator (1000+ samples). |
-| M2 | `preprocess.py` / `test_preprocess.py` | Detrend + 0.1–3 Hz bandpass + zero-padded FFT features. |
-| M3 | `train.py` / `test_train.py` | XGBoost regressors for HR/RR, reports MAE + within-tolerance accuracy. |
-| M4 | `api.py` / `test_api.py` | FastAPI `/predict`, `/predict/demo`, `/health`. |
-| M5 | `Dockerfile` + `dashboard.py` / `test_build.py` | Container image + Streamlit dashboard. |
-| M6 | `deploy.sh` / `test_deploy.sh` | One-shot deploy for EC2/Ubuntu. |
+Hospital patients outside the ICU are monitored by manual nurse rounds
+every 4–8 hours. Transient vitals abnormalities — the fever spikes of a
+brewing sepsis, the heart-rate surges of a bacteremia flare — happen
+between rounds and are routinely missed. Continuous, non-intrusive
+monitoring on commodity hardware changes which patients qualify for
+continuous care.
+
+## Hardware BOM (~$154 for the first capture kit)
+
+| Item | Qty | ~$ |
+|---|---|---|
+| ESP32-S3-DevKitC-1U-N8R8 | 2 | 40 |
+| Dual-band 2.4/5 GHz RP-SMA antenna (e.g. Eightwood) | 2 | 8 |
+| IPEX1 U.FL → RP-SMA Female pigtail, 8" | 2 | 6 |
+| USB-C data cable | 2 | 10 |
+| Polar H10 chest strap (HR ground truth) | 1 | 90 |
+
+Firmware: Espressif ESP-IDF `wifi_csi_rx` example, UDP output to the
+host running `output/esp32_csi_collector.py`.
+
+## Repo layout
+
+| Path | Purpose |
+|---|---|
+| `data_gen.py` | Synthetic CSI data generator (HR 60–100, RR 12–30). |
+| `preprocess.py` | DSP pipeline: subcarrier selection, bandpass, zero-padded FFT. |
+| `train.py` | XGBoost regressors for HR and RR. |
+| `api.py` / `output/api.py` | FastAPI prediction service (prod copy in `output/`). |
+| `output/esp32_csi_collector.py` | UDP bridge: ESP32-S3 → /predict/csi. |
+| `output/dashboard.py` | Streamlit UI: single subject, multi-person, ICA. |
+| `modules/` | Roadmap capabilities as named stubs (presence, apnea, gait, falls, transients, 4-node array). |
+| `Dockerfile` | Multi-stage build, non-root runtime. |
+| `deploy.sh` | One-shot build + run + health check. |
+| `ROADMAP.md` | Sequenced capabilities + dates + prior art. |
 
 ## Quickstart (local)
 
 ```bash
 pip install -r requirements.txt
-python train.py -n 3000          # trains + saves to ./models/
-uvicorn api:app --port 8000      # serve
-streamlit run dashboard.py       # optional UI on :8501
+python train.py                  # trains + saves to ./models/
+uvicorn output.api:app --port 8000
+streamlit run output/dashboard.py
 ```
 
 ## Quickstart (Docker)
@@ -38,25 +67,50 @@ curl -X POST http://localhost:8000/predict/demo \
      -d '{"hr_bpm":75,"rr_bpm":18,"seed":0}'
 ```
 
-## Deploy (EC2 / Ubuntu)
+## Hardware workflow (once ESP32-S3 arrives)
 
 ```bash
-./deploy.sh         # build + run + wait for /health
-./deploy.sh logs    # tail logs
-./deploy.sh down    # stop + remove
-```
+# 1. Flash Espressif ESP-IDF `wifi_csi_rx` example to both boards
+#    (one AP, one station). See docs.espressif.com for wiring.
+# 2. Route CSI lines over UDP to the host.
+# 3. Start the collector:
+python output/esp32_csi_collector.py --api http://localhost:8000 --port 55000
 
-## Run all tests
-
-```bash
-pytest -v                     # 21 Python tests (M1-M5)
-./test_deploy.sh              # M6 static + optional live-docker checks
+# No hardware? Demo with a synthetic source:
+python output/esp32_csi_collector.py --simulate --api http://localhost:8000
 ```
 
 ## API
 
-| Method | Path | Body | Response |
-|--------|------|------|----------|
-| GET  | `/health` | – | model metadata |
-| POST | `/predict` | `{fs, iq_real[], iq_imag[]}` | `{hr_bpm, rr_bpm, hr_confidence, rr_confidence, ...}` |
-| POST | `/predict/demo` | `{hr_bpm?, rr_bpm?, snr_db?, seed?}` | same as `/predict` |
+| Method | Path | Status |
+|--------|------|--------|
+| GET  | `/health` | shipped |
+| GET  | `/roadmap` | shipped (lists planned capabilities + ETAs) |
+| POST | `/predict` | shipped (raw IQ) |
+| POST | `/predict/csi` | shipped (multi-subcarrier CSI) |
+| POST | `/predict/demo` | shipped (synthetic demo) |
+| POST | `/predict/presence` | 501 planned |
+| POST | `/predict/apnea` | 501 planned |
+| POST | `/predict/gait` | 501 planned |
+| POST | `/predict/falls` | 501 planned |
+| POST | `/predict/multi_patient` | 501 planned |
+| GET  | `/transients` | 501 planned |
+
+## Tests
+
+```bash
+pytest -v                     # 27 Python tests (pipeline + API)
+./test_deploy.sh              # deploy.sh static + optional live-docker
+```
+
+## Status, stated honestly
+
+- No real-hardware captures yet. First paired capture: this weekend.
+- No users, no revenue, not incorporated.
+- Solo founder actively recruiting a technical cofounder with RF /
+  signal-processing experience.
+- The underlying signal processing is not novel — HR/RR from WiFi CSI
+  has been validated on real hardware by PhaseBeat (INFOCOM 2017),
+  FullBreathe (UbiComp 2018), ResBeat (2020); gait and falls by WiGait
+  and WiFall. Our contribution is productization on $10 ESP32-S3
+  hardware and clinical packaging.
