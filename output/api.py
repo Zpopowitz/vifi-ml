@@ -231,6 +231,55 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
         )
         return _predict_envelope(np.abs(iq), req.fs)
 
+    # -- Roadmap capabilities: planned, not yet implemented ----------------
+    # Each endpoint below returns HTTP 501 with a machine-readable status
+    # payload so clients can discover the platform surface area without
+    # the server pretending to support a capability it doesn't.
+
+    _ROADMAP = {
+        "presence":   {"eta": "Q3 2026", "depends_on": ["real_hw_validation"]},
+        "apnea":      {"eta": "Q3 2026", "depends_on": ["rr_real_hw"]},
+        "gait":       {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+        "falls":      {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+        "transients": {"eta": "Q3 2026", "depends_on": ["rr_real_hw", "hr_real_hw"]},
+        "multi_patient": {"eta": "Q1 2027", "depends_on": ["4_node_array"]},
+    }
+
+    def _not_implemented(capability: str):
+        info = _ROADMAP[capability]
+        raise HTTPException(
+            status_code=501,
+            detail={"status": "planned", "capability": capability, **info},
+        )
+
+    @app.post("/predict/presence")
+    def predict_presence():
+        _not_implemented("presence")
+
+    @app.post("/predict/apnea")
+    def predict_apnea():
+        _not_implemented("apnea")
+
+    @app.post("/predict/gait")
+    def predict_gait():
+        _not_implemented("gait")
+
+    @app.post("/predict/falls")
+    def predict_falls():
+        _not_implemented("falls")
+
+    @app.get("/transients")
+    def get_transients():
+        _not_implemented("transients")
+
+    @app.post("/predict/multi_patient")
+    def predict_multi_patient():
+        _not_implemented("multi_patient")
+
+    @app.get("/roadmap")
+    def roadmap():
+        return {"shipped": ["hr", "rr"], "planned": _ROADMAP}
+
     return app
 
 

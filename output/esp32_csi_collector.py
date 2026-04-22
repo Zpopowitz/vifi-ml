@@ -1,16 +1,15 @@
 """ESP32 CSI collector: UDP listener -> rolling window -> /predict/csi.
 
-Pairs with Steven Hernandez's ESP32-CSI-Tool
-(https://github.com/StevenMHernandez/ESP32-CSI-Tool).
+Primary hardware: ESP32-S3-DevKitC-1U-N8R8 (2x, TX + RX roles).
+  - External antenna via IPEX1 U.FL -> RP-SMA Female pigtail + dual-band
+    2.4/5 GHz RP-SMA antenna (e.g. Eightwood).
+  - Firmware: Espressif ESP-IDF `wifi_csi_rx` example, configured to emit
+    CSI lines over UDP.
+  - Alternative firmware: Steven Hernandez's ESP32-CSI-Tool (original
+    ESP32 only; S3 support via community forks).
 
-Flash the ESP32 with the `active_sta` (or `passive`) example and configure
-it to stream CSI lines over UDP to this host, port 55000. The tool emits
-one CSV line per packet with the header:
-
-    type,role,mac,rssi,rate,sig_mode,mcs,bandwidth,smoothing,not_sounding,
-    aggregation,stbc,fec_coding,sgi,noise_floor,ampdu_cnt,channel,
-    secondary_channel,local_timestamp,ant,sig_len,rx_state,real_time_set,
-    real_timestamp,len,CSI_DATA
+Both firmwares emit one CSV line per packet with a trailing bracketed
+list of interleaved I/Q int8 values:
 
     CSI_DATA,...,<len>,"[i0 q0 i1 q1 i2 q2 ...]"
 
