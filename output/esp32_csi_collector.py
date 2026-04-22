@@ -44,7 +44,7 @@ from typing import Deque, Optional
 import httpx
 import numpy as np
 
-log = logging.getLogger("vitalscan.esp32")
+log = logging.getLogger("vifi.esp32")
 
 CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9 ]+)\]")
 

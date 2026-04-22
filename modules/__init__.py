@@ -1,4 +1,4 @@
-"""Roadmap modules for the VitalScan contactless sensing platform.
+"""Roadmap modules for the ViFi contactless sensing platform.
 
 Each module is a placeholder with the planned approach documented. The
 goal is to expose the platform architecture without claiming capabilities

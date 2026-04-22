@@ -39,8 +39,8 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   exit 0
 fi
 
-IMAGE_NAME="vitalscan-test-$$"
-CONTAINER="vitalscan-test-$$"
+IMAGE_NAME="vifi-test-$$"
+CONTAINER="vifi-test-$$"
 PORT="18765"
 
 cleanup() {

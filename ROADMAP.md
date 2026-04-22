@@ -1,4 +1,4 @@
-# VitalScan Roadmap
+# ViFi Roadmap
 
 Contactless patient monitoring on ~$50 of commodity WiFi hardware per
 hospital bed. HR and RR are what's shipped today; everything else runs

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M6: Deploy script for VitalScan ML (EC2 / Ubuntu / any Docker host).
+# M6: Deploy script for ViFi (EC2 / Ubuntu / any Docker host).
 #
 # Usage:
 #   ./deploy.sh            # build image, (re)start the container, wait for /health
@@ -8,14 +8,14 @@
 #   ./deploy.sh logs       # tail logs
 #
 # Environment:
-#   IMAGE_NAME   (default: vitalscan)
-#   CONTAINER    (default: vitalscan)
+#   IMAGE_NAME   (default: vifi)
+#   CONTAINER    (default: vifi)
 #   PORT         (default: 8000)
 
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-vitalscan}"
-CONTAINER="${CONTAINER:-vitalscan}"
+IMAGE_NAME="${IMAGE_NAME:-vifi}"
+CONTAINER="${CONTAINER:-vifi}"
 PORT="${PORT:-8000}"
 
 log() { printf '[deploy] %s\n' "$*"; }

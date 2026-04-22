@@ -1,4 +1,4 @@
-# vitalscan-ml
+# vifi-ml
 
 Contactless patient monitoring on ~$50 of commodity WiFi hardware per
 hospital bed. One pair of ESP32-S3 chips in the room extracts heart
@@ -60,8 +60,8 @@ streamlit run output/dashboard.py
 ## Quickstart (Docker)
 
 ```bash
-docker build -t vitalscan .
-docker run -p 8000:8000 vitalscan
+docker build -t vifi .
+docker run -p 8000:8000 vifi
 curl -X POST http://localhost:8000/predict/demo \
      -H 'content-type: application/json' \
      -d '{"hr_bpm":75,"rr_bpm":18,"seed":0}'
