@@ -1,29 +1,50 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /app
+WORKDIR /build
 
-# System deps for numpy/scipy/xgboost wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential libgomp1 curl \
+        build-essential libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# Install CPU-only PyTorch index isn't needed — we use XGBoost for the API model.
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-COPY data_gen.py preprocess.py train.py api.py dashboard.py ./
+COPY data_gen.py preprocess.py train.py ./
+RUN PYTHONPATH=/install/lib/python3.11/site-packages \
+    python train.py -n 3000 --model-dir models
 
-# Train models at build time so the image is self-contained.
-RUN python train.py -n 3000 --model-dir models
+# ---- runtime ----
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/install/bin:$PATH" \
+    PYTHONPATH="/install/lib/python3.11/site-packages:/app"
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash vitalscan
+
+COPY --from=builder /install /install
+COPY --from=builder /build/models /app/models
+COPY data_gen.py preprocess.py train.py ./
+COPY output/api.py ./api.py
+COPY output/esp32_csi_collector.py ./esp32_csi_collector.py
+COPY output/dashboard.py ./dashboard.py
+
+USER vitalscan
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
