@@ -80,6 +80,19 @@ python output/esp32_csi_collector.py --api http://localhost:8000 --port 55000
 python output/esp32_csi_collector.py --simulate --api http://localhost:8000
 ```
 
+### Foolproof paired-capture (Windows)
+
+```powershell
+# Verify everything's ready
+.\scripts\preflight_check.ps1 -Address "AA:BB:CC:DD:EE:FF"
+
+# One command runs the whole session: creates folder, starts both loggers,
+# stops cleanly, verifies data, runs the analysis, prints the MAE.
+.\scripts\capture_session.ps1 -Address "AA:BB:CC:DD:EE:FF" -Com "COM5" -Duration 120
+```
+
+See `scripts/README.md` for details.
+
 ## API
 
 | Method | Path | Status |
