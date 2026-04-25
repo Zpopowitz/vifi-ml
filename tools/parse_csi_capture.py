@@ -26,7 +26,10 @@ from pathlib import Path
 import numpy as np
 
 # Match a CSI_DATA line with bracketed int list at the end.
-CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9 ]+)\]")
+# Modern ESP-IDF wifi_csi_rx output uses comma-separated values inside the
+# brackets (e.g. "[0,11,0,11,...]"). Older ESP32-CSI-Tool used spaces
+# ("[0 11 0 11 ...]"). Accept both.
+CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9, ]+)\]")
 
 # Match IDF log prefix: "I (12345) wifi: ..." -> 12345 milliseconds since boot.
 IDF_TS_RE = re.compile(r"^[IWE] \((?P<ms>\d+)\)")
@@ -38,7 +41,9 @@ def _parse_one_line(line: str) -> tuple[np.ndarray | None, float | None]:
     if not m:
         return None, None
     try:
-        ints = [int(x) for x in m.group("csi").split() if x]
+        # Accept comma-separated (modern ESP-IDF) or space-separated (legacy).
+        csi_str = m.group("csi").replace(",", " ")
+        ints = [int(x) for x in csi_str.split() if x]
     except ValueError:
         return None, None
     if len(ints) < 4 or len(ints) % 2 != 0:
