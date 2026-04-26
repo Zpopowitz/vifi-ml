@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -140,7 +141,10 @@ def run_report(
     from preprocess import extract_features  # noqa: E402
     from xgboost import XGBRegressor       # noqa: E402
 
-    models_dir = ROOT / "models"
+    models_dir = Path(os.environ.get("VIFI_MODEL_DIR", str(ROOT / "models")))
+    if not models_dir.is_absolute():
+        models_dir = ROOT / models_dir
+    print(f"      using model dir: {models_dir}")
     hr_model = XGBRegressor()
     hr_model.load_model(models_dir / "hr_model.json")
 
