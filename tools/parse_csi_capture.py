@@ -20,6 +20,7 @@ Usage (library):
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -99,9 +100,23 @@ def parse_capture_file(path: str | Path,
     if all(t is not None for t in ts_list):
         ts_arr = np.asarray(ts_list, dtype=np.float64)
     else:
-        ts_arr = np.arange(len(keep), dtype=np.float64) / synthesised_fs
+        # Auto-load packet rate from <path>.meta.json sidecar if available.
+        # csi_capture.py writes this; lets retrain_on_real.py and other
+        # tools work without explicit --capture-duration plumbing.
+        sidecar = Path(str(path) + ".meta.json")
+        effective_fs = synthesised_fs
+        source = "default"
+        if sidecar.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                effective_fs = float(meta["actual_packet_rate_hz"])
+                source = "metadata sidecar"
+            except (KeyError, ValueError, OSError):
+                pass
+
+        ts_arr = np.arange(len(keep), dtype=np.float64) / effective_fs
         print(f"[parse_csi_capture] note: no IDF timestamps in {path};"
-              f" synthesising {synthesised_fs:.1f} Hz grid")
+              f" synthesising {effective_fs:.1f} Hz grid ({source})")
 
     return amps_arr, ts_arr
 
