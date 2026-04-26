@@ -15,7 +15,6 @@ def client():
 
 
 @pytest.mark.parametrize("path,method", [
-    ("/predict/presence",      "post"),
     ("/predict/apnea",         "post"),
     ("/predict/gait",          "post"),
     ("/predict/falls",         "post"),
@@ -37,20 +36,34 @@ def test_roadmap_listing(client):
     body = r.json()
     assert body["shipped"] == ["hr", "rr"]
     planned_caps = set(body["planned"].keys())
-    assert {"presence", "apnea", "gait", "falls",
+    assert {"apnea", "gait", "falls",
             "transients", "multi_patient"} <= planned_caps
+    # presence is now shipped, not in the planned list
+    assert "presence" not in planned_caps
+
+
+def test_presence_endpoint_works(client):
+    """Presence endpoint should return 200 with a score, not 501."""
+    import numpy as np
+    from data_gen import generate_sample
+    iq, _ = generate_sample(hr_bpm=75.0, rr_bpm=18.0, snr_db=25.0, seed=0)
+    gains = np.abs(np.random.default_rng(0).standard_normal(16)) + 0.2
+    csi = (np.abs(iq)[:, None] * gains[None, :]).astype(float)
+    r = client.post("/predict/presence", json={"fs": 100.0, "csi_amp": csi.tolist()})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["present"] is True
+    assert body["score"] > 0
 
 
 def test_module_stubs_import_and_raise():
-    from modules import apnea, falls, gait, presence, transient_events
+    from modules import apnea, falls, gait, transient_events
     from modules.four_node_sync import FourNodeArray
 
     import numpy as np
     dummy = np.zeros((100, 8), dtype=np.float32)
 
-    with pytest.raises(NotImplementedError):
-        presence.detect_presence(dummy, fs=100.0)
-
+    # presence has been implemented (see test_tools.py), no longer a stub.
     with pytest.raises(NotImplementedError):
         apnea.detect_apnea(dummy[:, 0], fs=100.0)
 

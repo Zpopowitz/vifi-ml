@@ -44,9 +44,9 @@ from typing import Deque, Optional
 import httpx
 import numpy as np
 
-log = logging.getLogger("vitalscan.esp32")
+log = logging.getLogger("vifi.esp32")
 
-CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9 ]+)\]")
+CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9, ]+)\]")
 
 
 @dataclass
@@ -64,7 +64,9 @@ def parse_csi_line(line: str) -> Optional[Packet]:
     if not m:
         return None
     try:
-        ints = [int(x) for x in m.group("csi").split() if x]
+        # Accept comma-separated (modern ESP-IDF) or space-separated (legacy).
+        csi_str = m.group("csi").replace(",", " ")
+        ints = [int(x) for x in csi_str.split() if x]
     except ValueError:
         return None
     if len(ints) < 4 or len(ints) % 2 != 0:

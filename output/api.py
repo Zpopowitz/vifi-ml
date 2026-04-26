@@ -1,4 +1,4 @@
-"""Production FastAPI service for VitalScan ML.
+"""Production FastAPI service for ViFi.
 
 Enhancements over the root api.py:
   - CORS (for dashboard / external clients)
@@ -36,14 +36,14 @@ for candidate in (_here, _here.parent):
 from preprocess import extract_features  # noqa: E402
 from data_gen import generate_sample      # noqa: E402
 
-MODEL_DIR = Path(os.environ.get("VITALSCAN_MODEL_DIR", "models"))
+MODEL_DIR = Path(os.environ.get("VIFI_MODEL_DIR", "models"))
 MODEL_VERSION = "xgb-1.0"
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-log = logging.getLogger("vitalscan.api")
+log = logging.getLogger("vifi.api")
 
 
 class IQRequest(BaseModel):
@@ -136,7 +136,7 @@ def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
 
 
 def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
-    app = FastAPI(title="VitalScan ML", version=MODEL_VERSION)
+    app = FastAPI(title="ViFi", version=MODEL_VERSION)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -237,7 +237,6 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
     # the server pretending to support a capability it doesn't.
 
     _ROADMAP = {
-        "presence":   {"eta": "Q3 2026", "depends_on": ["real_hw_validation"]},
         "apnea":      {"eta": "Q3 2026", "depends_on": ["rr_real_hw"]},
         "gait":       {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
         "falls":      {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
@@ -253,8 +252,19 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
         )
 
     @app.post("/predict/presence")
-    def predict_presence():
-        _not_implemented("presence")
+    def predict_presence(req: CSIRequest):
+        from modules.presence import detect_presence, presence_score
+        arr = np.asarray(req.csi_amp, dtype=np.float32)
+        if arr.ndim != 2:
+            raise HTTPException(status_code=400,
+                                detail=f"csi_amp must be 2-D, got {arr.shape}")
+        score = presence_score(arr, fs=req.fs)
+        return {
+            "present": detect_presence(arr, fs=req.fs),
+            "score": round(score, 6),
+            "model_version": "presence-v1",
+            "n_samples": int(arr.shape[0]),
+        }
 
     @app.post("/predict/apnea")
     def predict_apnea():

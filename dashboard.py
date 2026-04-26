@@ -1,7 +1,7 @@
-"""M5: Streamlit dashboard for the VitalScan ML API.
+"""M5: Streamlit dashboard for the ViFi API.
 
 Run:   streamlit run dashboard.py
-Talks to the FastAPI service at $VITALSCAN_API (default http://localhost:8000).
+Talks to the FastAPI service at $VIFI_API (default http://localhost:8000).
 """
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ import streamlit as st
 
 from data_gen import generate_sample
 
-API_URL = os.environ.get("VITALSCAN_API", "http://localhost:8000")
+API_URL = os.environ.get("VIFI_API", "http://localhost:8000")
 
-st.set_page_config(page_title="VitalScan ML", layout="wide")
-st.title("VitalScan: Contactless HR / RR from Synthetic CSI")
+st.set_page_config(page_title="ViFi", layout="wide")
+st.title("ViFi: Contactless HR / RR from Synthetic CSI")
 
 with st.sidebar:
     st.header("Signal controls")

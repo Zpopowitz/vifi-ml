@@ -34,7 +34,7 @@ def test_dashboard_parses_and_imports_api_host():
     src = (ROOT / "dashboard.py").read_text()
     tree = ast.parse(src)  # raises on syntax error
     assert tree is not None
-    assert "VITALSCAN_API" in src
+    assert "VIFI_API" in src
     assert "/predict" in src
 
 

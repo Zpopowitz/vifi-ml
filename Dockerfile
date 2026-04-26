@@ -31,7 +31,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /bin/bash vitalscan
+    && useradd --create-home --shell /bin/bash vifi
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
@@ -40,7 +40,7 @@ COPY output/api.py ./api.py
 COPY output/esp32_csi_collector.py ./esp32_csi_collector.py
 COPY output/dashboard.py ./dashboard.py
 
-USER vitalscan
+USER vifi
 
 EXPOSE 8000
 

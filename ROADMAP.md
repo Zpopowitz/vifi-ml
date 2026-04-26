@@ -1,74 +1,120 @@
-# VitalScan Roadmap
+# ViFi Roadmap
 
-Contactless patient monitoring on ~$50 of commodity WiFi hardware per
-hospital bed. HR and RR are what's shipped today; everything else runs
-on the same CSI stream and the same pair of ESP32-S3 nodes.
+Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital bed. HR is validated on real hardware today; everything else runs on the same CSI stream and the same pair of ESP32-S3 nodes.
 
-## Shipped (synthetic data)
+---
 
-| Capability | Status | Module |
+## Status board
+
+| Capability | Status | Where |
 |---|---|---|
-| Heart Rate (HR) | 100% within-tolerance on held-out synthetic | `train.py`, `preprocess.py` |
-| Respiratory Rate (RR) | 100% within-tolerance on held-out synthetic | `train.py`, `preprocess.py` |
-| Multi-subcarrier CSI ingestion | Live endpoint | `output/api.py :: /predict/csi` |
-| ESP32 UDP bridge | Live, with simulator | `output/esp32_csi_collector.py` |
-| FastICA unmixing (simulated) | Dashboard tab | `output/dashboard.py` |
+| **Heart rate (HR)** | **Shipped — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([RESULTS.md](./RESULTS.md)) | `train.py`, `tools/retrain_on_real.py` |
+| Respiratory rate (RR) | Pipeline shipped, awaiting paired RR ground truth | `train.py`, `preprocess.py` |
+| Synthetic CSI generator | Shipped (sanity check) | `data_gen.py` |
+| Multi-subcarrier CSI ingest | Shipped — live API endpoint | `output/api.py` |
+| ESP32 capture + HR logger | Shipped — hands-free 2-min paired capture | `tools/csi_capture.py`, `hr_logger.py` |
+| FastICA unmixing | Shipped (simulated demo) | `output/dashboard.py` |
+| Presence / occupancy | Shipped (variance threshold) | `modules/presence.py` |
+| Apnea detection | Stub, returns HTTP 501 | `modules/apnea.py` |
+| Transient-event logger | Stub | `modules/transient_events.py` |
+| Gait / walking-speed | Stub (WiGait reference) | `modules/gait.py` |
+| Fall detection | Stub (WiFall reference) | `modules/falls.py` |
+| 4-receiver array | Stub | `modules/four_node_sync.py` |
 
-## In flight (this month)
+`GET /roadmap` returns this manifest live from the API.
 
-| Milestone | Target date | Deliverable |
+---
+
+## In flight (next 4 weeks)
+
+| Milestone | Target | Deliverable |
 |---|---|---|
-| First real-hardware HR/RR capture | 2026-04-26 | Paired CSV: 2x ESP32-S3 + Polar H10 |
-| First real-data HR MAE number | 2026-05-03 | MAE vs Polar H10 over 30 min of seated captures |
-| 30-subject paired dataset | 2026-06 | Publishable baseline on ESP32-S3 |
+| Multi-subject HR validation | May 2026 | 10+ subjects, varied HR ranges, target cross-subject MAE <3 bpm |
+| Multi-room validation | May 2026 | 3+ rooms, fixed subject, measure setup-specific bias |
+| Respiratory-rate paired captures | June 2026 | Add Vernier Go Direct respiration belt as RR ground truth |
 
-## Near-term capabilities (weeks, after real HR/RR works)
+---
+
+## Stage 2 (months 2–4)
 
 | Capability | Module | Prior art | Ground truth |
 |---|---|---|---|
-| Presence / occupancy | `modules/presence.py` | trivial | walking in / out |
-| Apnea detection | `modules/apnea.py` | ApneaApp (UW 2015) | recording pulse-ox, ~$200 |
+| Apnea detection | `modules/apnea.py` | ApneaApp (UW 2015) | recording pulse oximeter |
 | Transient-event logger | `modules/transient_events.py` | none — clinical wedge | same HR/RR stream |
+| Improved subcarrier features | `preprocess.py` | per-subcarrier ensemble | — |
+| Phase-domain features | `preprocess.py` | PhaseBeat (CFO/SFO calibration) | — |
 
-## Mid-term capabilities (months)
+---
+
+## Stage 3 (months 4–8)
 
 | Capability | Module | Prior art | Ground truth |
 |---|---|---|---|
 | Gait / walking speed | `modules/gait.py` | WiGait (MIT CSAIL 2018) | timed course, pressure mat |
 | Fall detection | `modules/falls.py` | WiFall | actors + crash mat |
-| Multi-patient separation | `modules/four_node_sync.py` | — | 4x ESP32-S3 array |
+| 4-receiver multi-patient array | `modules/four_node_sync.py` | ICA + AoA | 4x ESP32-S3 array |
+
+---
+
+## Stage 4 (months 6–12)
+
+- First hospital pilot (5–10 beds, wellness-grade, pre-FDA)
+- IRB submission and approval
+- Subject-level cross-validation across diverse demographics
+
+---
+
+## Stage 5 (months 12–18)
+
+- FDA 510(k) Class II submission for vitals monitoring
+- ISO 13485 Quality Management System
+- Clinical validation study at academic medical center
+- Estimated cost: ~$300K (clinical study + consultant + QMS + filing)
+
+---
 
 ## Long-term / research (12+ months)
 
-- Heart Rate Variability (beat-to-beat precision, requires phase work)
+- Heart Rate Variability (beat-to-beat precision; requires phase work)
 - Arrhythmia classification (downstream of HRV)
 - Sleep staging (overnight recordings + polysomnogram partnership)
 
+---
+
 ## Out of scope (wrong physics for WiFi CSI)
 
-- Blood oxygen (SpO2) -- optical sensor, add as companion module
-- Body temperature -- IR sensor, add as companion module
-- Blood pressure -- open research problem; not attempting
-- ECG waveform -- requires skin contact; not attempting
+| Capability | Why not | Alternative |
+|---|---|---|
+| Blood oxygen (SpO2) | Optical sensor, not RF | $5 PPG add-on module |
+| Body temperature | IR sensor, not RF | $10 IR thermometer add-on |
+| Blood pressure | Open research problem industry-wide | None pursued |
+| ECG waveform | Requires direct skin contact | None pursued |
 
-## Hardware BOM (per 2-node room)
+---
+
+## Hardware BOM
+
+### Per 2-node room (single-patient monitoring)
 
 | Item | Qty | ~$ |
 |---|---|---|
 | ESP32-S3-DevKitC-1U-N8R8 | 2 | 40 |
 | Dual-band 2.4/5 GHz RP-SMA antenna | 2 | 8 |
-| IPEX1 U.FL -> RP-SMA Female pigtail, 8" | 2 | 6 |
-| USB-C data cable | 2 | 10 |
-| Polar H10 chest strap (HR ground truth) | 1 | 90 |
-| **Total** | | **~$154** |
+| IPEX1 U.FL → RP-SMA Female pigtail, 8" | 2 | 6 |
+| **Total per room** | | **~$54** |
 
-4-receiver array for multi-patient rooms: add 2 more ESP32-S3 nodes
-(~$40 additional).
+### Per 4-node room (multi-patient, Stage 3)
+
+Add 2 more ESP32-S3 nodes + antennas + pigtails: ~$54 additional → **~$108 per shared room**.
+
+### Per first capture kit (development)
+
+Add Polar H10 chest strap ($90) for HR ground truth during dataset collection.
+
+---
 
 ## Regulatory path
 
-- Wellness-grade deployment first (presence, falls, gait): no FDA
-  clearance required. Target: first paying hospital customer in 9-12
-  months.
-- Vitals-grade deployment: FDA 510(k) Class II. Target: ~18 months,
-  ~$300K.
+**Wellness-grade products first** (presence, falls, gait): no FDA clearance required. Target: first paying hospital customer 9–12 months post-funding.
+
+**Vitals-grade products** (HR, RR, apnea): FDA 510(k) Class II. Target: ~18 months post-funding, ~$300K all-in.

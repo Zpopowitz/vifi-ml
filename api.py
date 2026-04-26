@@ -101,7 +101,7 @@ def _confidence_from_feature(feats: np.ndarray, idx: int) -> float:
 
 
 def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
-    app = FastAPI(title="VitalScan ML", version=MODEL_VERSION)
+    app = FastAPI(title="ViFi", version=MODEL_VERSION)
     hr_model, rr_model, meta = _load_models(model_dir)
     feature_names: list[str] = meta["feature_names"]
     rr_ratio_idx = feature_names.index("rr_peak_ratio")

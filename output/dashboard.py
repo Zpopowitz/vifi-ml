@@ -1,4 +1,4 @@
-"""VitalScan dashboard with single/multi-person toggle and ICA unmixing demo.
+"""ViFi dashboard with single/multi-person toggle and ICA unmixing demo.
 
 Run:
     streamlit run output/dashboard.py
@@ -20,10 +20,10 @@ if str(ROOT) not in sys.path:
 
 from data_gen import generate_sample  # noqa: E402
 
-API_URL = os.environ.get("VITALSCAN_API", "http://localhost:8000")
+API_URL = os.environ.get("VIFI_API", "http://localhost:8000")
 
-st.set_page_config(page_title="VitalScan", layout="wide")
-st.title("VitalScan - Contactless HR / RR from WiFi CSI")
+st.set_page_config(page_title="ViFi", layout="wide")
+st.title("ViFi - Contactless HR / RR from WiFi CSI")
 st.caption(f"API: `{API_URL}`")
 
 tab_live, tab_multi, tab_ica = st.tabs(
