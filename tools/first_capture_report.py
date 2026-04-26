@@ -71,6 +71,40 @@ def interpolate_hr(hr_unix: np.ndarray, hr_bpm: np.ndarray, t: float) -> float:
     return float(np.interp(t, hr_unix, hr_bpm))
 
 
+def _detect_packet_rate(capture_path: Path,
+                        capture_duration_override: float | None) -> float:
+    """Pick the assumed packet rate for synthesised timestamps.
+
+    Order of preference:
+      1. --capture-duration CLI override (if given): n_csi_lines / duration
+      2. csi_capture.py metadata sidecar (auto)
+      3. fall back to 100 Hz with a warning
+    """
+    if capture_duration_override is not None:
+        # Quick pass: count CSI lines in the file.
+        n_csi = 0
+        with open(capture_path, "rb") as f:
+            for line in f:
+                if b"CSI_DATA," in line:
+                    n_csi += 1
+        rate = n_csi / capture_duration_override
+        print(f"      using --capture-duration: {n_csi} CSI lines / "
+              f"{capture_duration_override:.1f}s = {rate:.1f} Hz")
+        return rate
+
+    sidecar = Path(str(capture_path) + ".meta.json")
+    if sidecar.exists():
+        meta = json.loads(sidecar.read_text())
+        rate = float(meta["actual_packet_rate_hz"])
+        print(f"      using metadata sidecar: {rate:.1f} Hz "
+              f"(measured during capture)")
+        return rate
+
+    print("      WARNING: no metadata sidecar and no --capture-duration; "
+          "assuming 100 Hz. HR predictions will be biased if real rate differs.")
+    return 100.0
+
+
 def run_report(
     capture_path: Path,
     hr_log_path: Path,
@@ -79,10 +113,13 @@ def run_report(
     stride_s: float,
     fs_resample: float,
     json_out: Path | None,
+    capture_duration_s: float | None = None,
 ) -> None:
     # 1. Parse CSI
     print(f"[1/4] parsing {capture_path} ...")
-    amps, csi_boot_ts = parse_capture_file(capture_path)
+    fs_csi = _detect_packet_rate(capture_path, capture_duration_s)
+    amps, csi_boot_ts = parse_capture_file(capture_path,
+                                            synthesised_fs=fs_csi)
     duration = csi_boot_ts[-1] - csi_boot_ts[0]
     print(f"      {amps.shape[0]} packets, {amps.shape[1]} subcarriers,"
           f" {duration:.1f} s")
@@ -200,6 +237,11 @@ def main() -> None:
     p.add_argument("--stride", type=float, default=5.0)
     p.add_argument("--fs", type=float, default=100.0,
                    help="resample rate for feature extraction")
+    p.add_argument("--capture-duration", type=float, default=None,
+                   help="actual wall-clock duration of CSI capture (seconds). "
+                        "Used to compute the true packet rate when ESP-IDF "
+                        "doesn't emit per-packet timestamps. Auto-detected "
+                        "from <capture>.meta.json sidecar if present.")
     p.add_argument("--json", type=Path, default=None,
                    help="write per-window JSON here")
     args = p.parse_args()
@@ -211,6 +253,7 @@ def main() -> None:
         stride_s=args.stride,
         fs_resample=args.fs,
         json_out=args.json,
+        capture_duration_s=args.capture_duration,
     )
 
 

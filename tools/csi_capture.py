@@ -19,6 +19,7 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -35,10 +36,16 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
             quiet: bool = False) -> int:
     """Read serial output for `duration_s` seconds, write to out_path.
 
+    Also writes a sidecar `<out_path>.meta.json` with the actual packet
+    rate measured during capture. Downstream tools use this to avoid
+    misinterpreting the FFT frequency axis when ESP-IDF doesn't emit
+    per-packet timestamps.
+
     Returns the number of bytes written.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.time() + duration_s
+    started = time.time()
+    deadline = started + duration_s
     bytes_written = 0
     line_count = 0
     csi_count = 0
@@ -75,10 +82,30 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
                       f"{csi_count:5d} CSI lines, {remaining:3.0f}s left")
                 last_status = now
 
-    elapsed = time.time() - (deadline - duration_s)
+    elapsed = time.time() - started
+    pkt_rate = csi_count / elapsed if elapsed > 0 else 0.0
+
+    # Sidecar metadata: critical for downstream HR analysis to avoid
+    # assuming the wrong sample rate when no IDF timestamps are present.
+    meta = {
+        "capture_path": str(out_path),
+        "capture_duration_s": duration_s,
+        "actual_seconds": elapsed,
+        "n_total_lines": line_count,
+        "n_csi_lines": csi_count,
+        "actual_packet_rate_hz": pkt_rate,
+        "port": port,
+        "baud": baud,
+        "started_unix": started,
+    }
+    meta_path = Path(str(out_path) + ".meta.json")
+    meta_path.write_text(json.dumps(meta, indent=2))
+
     print(f"Done. Wrote {bytes_written / 1024:.1f} KB "
           f"({line_count} lines, {csi_count} CSI_DATA rows) "
           f"to {out_path} in {elapsed:.1f}s")
+    print(f"      actual packet rate: {pkt_rate:.1f} Hz "
+          f"(metadata: {meta_path})")
     return bytes_written
 
 

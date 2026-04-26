@@ -56,12 +56,22 @@ def _parse_one_line(line: str) -> tuple[np.ndarray | None, float | None]:
     return amps, ts_s
 
 
-def parse_capture_file(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+def parse_capture_file(path: str | Path,
+                       synthesised_fs: float = 100.0
+                       ) -> tuple[np.ndarray, np.ndarray]:
     """Parse a capture file; return (amps, timestamps_s).
 
     amps:         (n_packets, n_subcarriers) float32
     timestamps_s: (n_packets,) float64 seconds since board boot
-                  (or monotonically-synthesised if IDF prefix is missing)
+                  (or monotonically-synthesised at `synthesised_fs` Hz
+                  if no per-line IDF prefix is present)
+
+    `synthesised_fs` is critical when the capture has no IDF
+    timestamps: it sets the assumed packet rate, which determines the
+    FFT frequency axis for downstream HR/RR estimation. The default
+    100 Hz is wrong on builds where the watchdog throttles packet rate
+    to ~70 Hz; pass the rate from csi_capture.py's metadata sidecar
+    instead of relying on the default.
 
     Raises ValueError if no valid CSI rows are found.
     """
@@ -89,10 +99,9 @@ def parse_capture_file(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     if all(t is not None for t in ts_list):
         ts_arr = np.asarray(ts_list, dtype=np.float64)
     else:
-        # Fallback: assume uniform 100 Hz packet rate if IDF prefix absent.
-        ts_arr = np.arange(len(keep), dtype=np.float64) / 100.0
+        ts_arr = np.arange(len(keep), dtype=np.float64) / synthesised_fs
         print(f"[parse_csi_capture] note: no IDF timestamps in {path};"
-              " synthesising 100 Hz grid")
+              f" synthesising {synthesised_fs:.1f} Hz grid")
 
     return amps_arr, ts_arr
 
