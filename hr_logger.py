@@ -61,31 +61,74 @@ async def scan() -> None:
         print(f"  {d.address}  {d.name or '(unnamed)'}{marker}")
 
 
-async def log(address: str, duration_s: float, out_path: Path) -> int:
-    """Connect to the H10 and log HR readings to CSV for `duration_s`."""
-    print(f"Connecting to {address}...")
-    async with BleakClient(address, timeout=20.0) as client:
-        print("Connected. Logging HR to", out_path)
-        with open(out_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["timestamp_unix", "hr_bpm"])
-            count = 0
+async def log(address: str, duration_s: float, out_path: Path,
+              reconnect_max: int = 20, reconnect_wait_s: float = 1.5) -> int:
+    """Connect to the H10 and log HR readings to CSV for `duration_s` of
+    wall-clock time. If Windows BLE drops the connection mid-stream
+    (very common with bleak on Win11), reconnect and keep going until
+    the full duration has elapsed.
 
-            def on_hr(_characteristic, data: bytearray) -> None:
-                nonlocal count
-                hr = _parse_hr(bytes(data))
-                t = time.time()
-                writer.writerow([f"{t:.3f}", hr])
-                f.flush()
-                count += 1
-                if count % 10 == 0:
-                    print(f"  {count:4d} readings, last HR={hr} bpm")
+    The CSV is opened once and stays open for the whole run, so all
+    reconnect chunks land in the same file with continuous timestamps.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    start_wall = time.time()
+    deadline = start_wall + duration_s
+    total_count = 0
+    reconnect_count = 0
 
-            await client.start_notify(HR_MEASUREMENT_UUID, on_hr)
-            await asyncio.sleep(duration_s)
-            await client.stop_notify(HR_MEASUREMENT_UUID)
-            print(f"Done. Logged {count} readings to {out_path}")
-            return count
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp_unix", "hr_bpm"])
+
+        def on_hr(_characteristic, data: bytearray) -> None:
+            nonlocal total_count
+            hr = _parse_hr(bytes(data))
+            t = time.time()
+            writer.writerow([f"{t:.3f}", hr])
+            f.flush()
+            total_count += 1
+            if total_count % 10 == 0:
+                remaining = max(0.0, deadline - time.time())
+                print(f"  {total_count:4d} readings, last HR={hr} bpm, "
+                      f"{remaining:.0f}s left")
+
+        while time.time() < deadline:
+            chunk_start = time.time()
+            print(f"Connecting to {address} "
+                  f"(attempt {reconnect_count + 1}, "
+                  f"{deadline - chunk_start:.0f}s left)...")
+            try:
+                async with BleakClient(address, timeout=20.0) as client:
+                    print(f"Connected. Logging HR to {out_path}")
+                    await client.start_notify(HR_MEASUREMENT_UUID, on_hr)
+                    # Sleep in 1-second slices so we can react if BleakClient
+                    # context manager raises mid-sleep.
+                    while time.time() < deadline:
+                        await asyncio.sleep(1.0)
+                    try:
+                        await client.stop_notify(HR_MEASUREMENT_UUID)
+                    except Exception:
+                        pass  # disconnect already happened; nothing to stop
+                    break  # reached deadline cleanly
+            except Exception as exc:
+                # OSError, BleakError, etc. -- assume BLE dropped. Reconnect.
+                elapsed = time.time() - chunk_start
+                print(f"  [!] connection dropped after {elapsed:.1f}s "
+                      f"({type(exc).__name__}: {exc})")
+                reconnect_count += 1
+                if reconnect_count >= reconnect_max:
+                    print(f"  [!] hit reconnect cap ({reconnect_max}); giving up")
+                    break
+                if time.time() >= deadline:
+                    break
+                print(f"  reconnecting in {reconnect_wait_s}s...")
+                await asyncio.sleep(reconnect_wait_s)
+
+    elapsed = time.time() - start_wall
+    print(f"Done. Logged {total_count} readings over {elapsed:.1f}s "
+          f"to {out_path} ({reconnect_count} reconnects)")
+    return total_count
 
 
 def main() -> None:
