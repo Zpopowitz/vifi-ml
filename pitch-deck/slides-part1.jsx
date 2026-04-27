@@ -21,7 +21,7 @@ function Slide01Title() {
         position: 'relative', zIndex: 1, boxSizing: 'border-box',
       }}>
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <img src="assets/logo/vifi-logo-dark.png" alt="ViFi" style={{height: 112, width: 'auto', display: 'block'}}/>
+          <img src="assets/logo/vifi-logo-dark.png" alt="ViFi" style={{height: 84, width: 'auto', display: 'block'}}/>
           <MicroLabel dark style={{color: C.onDark2, fontSize: 26}}>Y Combinator · S26 application</MicroLabel>
         </div>
 
