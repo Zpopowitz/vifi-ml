@@ -14,7 +14,6 @@ Polar H10 data via tools/retrain_on_real.py.
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import sys
@@ -81,6 +80,9 @@ class HealthResponse(BaseModel):
     hr_tol_bpm: float
     rr_tol_bpm: float
     feature_names: List[str]
+    synthetic_model_loaded: bool
+    synthetic_model_dir: str
+    synthetic_model_metadata: Optional[dict] = None
     real_model_loaded: bool
     real_model_dir: str
     real_model_metadata: Optional[dict] = None
@@ -159,6 +161,12 @@ class IdentifyRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _load_synthetic_models(model_dir: Path):
+    """Eager loader (kept for tests that want to assert models exist).
+
+    create_app() no longer uses this directly; SyntheticModelBundle handles
+    lazy loading + graceful 503 when files are missing. Use this in tests
+    or scripts that want a hard error.
+    """
     hr_path = model_dir / "hr_model.json"
     rr_path = model_dir / "rr_model.json"
     meta_path = model_dir / "metadata.json"
@@ -172,6 +180,60 @@ def _load_synthetic_models(model_dir: Path):
     rr.load_model(rr_path)
     meta = json.loads(meta_path.read_text())
     return hr, rr, meta
+
+
+class SyntheticModelBundle:
+    """Lazy-loaded synthetic-pipeline models (HR + RR + metadata).
+
+    Loaded on first /predict or /predict/demo call so the app can boot
+    without synthetic models present. Mirrors RealModelBundle: missing
+    models surface as 503, not boot failure.
+    """
+
+    def __init__(self, model_dir: Path):
+        self.model_dir = model_dir
+        self._loaded = False
+        self.hr = None
+        self.rr = None
+        self.metadata: dict = {}
+        self.feature_names: list[str] = []
+        self.hr_ratio_idx: Optional[int] = None
+        self.rr_ratio_idx: Optional[int] = None
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    def is_available(self) -> bool:
+        return ((self.model_dir / "hr_model.json").exists()
+                and (self.model_dir / "rr_model.json").exists()
+                and (self.model_dir / "metadata.json").exists())
+
+    def load(self) -> None:
+        if self._loaded:
+            return
+        if not self.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"synthetic models not found in {self.model_dir}; "
+                    f"run `python train.py` to train them, or skip the "
+                    f"synthetic endpoints and use /predict/capture instead."
+                ),
+            )
+        hr, rr, meta = _load_synthetic_models(self.model_dir)
+        self.hr = hr
+        self.rr = rr
+        self.metadata = meta
+        self.feature_names = list(meta["feature_names"])
+        try:
+            self.hr_ratio_idx = self.feature_names.index("hr_peak_ratio")
+            self.rr_ratio_idx = self.feature_names.index("rr_peak_ratio")
+        except ValueError:
+            # Older metadata without these names; confidence falls back to 0.
+            self.hr_ratio_idx = None
+            self.rr_ratio_idx = None
+        self._loaded = True
 
 
 class RealModelBundle:
@@ -493,16 +555,31 @@ def _confidence_from_feature(feats: np.ndarray, idx: int) -> float:
 
 def create_app(model_dir: Path = MODEL_DIR,
                real_model_dir: Path = REAL_MODEL_DIR) -> FastAPI:
+    """Build the FastAPI app. Always succeeds — missing models are reported
+    via 503 from the relevant endpoints, not as a boot failure.
+    """
     app = FastAPI(title="ViFi", version=MODEL_VERSION)
-    hr_model, rr_model, meta = _load_synthetic_models(model_dir)
-    feature_names: list[str] = meta["feature_names"]
-    rr_ratio_idx = feature_names.index("rr_peak_ratio")
-    hr_ratio_idx = feature_names.index("hr_peak_ratio")
-
+    synthetic_bundle = SyntheticModelBundle(model_dir)
     real_bundle = RealModelBundle(real_model_dir)
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
+        synth_loaded = False
+        synth_feature_names: list[str] = []
+        synth_hr_tol = 0.0
+        synth_rr_tol = 0.0
+        synth_meta: Optional[dict] = None
+        if synthetic_bundle.is_available():
+            try:
+                synthetic_bundle.load()
+                synth_loaded = True
+                synth_feature_names = synthetic_bundle.feature_names
+                synth_hr_tol = float(synthetic_bundle.metadata.get("hr_tol_bpm", 0.0))
+                synth_rr_tol = float(synthetic_bundle.metadata.get("rr_tol_bpm", 0.0))
+                synth_meta = synthetic_bundle.metadata
+            except HTTPException as exc:
+                synth_meta = {"error": exc.detail}
+
         real_loaded = False
         real_meta: Optional[dict] = None
         try:
@@ -512,23 +589,30 @@ def create_app(model_dir: Path = MODEL_DIR,
                 real_meta = real_bundle.metadata
         except HTTPException as exc:
             real_meta = {"error": exc.detail}
+
         return HealthResponse(
             status="ok",
             model_version=MODEL_VERSION,
-            hr_tol_bpm=float(meta["hr_tol_bpm"]),
-            rr_tol_bpm=float(meta["rr_tol_bpm"]),
-            feature_names=feature_names,
+            hr_tol_bpm=synth_hr_tol,
+            rr_tol_bpm=synth_rr_tol,
+            feature_names=synth_feature_names,
+            synthetic_model_loaded=synth_loaded,
+            synthetic_model_dir=str(model_dir),
+            synthetic_model_metadata=synth_meta,
             real_model_loaded=real_loaded,
             real_model_dir=str(real_model_dir),
             real_model_metadata=real_meta,
         )
 
     def _predict_iq(iq: np.ndarray, fs: float) -> PredictResponse:
+        synthetic_bundle.load()  # raises 503 if missing
         feats = extract_features(iq, fs=fs).reshape(1, -1)
-        hr = float(hr_model.predict(feats)[0])
-        rr = float(rr_model.predict(feats)[0])
-        hr_conf = _confidence_from_feature(feats[0], hr_ratio_idx)
-        rr_conf = _confidence_from_feature(feats[0], rr_ratio_idx)
+        hr = float(synthetic_bundle.hr.predict(feats)[0])
+        rr = float(synthetic_bundle.rr.predict(feats)[0])
+        hr_conf = (_confidence_from_feature(feats[0], synthetic_bundle.hr_ratio_idx)
+                   if synthetic_bundle.hr_ratio_idx is not None else 0.0)
+        rr_conf = (_confidence_from_feature(feats[0], synthetic_bundle.rr_ratio_idx)
+                   if synthetic_bundle.rr_ratio_idx is not None else 0.0)
         return PredictResponse(
             hr_bpm=round(hr, 2),
             rr_bpm=round(rr, 2),
@@ -568,11 +652,9 @@ def create_app(model_dir: Path = MODEL_DIR,
     return app
 
 
-# Module-level app for `uvicorn api:app`
-try:
-    app = create_app()
-except RuntimeError:
-    app = None  # type: ignore
+# Module-level app for `uvicorn api:app`. Always succeeds now; endpoints
+# return 503 if the relevant model bundle is missing.
+app = create_app()
 
 
 if __name__ == "__main__":
