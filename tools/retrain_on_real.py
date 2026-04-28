@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import FEATURE_NAMES, extract_features  # noqa: E402
+from preprocess import FEATURE_NAMES, FEATURE_SET_VERSION, extract_features  # noqa: E402
 from tools.first_capture_report import (  # noqa: E402
     align_csi_to_unix, interpolate_hr, load_hr_log,
 )
@@ -40,6 +40,12 @@ from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 from calibration import (  # noqa: E402
     apply_calibration, compute_calibration_vector,
 )
+
+
+def _frozen_seed(default: int = 42) -> int:
+    """Reproducibility seed. Uses VIFI_SEED env var if set, else `default`."""
+    import os
+    return int(os.environ.get("VIFI_SEED", str(default)))
 
 
 def build_feature_matrix(
@@ -89,7 +95,6 @@ def build_feature_matrix(
     labels_arr = np.asarray(labels, dtype=np.float32)
 
     if calibration_mode == "per_session" and feats_arr.shape[0] > 0:
-        # Use the first `calibration_seconds` of windows as the calibration baseline.
         n_cal_windows = max(1, int(calibration_seconds // stride_s) - 1)
         n_cal_windows = min(n_cal_windows, feats_arr.shape[0])
         cal_vec = compute_calibration_vector(feats_arr[:n_cal_windows])
@@ -109,7 +114,8 @@ def main() -> None:
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--val-frac", type=float, default=0.2)
     p.add_argument("--model-dir", type=Path, default=Path("models_real"))
-    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--seed", type=int, default=None,
+                   help="random seed (default: VIFI_SEED env var, else 42)")
     p.add_argument("--calibration-mode", choices=["none", "per_session"],
                    default="none",
                    help="'per_session' applies per-session baseline calibration "
@@ -118,6 +124,9 @@ def main() -> None:
     p.add_argument("--calibration-seconds", type=float, default=30.0,
                    help="seconds of each session's start used as the calibration window")
     args = p.parse_args()
+    if args.seed is None:
+        args.seed = _frozen_seed()
+        print(f"[~] using seed={args.seed} (set VIFI_SEED env to override)")
 
     print(f"[~] calibration_mode = {args.calibration_mode}")
 
@@ -160,11 +169,13 @@ def main() -> None:
     model.save_model(args.model_dir / "hr_model.json")
     (args.model_dir / "metadata.json").write_text(json.dumps({
         "feature_names": FEATURE_NAMES,
+        "feature_set_version": FEATURE_SET_VERSION,
         "hr_tol_bpm": 5.0,
         "rr_tol_bpm": 2.0,
         "trained_on": "real_paired_captures",
         "calibration_mode": args.calibration_mode,
         "calibration_seconds": args.calibration_seconds,
+        "seed": args.seed,
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
         "metrics": {
