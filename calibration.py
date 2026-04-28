@@ -272,6 +272,81 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+class RollingFingerprintTracker:
+    """Online multi-subject detector with hysteresis.
+
+    Compares a stream of per-window fingerprints against a baseline (the
+    calibrated subject) and reports state transitions:
+
+        single  - last N windows all matched the calibrated subject
+        multi   - last N windows all suggested superposition (sim < multi_threshold)
+        unknown - similarity is between the two thresholds (transition)
+
+    Hysteresis prevents single-frame flicker: a one-off noisy window
+    won't trip a state change. The state only flips after `hysteresis_n`
+    consecutive windows are clearly on the other side.
+
+    Used by the inference pipeline to suppress HR predictions while a
+    second person is in the field of view, since the model is trained
+    only on single-subject data and silently mispredicts on superpositions.
+
+    Usage:
+        tracker = RollingFingerprintTracker(baseline_fingerprint)
+        for amps_window in capture_windows:
+            state, similarity = tracker.update(amps_window)
+            if state == "multi":
+                # suppress this window's prediction
+                ...
+    """
+
+    def __init__(self, baseline_fingerprint: np.ndarray,
+                 match_threshold: float = DEFAULT_MATCH_THRESHOLD,
+                 multi_threshold: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
+                 hysteresis_n: int = 3):
+        self.baseline = np.asarray(baseline_fingerprint, dtype=np.float32)
+        self.match_threshold = float(match_threshold)
+        self.multi_threshold = float(multi_threshold)
+        self.hysteresis_n = int(hysteresis_n)
+        # Confirmed state. Starts in "single" because we just calibrated
+        # against this subject; we need evidence to flip to "multi".
+        self.state: str = "single"
+        # How many consecutive windows of evidence we have for the OPPOSITE state.
+        self._counter_below_multi: int = 0
+        self._counter_above_match: int = 0
+
+    def update(self, amps_window: np.ndarray) -> tuple[str, float]:
+        """Process one window's amplitude matrix; return (state, similarity)."""
+        fp = compute_fingerprint(amps_window)
+        sim = cosine_similarity(fp, self.baseline)
+
+        if sim < self.multi_threshold:
+            self._counter_below_multi += 1
+            self._counter_above_match = 0
+        elif sim >= self.match_threshold:
+            self._counter_above_match += 1
+            self._counter_below_multi = 0
+        else:
+            # In the gap between thresholds; don't accumulate either way.
+            self._counter_below_multi = 0
+            self._counter_above_match = 0
+
+        if (self.state != "multi"
+                and self._counter_below_multi >= self.hysteresis_n):
+            self.state = "multi"
+        elif (self.state != "single"
+                and self._counter_above_match >= self.hysteresis_n):
+            self.state = "single"
+        elif (self.state == "single"
+                and self.multi_threshold <= sim < self.match_threshold):
+            # Mid-zone but coming down from a steady single state -- treat as
+            # transitional rather than confirmed.
+            self.state = "unknown" if self._counter_below_multi == 0 \
+                                       and self._counter_above_match == 0 \
+                                       else self.state
+
+        return self.state, sim
+
+
 def detect_multi_subject(unknown_fingerprint: np.ndarray,
                          calibrations: list[Calibration],
                          room_id: Optional[str] = None,
