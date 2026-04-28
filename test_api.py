@@ -24,6 +24,7 @@ def test_health(client):
     assert body["status"] == "ok"
     assert body["model_version"]
     assert len(body["feature_names"]) >= 5
+    assert body["synthetic_model_loaded"] is True
     assert "real_model_loaded" in body
     assert "real_model_dir" in body
 
@@ -121,6 +122,50 @@ def test_predict_capture_validates_request(tmp_path):
     # Missing required field
     r = client.post("/predict/capture", json={})
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Synthetic-model graceful degradation
+#
+# The app must boot when synthetic models aren't trained yet; /predict and
+# /predict/demo should 503 rather than crash, and /health must still respond.
+# ---------------------------------------------------------------------------
+
+def _client_without_any_models(tmp_path: Path) -> TestClient:
+    from api import create_app
+    return TestClient(create_app(
+        model_dir=tmp_path / "no_synth",
+        real_model_dir=tmp_path / "no_real",
+    ))
+
+
+def test_app_boots_with_no_synthetic_models(tmp_path):
+    """The whole point of the fix: create_app must not raise when models
+    are absent. uvicorn was returning 500 on every request because the
+    module-level app was None."""
+    client = _client_without_any_models(tmp_path)
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["synthetic_model_loaded"] is False
+    assert body["real_model_loaded"] is False
+
+
+def test_predict_503_when_no_synthetic_model(tmp_path):
+    client = _client_without_any_models(tmp_path)
+    r = client.post("/predict", json={
+        "fs": 100.0,
+        "iq_real": [0.0] * 64,
+        "iq_imag": [0.0] * 64,
+    })
+    assert r.status_code == 503
+    assert "synthetic" in r.json()["detail"].lower()
+
+
+def test_predict_demo_503_when_no_synthetic_model(tmp_path):
+    client = _client_without_any_models(tmp_path)
+    r = client.post("/predict/demo", json={"hr_bpm": 75.0, "rr_bpm": 18.0})
+    assert r.status_code == 503
 
 
 if __name__ == "__main__":
