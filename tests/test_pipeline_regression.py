@@ -268,6 +268,87 @@ def test_fingerprint_discriminates_structured_subjects():
     assert sim < 0.5, f"structured-different fingerprints too similar: {sim}"
 
 
+# RollingFingerprintTracker (multi-subject detection with hysteresis)
+
+def test_rolling_tracker_starts_in_single_state():
+    from calibration import RollingFingerprintTracker
+    rng = np.random.RandomState(0)
+    baseline = np.zeros((300, 192), dtype=np.float32)
+    baseline[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+    fp = compute_fingerprint(baseline)
+    tracker = RollingFingerprintTracker(fp)
+    assert tracker.state == "single"
+
+
+def test_rolling_tracker_holds_single_through_matching_windows():
+    from calibration import RollingFingerprintTracker
+    rng = np.random.RandomState(1)
+    baseline = np.zeros((300, 192), dtype=np.float32)
+    baseline[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+    fp = compute_fingerprint(baseline)
+    tracker = RollingFingerprintTracker(fp, hysteresis_n=3)
+
+    for i in range(5):
+        window = np.zeros((300, 192), dtype=np.float32)
+        window[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+        state, sim = tracker.update(window)
+        assert state == "single", f"unexpected flip at window {i} (sim={sim})"
+        assert sim > 0.7
+
+
+def test_rolling_tracker_flips_to_multi_after_hysteresis_count():
+    """N=3 consecutive sub-multi-threshold windows -> state flips."""
+    from calibration import RollingFingerprintTracker
+    rng = np.random.RandomState(2)
+    baseline = np.zeros((300, 192), dtype=np.float32)
+    baseline[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+    fp = compute_fingerprint(baseline)
+    tracker = RollingFingerprintTracker(fp, hysteresis_n=3)
+
+    states = []
+    for _ in range(5):
+        window = np.zeros((300, 192), dtype=np.float32)
+        # Disjoint subcarriers -> similarity ~0
+        window[:, 130:140] = rng.randn(300, 10).astype(np.float32)
+        state, _ = tracker.update(window)
+        states.append(state)
+
+    assert states[0] == "single"
+    assert states[1] == "single"
+    assert states[2] == "multi"
+    assert states[3] == "multi"
+    assert states[4] == "multi"
+
+
+def test_rolling_tracker_flips_back_to_single_after_hysteresis_count():
+    from calibration import RollingFingerprintTracker
+    rng = np.random.RandomState(3)
+    baseline = np.zeros((300, 192), dtype=np.float32)
+    baseline[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+    fp = compute_fingerprint(baseline)
+    tracker = RollingFingerprintTracker(fp, hysteresis_n=3)
+
+    # Drive into multi state.
+    for _ in range(4):
+        window = np.zeros((300, 192), dtype=np.float32)
+        window[:, 130:140] = rng.randn(300, 10).astype(np.float32)
+        tracker.update(window)
+    assert tracker.state == "multi"
+
+    # Feed matching windows and watch flip back.
+    states = []
+    for _ in range(5):
+        window = np.zeros((300, 192), dtype=np.float32)
+        window[:, 50:60] = rng.randn(300, 10).astype(np.float32)
+        state, _ = tracker.update(window)
+        states.append(state)
+
+    assert states[0] == "multi"
+    assert states[1] == "multi"
+    assert states[2] == "single"
+    assert all(s == "single" for s in states[2:])
+
+
 # Smoke test
 
 def test_full_pipeline_smoke_v1():
