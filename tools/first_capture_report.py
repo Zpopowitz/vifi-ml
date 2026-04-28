@@ -5,17 +5,11 @@ time-aligns them, slides a window through the capture, runs the
 production ViFi pipeline on each window, and compares the predicted HR
 to the Polar H10 ground truth.
 
-Outputs:
-    - Per-window table of predicted HR, true HR, error, confidence
-    - Overall mean absolute error (MAE) number (the headline metric)
-    - Optional JSON dump for the YC follow-up email
-
 Usage:
     python tools/first_capture_report.py \\
         --capture capture_sunday.txt \\
         --hr-log  hr_log.csv \\
-        --start-offset 0 \\
-        --window 10 --stride 5
+        --start-offset 0 --window 10 --stride 5
 
 Optional per-subject calibration:
     --calibration-subject subj01            # load stored calibration
@@ -24,9 +18,13 @@ Optional per-subject calibration:
     --auto-identify                         # fingerprint-match to a stored subject
     --calibration-mode per_session          # calibrate from this capture's first 30s
 
-The --start-offset is seconds. The capture's first packet timestamp
-corresponds to wall-clock time (earliest HR row) + start-offset; adjust
-if you noted a real offset between starting the two loggers.
+Optional confidence intervals (when models/<dir>/hr_model_q_low.json and
+hr_model_q_high.json exist; produced by tools/train_quantile_models.py):
+    --emit-intervals                        # report 80% prediction interval per window
+    --max-interval-bpm 15                   # suppress predictions when interval > this
+
+Refuses to run if model's metadata.json says feature_set_version doesn't match
+this codebase's FEATURE_SET_VERSION (prevents v1 model running on v2 features).
 """
 from __future__ import annotations
 
@@ -76,7 +74,6 @@ def interpolate_hr(hr_unix: np.ndarray, hr_bpm: np.ndarray, t: float) -> float:
 
 def _detect_packet_rate(capture_path: Path,
                         capture_duration_override: float | None) -> float:
-    """Pick the assumed packet rate for synthesised timestamps."""
     if capture_duration_override is not None:
         n_csi = 0
         with open(capture_path, "rb") as f:
@@ -106,7 +103,6 @@ def _resolve_calibration(capture_path: Path,
                          room_id: str | None,
                          posture: str | None,
                          auto_identify: bool):
-    """Return (calibration_vector, label) or (None, None) if no calibration applies."""
     from calibration import (  # noqa: E402
         compute_fingerprint, identify, load_all_calibrations, load_subject_file,
     )
@@ -149,6 +145,24 @@ def _resolve_calibration(capture_path: Path,
     return cal_vec, f"{chosen.subject_id} room={chosen.room_id} posture={chosen.posture}"
 
 
+def _enforce_feature_version(models_dir: Path, current_version: str) -> None:
+    """Raise SystemExit if model was trained with a different feature set version."""
+    md_path = models_dir / "metadata.json"
+    if not md_path.exists():
+        return
+    try:
+        md = json.loads(md_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+    model_version = md.get("feature_set_version")
+    if model_version is not None and model_version != current_version:
+        raise SystemExit(
+            f"[!] feature-set version mismatch: model trained with "
+            f"'{model_version}' but this codebase uses '{current_version}'. "
+            f"Retrain the model with the current feature extractor."
+        )
+
+
 def run_report(
     capture_path: Path,
     hr_log_path: Path,
@@ -163,6 +177,8 @@ def run_report(
     calibration_posture: str | None = None,
     auto_identify: bool = False,
     calibration_mode: str = "none",
+    emit_intervals: bool = False,
+    max_interval_bpm: float = 15.0,
 ) -> None:
     print(f"[1/4] parsing {capture_path} ...")
     fs_csi = _detect_packet_rate(capture_path, capture_duration_s)
@@ -180,13 +196,15 @@ def run_report(
 
     csi_unix_ts = align_csi_to_unix(csi_boot_ts, hr_unix, start_offset_s)
 
-    from preprocess import extract_features  # noqa: E402
+    from preprocess import extract_features, FEATURE_SET_VERSION  # noqa: E402
     from xgboost import XGBRegressor       # noqa: E402
 
     models_dir = Path(os.environ.get("VIFI_MODEL_DIR", str(ROOT / "models")))
     if not models_dir.is_absolute():
         models_dir = ROOT / models_dir
     print(f"      using model dir: {models_dir}")
+
+    _enforce_feature_version(models_dir, FEATURE_SET_VERSION)
 
     cal_vec, cal_label = _resolve_calibration(
         capture_path, calibration_subject, calibration_room, calibration_posture,
@@ -202,6 +220,22 @@ def run_report(
     hr_model = XGBRegressor()
     hr_model.load_model(models_dir / "hr_model.json")
 
+    # Optional quantile models
+    q_low_model = None
+    q_high_model = None
+    if emit_intervals:
+        q_low_path = models_dir / "hr_model_q_low.json"
+        q_high_path = models_dir / "hr_model_q_high.json"
+        if q_low_path.exists() and q_high_path.exists():
+            q_low_model = XGBRegressor()
+            q_low_model.load_model(q_low_path)
+            q_high_model = XGBRegressor()
+            q_high_model.load_model(q_high_path)
+            print(f"      loaded quantile models for confidence intervals")
+        else:
+            print(f"      WARNING: --emit-intervals requested but q_low/q_high models "
+                  f"not in {models_dir}; running without intervals")
+
     rows = []
     t0, t_end = csi_unix_ts[0], csi_unix_ts[-1]
     t = t0
@@ -211,6 +245,8 @@ def run_report(
     per_session_cal_pool: list[np.ndarray] = []
     per_session_cal_built: bool = False
     PER_SESSION_CAL_DURATION = 30.0
+
+    n_suppressed = 0
 
     while t + window_s <= t_end:
         mask = (csi_unix_ts >= t) & (csi_unix_ts < t + window_s)
@@ -258,38 +294,73 @@ def run_report(
             from calibration import apply_calibration  # noqa: E402
             feats = apply_calibration(feats, cal_vec)
         hr_pred = float(hr_model.predict(feats)[0])
+
+        # Optional confidence interval
+        hr_low = None
+        hr_high = None
+        interval_width = None
+        suppressed = False
+        if q_low_model is not None and q_high_model is not None:
+            hr_low = float(q_low_model.predict(feats)[0])
+            hr_high = float(q_high_model.predict(feats)[0])
+            interval_width = hr_high - hr_low
+            if interval_width > max_interval_bpm:
+                suppressed = True
+                n_suppressed += 1
+
         hr_true = interpolate_hr(hr_unix, hr_bpm, t + window_s / 2)
         err = hr_pred - hr_true
 
-        rows.append({
+        row = {
             "window_start_s": round(t - t0, 2),
             "hr_true": round(hr_true, 1),
             "hr_pred": round(hr_pred, 1),
             "error_bpm": round(err, 2),
-        })
+        }
+        if hr_low is not None:
+            row["hr_low"] = round(hr_low, 1)
+            row["hr_high"] = round(hr_high, 1)
+            row["interval_width"] = round(interval_width, 1)
+            row["suppressed"] = suppressed
+        rows.append(row)
         t += stride_s
 
     if not rows:
         print("[!] no windows scored. Check --start-offset and timelines.")
         return
 
-    errors = np.array([r["error_bpm"] for r in rows])
+    # Filter for stats: if intervals enabled, exclude suppressed windows from MAE
+    scored_rows = [r for r in rows if not r.get("suppressed", False)]
+    errors = np.array([r["error_bpm"] for r in scored_rows])
+    if len(errors) == 0:
+        errors = np.array([r["error_bpm"] for r in rows])
     mae = float(np.mean(np.abs(errors)))
     bias = float(np.mean(errors))
     within_5 = float(np.mean(np.abs(errors) <= 5.0))
 
     print("[4/4] results")
     print(f"      windows scored:     {len(rows)}")
-    print(f"      HR MAE:             {mae:.2f} bpm")
+    if n_suppressed > 0:
+        print(f"      suppressed (interval>{max_interval_bpm}): {n_suppressed}")
+    print(f"      HR MAE:             {mae:.2f} bpm  (over {len(scored_rows)} accepted windows)")
     print(f"      HR bias:            {bias:+.2f} bpm")
     print(f"      within +-5 bpm:     {within_5*100:.1f}%")
     print()
     print("first 10 windows:")
-    print(f"  {'start_s':>8} {'true':>6} {'pred':>6} {'err':>6}")
-    for r in rows[:10]:
-        print(f"  {r['window_start_s']:>8.1f}"
-              f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
-              f" {r['error_bpm']:>+6.2f}")
+    if emit_intervals and q_low_model is not None:
+        print(f"  {'start_s':>8} {'true':>6} {'pred':>6} {'low':>6} {'high':>6} {'err':>6}")
+        for r in rows[:10]:
+            tag = " (S)" if r.get("suppressed") else ""
+            print(f"  {r['window_start_s']:>8.1f}"
+                  f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
+                  f" {r.get('hr_low', 0):>6.1f} {r.get('hr_high', 0):>6.1f}"
+                  f" {r['error_bpm']:>+6.2f}{tag}")
+    else:
+        print(f"  {'start_s':>8} {'true':>6} {'pred':>6} {'err':>6}")
+        for r in rows[:10]:
+            print(f"  {r['window_start_s']:>8.1f}"
+                  f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
+                  f" {r['error_bpm']:>+6.2f}")
 
     if json_out is not None:
         payload = {
@@ -299,6 +370,7 @@ def run_report(
             "stride_s": stride_s,
             "summary": {
                 "n_windows": len(rows),
+                "n_suppressed": n_suppressed,
                 "hr_mae_bpm": mae,
                 "hr_bias_bpm": bias,
                 "within_5_bpm_frac": within_5,
@@ -324,19 +396,20 @@ def main() -> None:
     p.add_argument("--json", type=Path, default=None,
                    help="write per-window JSON here")
     p.add_argument("--calibration-subject", default=None,
-                   help="apply this subject's stored calibration "
-                        "(reads data/calibrations/<subject_id>.json)")
+                   help="apply this subject's stored calibration")
     p.add_argument("--calibration-room", default=None,
                    help="constrain calibration lookup to this room_id")
     p.add_argument("--calibration-posture", default=None,
                    help="constrain calibration lookup to this posture")
     p.add_argument("--auto-identify", action="store_true",
-                   help="fingerprint the first 30s of the capture and auto-pick "
-                        "the matching calibration")
+                   help="fingerprint the first 30s and auto-pick the matching calibration")
     p.add_argument("--calibration-mode", choices=["none", "per_session"],
                    default="none",
-                   help="'per_session' calibrates from this capture's own first 30s. "
-                        "Use this when the model was trained with --calibration-mode per_session.")
+                   help="'per_session' calibrates from this capture's own first 30s.")
+    p.add_argument("--emit-intervals", action="store_true",
+                   help="report 80%% prediction interval per window using quantile models")
+    p.add_argument("--max-interval-bpm", type=float, default=15.0,
+                   help="suppress predictions when interval width exceeds this (default 15)")
     args = p.parse_args()
     run_report(
         capture_path=args.capture,
@@ -352,6 +425,8 @@ def main() -> None:
         calibration_posture=args.calibration_posture,
         auto_identify=args.auto_identify,
         calibration_mode=args.calibration_mode,
+        emit_intervals=args.emit_intervals,
+        max_interval_bpm=args.max_interval_bpm,
     )
 
 
