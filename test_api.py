@@ -24,6 +24,8 @@ def test_health(client):
     assert body["status"] == "ok"
     assert body["model_version"]
     assert len(body["feature_names"]) >= 5
+    assert "real_model_loaded" in body
+    assert "real_model_dir" in body
 
 
 def test_predict_returns_json(client):
@@ -78,6 +80,47 @@ def test_batch_accuracy_above_92_percent(client):
             ok += 1
     acc = ok / n
     assert acc >= 0.92, f"HTTP end-to-end accuracy {acc:.2%} < 92%"
+
+
+# ---------------------------------------------------------------------------
+# Real-capture endpoints (/predict/capture, /identify)
+#
+# These return 503 when the real-capture model bundle isn't present, which
+# is the typical state in CI (no paired captures committed). The success
+# path is exercised manually after running tools/retrain_on_real.py.
+# ---------------------------------------------------------------------------
+
+def _client_without_real_models(tmp_path: Path) -> TestClient:
+    from api import create_app
+    return TestClient(create_app(Path("models"), tmp_path / "no_real_models"))
+
+
+def test_predict_capture_503_when_no_real_model(tmp_path):
+    client = _client_without_real_models(tmp_path)
+    r = client.post("/predict/capture", json={
+        "capture_text": "CSI_DATA,STA,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,\"[1 2 3 4]\"\n",
+    })
+    assert r.status_code == 503
+    assert "model not found" in r.json()["detail"].lower() or \
+           "real" in r.json()["detail"].lower()
+
+
+def test_identify_503_when_no_real_model(tmp_path):
+    client = _client_without_real_models(tmp_path)
+    r = client.post("/identify", json={
+        "capture_text": "CSI_DATA,STA,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,\"[1 2 3 4]\"\n",
+    })
+    # /identify itself doesn't load the model, so it may succeed with no
+    # candidates rather than 503. Either is acceptable; we just check it
+    # doesn't 500.
+    assert r.status_code in (200, 400, 503), r.text
+
+
+def test_predict_capture_validates_request(tmp_path):
+    client = _client_without_real_models(tmp_path)
+    # Missing required field
+    r = client.post("/predict/capture", json={})
+    assert r.status_code == 422
 
 
 if __name__ == "__main__":
