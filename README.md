@@ -210,7 +210,7 @@ vifi-ml/
 │   ├── capture_session.ps1
 │   └── preflight_check.ps1
 │
-└── tests/ + test_api.py       # 72-test suite (pytest)
+└── tests/                     # 102-test suite (pytest)
 ```
 
 ---
@@ -218,7 +218,7 @@ vifi-ml/
 ## Tests
 
 ```bash
-pytest -v        # 72-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
+pytest -v        # 102-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
 ./test_deploy.sh # deploy.sh static checks
 ```
 
