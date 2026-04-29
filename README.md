@@ -38,8 +38,8 @@ Continuous, contactless monitoring on commodity hardware — at $20/bed instead 
 ```bash
 pip install -r requirements.txt
 python train.py                  # trains synthetic baseline → ./models/
-uvicorn output.api:app --port 8000
-streamlit run output/dashboard.py
+uvicorn api:app --port 8000
+streamlit run dashboard.py
 ```
 
 ### With ESP32-S3 hardware (Windows / PowerShell)
@@ -139,16 +139,21 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | Capability | Status | Where |
 |---|---|---|
 | Heart rate (HR) | **Shipped — 4.15 bpm cross-session MAE on real hardware** | `train.py`, `preprocess.py`, `tools/retrain_on_real.py` |
-| Respiratory rate (RR) | Pipeline shipped, awaiting paired RR ground truth | `train.py`, `preprocess.py` |
-| Presence / occupancy | Shipped, variance-threshold detection | `modules/presence.py`, `/predict/presence` |
-| Multi-subcarrier CSI ingest | Shipped | `output/api.py :: /predict/csi` |
+| Per-subject calibration + RF fingerprinting | Shipped | `calibration.py`, `tools/calibrate_subject.py`, `tools/identify_subject.py` |
+| Multi-subject "walks in the room" detection | Shipped — rolling fingerprint with hysteresis | `calibration.py :: RollingFingerprintTracker` |
+| Out-of-distribution suppression | Shipped — Mahalanobis distance, chi-square 99% threshold | `quality.py` |
+| 80% prediction-interval suppression | Shipped — quantile XGBoost, configurable width | `tools/train_quantile_models.py` |
+| Per-prediction audit log | Shipped — JSONL, daily-rotating, FDA-grade | `audit.py` |
+| Paired-capture orchestrator | Shipped — one command, three loggers, validates session.json | `tools/run_paired_session.py` |
+| Respiratory rate (RR) | Pipeline shipped; Vernier belt logger ready | `rr_logger.py`, `train.py` |
+| Presence / occupancy | Shipped, variance-threshold detection | `modules/presence.py` |
+| Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
-| FastICA unmixing (simulated) | Shipped (dashboard demo) | `output/dashboard.py` |
 | Apnea detection | Planned, returns HTTP 501 | `modules/apnea.py` |
 | Gait / walking-speed | Planned, returns HTTP 501 | `modules/gait.py` |
 | Fall detection | Planned, returns HTTP 501 | `modules/falls.py` |
 | Transient-event logger | Planned, returns HTTP 501 | `modules/transient_events.py` |
-| 4-receiver multi-patient array | Planned | `modules/four_node_sync.py` |
+| 4-receiver multi-patient array (deterministic identity) | Planned (v2) | `modules/four_node_sync.py` |
 
 `GET /roadmap` returns the live shipped-vs-planned manifest.
 
@@ -166,36 +171,46 @@ vifi-ml/
 ├── data_gen.py                # synthetic CSI generator
 ├── preprocess.py              # DSP pipeline (bandpass, FFT, features)
 ├── train.py                   # XGBoost regressors (synthetic baseline)
-├── api.py                     # minimal FastAPI service (M4 milestone)
-├── dashboard.py               # minimal Streamlit dashboard (M5)
-├── hr_logger.py               # Polar H10 BLE logger w/ auto-reconnect
+├── calibration.py             # per-subject calibration + RF fingerprinting + RollingFingerprintTracker
+├── quality.py                 # Mahalanobis OOD detector
+├── audit.py                   # JSONL audit log writer (postmarket surveillance)
+├── api.py                     # FastAPI service (M4) -- multi-subject + OOD + audit + CORS
+├── dashboard.py               # Streamlit dashboard (M5) with safety telemetry
+├── hr_logger.py               # Polar H10 BLE logger
+├── rr_logger.py               # Vernier Go Direct respiration belt logger
 ├── Dockerfile                 # multi-stage build, non-root runtime
 ├── deploy.sh                  # one-shot build + run + health check
 │
-├── output/                    # production copies (Dockerfile copies these)
-│   ├── api.py                 # +CORS, +/predict/csi, +/predict/presence
-│   ├── dashboard.py           # +multi-person + ICA tabs
-│   └── esp32_csi_collector.py # UDP bridge for live ESP32-S3 streams
-│
 ├── modules/                   # roadmap capabilities
 │   ├── presence.py            # SHIPPED
-│   ├── apnea.py               # planned, raises NotImplementedError
-│   ├── gait.py                # planned (WiGait)
-│   ├── falls.py               # planned (WiFall)
-│   ├── transient_events.py    # planned (clinical wedge)
-│   └── four_node_sync.py      # planned (multi-patient array)
+│   ├── apnea.py               # planned (501)
+│   ├── gait.py                # planned (WiGait, 501)
+│   ├── falls.py               # planned (WiFall, 501)
+│   ├── transient_events.py    # planned (clinical wedge, 501)
+│   └── four_node_sync.py      # planned (multi-patient array, 501)
 │
 ├── tools/
-│   ├── csi_capture.py             # timed serial reader, writes metadata sidecar
-│   ├── parse_csi_capture.py       # parses ESP-IDF / ESP32-CSI-Tool format
-│   ├── first_capture_report.py    # paired CSI + HR → MAE report
-│   └── retrain_on_real.py         # retrain XGBoost on real-hardware sessions
+│   ├── csi_capture.py              # timed serial reader, writes metadata sidecar
+│   ├── parse_csi_capture.py        # parses ESP-IDF / ESP32-CSI-Tool format
+│   ├── esp32_csi_collector.py      # live UDP bridge for streaming captures
+│   ├── first_capture_report.py     # paired CSI + HR -> MAE report (with audit log)
+│   ├── retrain_on_real.py          # retrain XGBoost + Mahalanobis on real captures
+│   ├── train_quantile_models.py    # confidence-interval quantile regressors
+│   ├── calibrate_subject.py        # capture and store per-subject calibration
+│   ├── identify_subject.py         # fingerprint-match a capture to a subject
+│   ├── run_paired_session.py       # orchestrator: 3 loggers + session.json one command
+│   ├── multi_subject_test.py       # validate the walk-in detector against labeled events
+│   ├── validate_session_metadata.py# session.json schema validator
+│   └── cross_subject_eval.py       # frozen leave-one-subject-out evaluator
+│
+├── docs/
+│   └── multi_subject_test_protocol.md  # capture protocol for the walk-in test
 │
 ├── scripts/                   # PowerShell convenience wrappers
 │   ├── capture_session.ps1
 │   └── preflight_check.ps1
 │
-└── test_*.py                  # 41-test suite (pytest)
+└── tests/ + test_api.py       # 72-test suite (pytest)
 ```
 
 ---
@@ -203,7 +218,7 @@ vifi-ml/
 ## Tests
 
 ```bash
-pytest -v        # 41 tests covering pipeline, API, parser, modules, capture
+pytest -v        # 72-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
 ./test_deploy.sh # deploy.sh static checks
 ```
 
