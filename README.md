@@ -210,7 +210,7 @@ vifi-ml/
 │   ├── capture_session.ps1
 │   └── preflight_check.ps1
 │
-└── tests/ + test_api.py       # 72-test suite (pytest)
+└── tests/                     # 102-test suite (pytest)
 ```
 
 ---
@@ -218,7 +218,7 @@ vifi-ml/
 ## Tests
 
 ```bash
-pytest -v        # 72-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
+pytest -v        # 102-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
 ./test_deploy.sh # deploy.sh static checks
 ```
 
@@ -240,6 +240,22 @@ pytest -v        # 72-test suite: pipeline, API, calibration, OOD, audit log, or
 **This is a pre-seed-stage prototype.** The technical risk of "does this work on commodity hardware at all" is now retired. The remaining risk — multi-subject generalization, motion robustness, regulatory clearance, hospital sales — is what funding addresses.
 
 See [ROADMAP.md](./ROADMAP.md) for sequenced milestones.
+
+---
+
+## Contributing
+
+Trunk-based: `main` is always deployable. Work happens on short-lived branches off `main`, prefixed by intent:
+
+| Prefix | Use for |
+|---|---|
+| `feat/` | New functionality (e.g. `feat/phase-features`) |
+| `fix/`  | Bug fixes (e.g. `fix/oot-mahalanobis-nan`) |
+| `chore/`| Refactors, deps, tooling, repo hygiene |
+| `docs/` | Documentation only |
+| `exp/`  | Experiments / spikes (may be discarded) |
+
+Merge to `main` via squash, delete the branch. A "hotfix" is just a `fix/` branch off `main` — no separate flow needed at this stage.
 
 ---
 

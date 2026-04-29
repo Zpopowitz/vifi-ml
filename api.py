@@ -839,6 +839,64 @@ def create_app(model_dir: Path = MODEL_DIR,
     def identify_subject(req: IdentifyRequest) -> SubjectMatch:
         return _identify_only(real_bundle, req)
 
+    # ----- Roadmap / planned-capability surface --------------------------
+    # Live manifest of shipped vs. planned capabilities. Stub endpoints
+    # return HTTP 501 with a structured "planned" payload so callers can
+    # discover the surface without reading the README.
+
+    _ROADMAP = {
+        "apnea":         {"eta": "Q3 2026", "depends_on": ["rr_real_hw"]},
+        "gait":          {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+        "falls":         {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+        "transients":    {"eta": "Q3 2026", "depends_on": ["rr_real_hw", "hr_real_hw"]},
+        "multi_patient": {"eta": "Q1 2027", "depends_on": ["4_node_array"]},
+    }
+
+    def _not_implemented(capability: str):
+        raise HTTPException(
+            status_code=501,
+            detail={"status": "planned", "capability": capability,
+                    **_ROADMAP[capability]},
+        )
+
+    @app.post("/predict/presence")
+    def predict_presence(req: CSIRequest):
+        from modules.presence import detect_presence, presence_score
+        arr = np.asarray(req.csi_amp, dtype=np.float32)
+        if arr.ndim != 2:
+            raise HTTPException(status_code=400,
+                                detail=f"csi_amp must be 2-D, got {arr.shape}")
+        return {
+            "present": detect_presence(arr, fs=req.fs),
+            "score": round(presence_score(arr, fs=req.fs), 6),
+            "model_version": "presence-v1",
+            "n_samples": int(arr.shape[0]),
+        }
+
+    @app.post("/predict/apnea")
+    def predict_apnea():
+        _not_implemented("apnea")
+
+    @app.post("/predict/gait")
+    def predict_gait():
+        _not_implemented("gait")
+
+    @app.post("/predict/falls")
+    def predict_falls():
+        _not_implemented("falls")
+
+    @app.get("/transients")
+    def get_transients():
+        _not_implemented("transients")
+
+    @app.post("/predict/multi_patient")
+    def predict_multi_patient():
+        _not_implemented("multi_patient")
+
+    @app.get("/roadmap")
+    def roadmap():
+        return {"shipped": ["hr", "rr"], "planned": _ROADMAP}
+
     return app
 
 
