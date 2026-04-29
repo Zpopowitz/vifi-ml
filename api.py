@@ -1,8 +1,11 @@
-"""api.py - intermediate stub during split upload.
+"""M4: FastAPI prediction service.
 
-This file is in a transient half-uploaded state. Do not run uvicorn against
-this revision. The next commit replaces this stub with the full upgraded
-FastAPI service (multi-subject detection, OOD scoring, audit logging).
+Endpoints:
+    GET  /health                -> service liveness + model metadata
+    POST /predict               -> synthetic IQ window in, HR/RR out
+    POST /predict/demo          -> generate synthetic + predict (smoke test)
+    POST /predict/capture       -> real ESP32-S3 capture text in, HR timeline out
+    POST /identify              -> fingerprint-match a capture against stored calibrations
 """
 from __future__ import annotations
 
