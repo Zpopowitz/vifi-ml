@@ -167,6 +167,16 @@ def main() -> None:
 
     args.model_dir.mkdir(parents=True, exist_ok=True)
     model.save_model(args.model_dir / "hr_model.json")
+
+    # Fit + save the OOD detector on the same training features so inference
+    # can flag windows that don't look like the training distribution.
+    from quality import MahalanobisDetector  # noqa: E402
+    ood_detector = MahalanobisDetector.fit(X_tr)
+    ood_detector.save(args.model_dir / "mahalanobis.json")
+    print(f"[+] saved Mahalanobis OOD detector "
+          f"(threshold={ood_detector.threshold:.2f}, "
+          f"n_train={ood_detector.n_train})")
+
     (args.model_dir / "metadata.json").write_text(json.dumps({
         "feature_names": FEATURE_NAMES,
         "feature_set_version": FEATURE_SET_VERSION,
