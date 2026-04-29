@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280" role="img" aria-label="Two ESP32 chips in a hospital room, with WiFi signal reflecting off the patient">
+  <g fill="none" stroke="#1A1A1A" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 250 L700 250"></path>
+    <path d="M20 250 L20 40" stroke-dasharray="2 4"></path>
+    <path d="M700 250 L700 40" stroke-dasharray="2 4"></path>
+    <path d="M20 40 L700 40" stroke-dasharray="2 4"></path>
+    <rect x="60" y="110" width="56" height="36" rx="2"></rect>
+    <text x="88" y="100" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="middle" fill="#1A1A1A" stroke="none">ESP32-S3</text>
+    <text x="88" y="164" font-family="Inter, sans-serif" font-size="11" text-anchor="middle" fill="#4A5568" stroke="none">TX</text>
+    <path d="M88 110 L88 92"></path>
+    <circle cx="88" cy="88" r="3"></circle>
+    <rect x="604" y="110" width="56" height="36" rx="2"></rect>
+    <text x="632" y="100" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="middle" fill="#1A1A1A" stroke="none">ESP32-S3</text>
+    <text x="632" y="164" font-family="Inter, sans-serif" font-size="11" text-anchor="middle" fill="#4A5568" stroke="none">RX</text>
+    <path d="M632 110 L632 92"></path>
+    <circle cx="632" cy="88" r="3"></circle>
+    <rect x="280" y="200" width="160" height="34" rx="2"></rect>
+    <rect x="290" y="190" width="44" height="14" rx="2"></rect>
+    <path d="M310 200 C 320 184, 400 184, 410 200"></path>
+    <path d="M116 128 Q 260 60, 360 200" stroke="#00B87C" stroke-width="1.5"></path>
+    <path d="M360 200 Q 460 60, 604 128" stroke="#00B87C" stroke-width="1.5"></path>
+    <path d="M180 88 q 6 -6, 12 0 t 12 0" stroke="#00B87C" stroke-width="1"></path>
+    <path d="M516 88 q 6 -6, 12 0 t 12 0" stroke="#00B87C" stroke-width="1"></path>
+    <text x="240" y="50" font-family="Inter" font-size="11" fill="#7A8699" stroke="none">signal reflects off chest wall</text>
+    <text x="488" y="50" font-family="Inter" font-size="11" fill="#7A8699" stroke="none">modulated return</text>
+  </g>
+</svg>

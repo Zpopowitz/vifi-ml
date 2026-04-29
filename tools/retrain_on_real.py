@@ -11,6 +11,12 @@ Usage:
         --pair capture2.txt hr_log2.csv \\
         --start-offset 0 --window 10 --stride 5 \\
         --model-dir models_real
+
+Optional per-session calibration:
+    python tools/retrain_on_real.py \\
+        --pair capture1.txt hr_log1.csv \\
+        --calibration-mode per_session \\
+        --model-dir models_real_calibrated
 """
 from __future__ import annotations
 
@@ -25,18 +31,36 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import FEATURE_NAMES, extract_features  # noqa: E402
+from preprocess import FEATURE_NAMES, FEATURE_SET_VERSION, extract_features  # noqa: E402
 from tools.first_capture_report import (  # noqa: E402
     align_csi_to_unix, interpolate_hr, load_hr_log,
 )
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 
+from calibration import (  # noqa: E402
+    apply_calibration, compute_calibration_vector,
+)
+
+
+def _frozen_seed(default: int = 42) -> int:
+    """Reproducibility seed. Uses VIFI_SEED env var if set, else `default`."""
+    import os
+    return int(os.environ.get("VIFI_SEED", str(default)))
+
 
 def build_feature_matrix(
     capture_path: Path, hr_log_path: Path, start_offset_s: float,
     window_s: float, stride_s: float, fs_resample: float,
+    calibration_mode: str = "none",
+    calibration_seconds: float = 30.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Turn one paired capture into (features, hr_true) arrays."""
+    """Turn one paired capture into (features, hr_true) arrays.
+
+    calibration_mode:
+        'none'        : raw features (legacy behavior).
+        'per_session' : compute calibration from the first `calibration_seconds`
+                        of THIS capture; apply it to all features.
+    """
     amps, csi_boot_ts = parse_capture_file(capture_path)
     hr_unix, hr_bpm = load_hr_log(hr_log_path)
     csi_unix_ts = align_csi_to_unix(csi_boot_ts, hr_unix, start_offset_s)
@@ -67,7 +91,16 @@ def build_feature_matrix(
         labels.append(interpolate_hr(hr_unix, hr_bpm, t + window_s / 2))
         t += stride_s
 
-    return np.asarray(feats, dtype=np.float32), np.asarray(labels, dtype=np.float32)
+    feats_arr = np.asarray(feats, dtype=np.float32)
+    labels_arr = np.asarray(labels, dtype=np.float32)
+
+    if calibration_mode == "per_session" and feats_arr.shape[0] > 0:
+        n_cal_windows = max(1, int(calibration_seconds // stride_s) - 1)
+        n_cal_windows = min(n_cal_windows, feats_arr.shape[0])
+        cal_vec = compute_calibration_vector(feats_arr[:n_cal_windows])
+        feats_arr = apply_calibration(feats_arr, cal_vec)
+
+    return feats_arr, labels_arr
 
 
 def main() -> None:
@@ -81,8 +114,21 @@ def main() -> None:
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--val-frac", type=float, default=0.2)
     p.add_argument("--model-dir", type=Path, default=Path("models_real"))
-    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--seed", type=int, default=None,
+                   help="random seed (default: VIFI_SEED env var, else 42)")
+    p.add_argument("--calibration-mode", choices=["none", "per_session"],
+                   default="none",
+                   help="'per_session' applies per-session baseline calibration "
+                        "before training (each session's first 30s used as calibration). "
+                        "'none' is legacy behavior.")
+    p.add_argument("--calibration-seconds", type=float, default=30.0,
+                   help="seconds of each session's start used as the calibration window")
     args = p.parse_args()
+    if args.seed is None:
+        args.seed = _frozen_seed()
+        print(f"[~] using seed={args.seed} (set VIFI_SEED env to override)")
+
+    print(f"[~] calibration_mode = {args.calibration_mode}")
 
     X_parts: list[np.ndarray] = []
     y_parts: list[np.ndarray] = []
@@ -91,6 +137,8 @@ def main() -> None:
         X, y = build_feature_matrix(
             Path(cap), Path(log), args.start_offset,
             args.window, args.stride, args.fs,
+            calibration_mode=args.calibration_mode,
+            calibration_seconds=args.calibration_seconds,
         )
         print(f"    {X.shape[0]} windows")
         X_parts.append(X); y_parts.append(y)
@@ -119,11 +167,25 @@ def main() -> None:
 
     args.model_dir.mkdir(parents=True, exist_ok=True)
     model.save_model(args.model_dir / "hr_model.json")
+
+    # Fit + save the OOD detector on the same training features so inference
+    # can flag windows that don't look like the training distribution.
+    from quality import MahalanobisDetector  # noqa: E402
+    ood_detector = MahalanobisDetector.fit(X_tr)
+    ood_detector.save(args.model_dir / "mahalanobis.json")
+    print(f"[+] saved Mahalanobis OOD detector "
+          f"(threshold={ood_detector.threshold:.2f}, "
+          f"n_train={ood_detector.n_train})")
+
     (args.model_dir / "metadata.json").write_text(json.dumps({
         "feature_names": FEATURE_NAMES,
+        "feature_set_version": FEATURE_SET_VERSION,
         "hr_tol_bpm": 5.0,
         "rr_tol_bpm": 2.0,
         "trained_on": "real_paired_captures",
+        "calibration_mode": args.calibration_mode,
+        "calibration_seconds": args.calibration_seconds,
+        "seed": args.seed,
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
         "metrics": {
@@ -132,6 +194,10 @@ def main() -> None:
         },
     }, indent=2))
     print(f"[+] saved {args.model_dir / 'hr_model.json'}")
+    if args.calibration_mode == "per_session":
+        print(f"[!] calibration_mode=per_session - at inference time, also pass "
+              f"--calibration-mode per_session to first_capture_report.py "
+              f"(or use --calibration-subject / --auto-identify for stored calibrations)")
 
 
 if __name__ == "__main__":
