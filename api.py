@@ -3,6 +3,7 @@
 Endpoints:
     GET  /health                -> service liveness + model metadata
     POST /predict               -> synthetic IQ window in, HR/RR out
+    POST /predict/csi           -> per-packet CSI amplitudes (ESP32-CSI-Tool style) -> HR/RR
     POST /predict/demo          -> generate synthetic + predict (smoke test)
     POST /predict/capture       -> real ESP32-S3 capture text in, HR timeline out
     POST /identify              -> fingerprint-match a capture against stored calibrations
@@ -10,14 +11,17 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
 
@@ -31,6 +35,12 @@ from data_gen import generate_sample
 MODEL_DIR = Path("models")
 REAL_MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
 MODEL_VERSION = "xgb-1.0"
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+log = logging.getLogger("vifi.api")
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +77,13 @@ class DemoRequest(BaseModel):
     fs: float = 100.0
     snr_db: float = 20.0
     seed: Optional[int] = None
+
+
+class CSIRequest(BaseModel):
+    """Per-packet subcarrier amplitudes from ESP32 / Nexmon."""
+    fs: float = Field(..., gt=0, description="packet rate (Hz)")
+    csi_amp: List[List[float]] = Field(..., min_length=32)
+    subcarrier_mask: Optional[List[int]] = None
 
 
 class HealthResponse(BaseModel):
@@ -676,6 +693,21 @@ def _confidence_from_feature(feats: np.ndarray, idx: int) -> float:
     return float(np.clip(val, 0.0, 1.0))
 
 
+def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
+    """Collapse (T, n_sub) CSI amplitudes to a 1-D envelope."""
+    if csi_amp.ndim == 1:
+        return csi_amp.astype(np.float32)
+    if csi_amp.shape[1] == 1:
+        return csi_amp[:, 0].astype(np.float32)
+    x = csi_amp - np.mean(csi_amp, axis=0, keepdims=True)
+    variances = np.var(x, axis=0)
+    k = min(8, csi_amp.shape[1])
+    top = np.argsort(variances)[-k:]
+    picked = x[:, top]
+    std = np.std(picked, axis=0, keepdims=True) + 1e-9
+    return np.mean(picked / std, axis=1).astype(np.float32)
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -686,8 +718,24 @@ def create_app(model_dir: Path = MODEL_DIR,
     via 503 from the relevant endpoints, not as a boot failure.
     """
     app = FastAPI(title="ViFi", version=MODEL_VERSION)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     synthetic_bundle = SyntheticModelBundle(model_dir)
     real_bundle = RealModelBundle(real_model_dir)
+
+    @app.middleware("http")
+    async def _timing(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        ms = (time.perf_counter() - start) * 1000
+        log.info("%s %s -> %s (%.1f ms)",
+                 request.method, request.url.path, response.status_code, ms)
+        return response
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -767,6 +815,21 @@ def create_app(model_dir: Path = MODEL_DIR,
             snr_db=req.snr_db, seed=req.seed,
         )
         return _predict_iq(iq, req.fs)
+
+    @app.post("/predict/csi", response_model=PredictResponse)
+    def predict_csi(req: CSIRequest) -> PredictResponse:
+        try:
+            csi = np.asarray(req.csi_amp, dtype=np.float32)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"invalid csi_amp: {exc}")
+        if req.subcarrier_mask is not None and csi.ndim == 2:
+            mask = np.asarray(req.subcarrier_mask, dtype=bool)
+            if mask.shape[0] != csi.shape[1]:
+                raise HTTPException(status_code=400, detail="subcarrier_mask shape mismatch")
+            csi = csi[:, mask]
+            if csi.shape[1] == 0:
+                raise HTTPException(status_code=400, detail="mask excluded all subcarriers")
+        return _predict_iq(_csi_to_envelope(csi), req.fs)
 
     @app.post("/predict/capture", response_model=CaptureResponse)
     def predict_capture(req: CaptureRequest) -> CaptureResponse:
