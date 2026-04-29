@@ -168,5 +168,40 @@ def test_predict_demo_503_when_no_synthetic_model(tmp_path):
     assert r.status_code == 503
 
 
+# ---------------------------------------------------------------------------
+# Production hardening (CORS, /predict/csi)
+# Migrated from the now-deprecated test_output.py.
+# ---------------------------------------------------------------------------
+
+def test_cors_header(client):
+    r = client.options("/health", headers={
+        "origin": "http://example.com",
+        "access-control-request-method": "GET",
+    })
+    assert r.status_code in (200, 204)
+    assert "access-control-allow-origin" in {k.lower() for k in r.headers.keys()}
+
+
+def test_predict_csi_endpoint_recovers_vitals(client):
+    iq, meta = generate_sample(hr_bpm=78.0, rr_bpm=20.0, snr_db=25.0, seed=4)
+    n_sub = 32
+    gains = np.abs(np.random.default_rng(1).standard_normal(n_sub)) + 0.2
+    csi = (np.abs(iq)[:, None] * gains[None, :]).astype(float)
+    r = client.post("/predict/csi", json={"fs": meta.fs, "csi_amp": csi.tolist()})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert abs(body["hr_bpm"] - 78.0) <= 5.0
+    assert abs(body["rr_bpm"] - 20.0) <= 2.0
+
+
+def test_predict_csi_rejects_misshaped_mask(client):
+    r = client.post("/predict/csi", json={
+        "fs": 100.0,
+        "csi_amp": [[1.0, 2.0, 3.0]] * 32,
+        "subcarrier_mask": [True, False],   # length 2, csi_amp width 3
+    })
+    assert r.status_code == 400
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
