@@ -236,6 +236,21 @@ def run_report(
             print(f"      WARNING: --emit-intervals requested but q_low/q_high models "
                   f"not in {models_dir}; running without intervals")
 
+    # Optional out-of-distribution detector
+    mahalanobis_detector = None
+    mahalanobis_path = models_dir / "mahalanobis.json"
+    if mahalanobis_path.exists():
+        from quality import MahalanobisDetector  # noqa: E402
+        mahalanobis_detector = MahalanobisDetector.load(mahalanobis_path)
+        print(f"      loaded Mahalanobis OOD detector "
+              f"(threshold={mahalanobis_detector.threshold:.2f})")
+
+    # Audit log for postmarket surveillance
+    from audit import AuditLogWriter, hash_capture  # noqa: E402
+    capture_text = capture_path.read_text(encoding="utf-8", errors="ignore")
+    audit_writer = AuditLogWriter()
+    capture_hash = hash_capture(capture_text)
+
     rows = []
     t0, t_end = csi_unix_ts[0], csi_unix_ts[-1]
     t = t0
@@ -243,10 +258,18 @@ def run_report(
           f" stride {stride_s:.0f}s ...")
 
     per_session_cal_pool: list[np.ndarray] = []
+    per_session_amps_pool: list[np.ndarray] = []
     per_session_cal_built: bool = False
     PER_SESSION_CAL_DURATION = 30.0
 
     n_suppressed = 0
+    n_suppressed_by_reason: dict[str, int] = {}
+
+    # Rolling fingerprint tracker (initialized lazily once we have a baseline)
+    from calibration import (  # noqa: E402
+        RollingFingerprintTracker, compute_fingerprint,
+    )
+    tracker = None  # type: ignore[var-annotated]
 
     while t + window_s <= t_end:
         mask = (csi_unix_ts >= t) & (csi_unix_ts < t + window_s)
@@ -277,6 +300,7 @@ def run_report(
                                      compute_calibration_vector)
             if (t - t0) < PER_SESSION_CAL_DURATION:
                 per_session_cal_pool.append(feats[0])
+                per_session_amps_pool.append(win_amps)
                 t += stride_s
                 continue
             elif not per_session_cal_built:
@@ -288,25 +312,62 @@ def run_report(
                     cal_vec = compute_calibration_vector(np.asarray(per_session_cal_pool))
                     print(f"      per-session calibration built from "
                           f"{len(per_session_cal_pool)} baseline windows")
+                if per_session_amps_pool and tracker is None:
+                    baseline_amps = np.vstack(per_session_amps_pool)
+                    tracker = RollingFingerprintTracker(
+                        compute_fingerprint(baseline_amps)
+                    )
+                    print(f"      rolling fingerprint tracker initialized")
                 per_session_cal_built = True
 
         if cal_vec is not None:
             from calibration import apply_calibration  # noqa: E402
             feats = apply_calibration(feats, cal_vec)
+
+        # Rolling fingerprint check (multi-subject detection)
+        sim = None
+        tracker_state = None
+        if tracker is not None:
+            tracker_state, sim = tracker.update(win_amps)
+
+        # Out-of-distribution check
+        mahalanobis_score = None
+        is_ood = False
+        if mahalanobis_detector is not None:
+            mahalanobis_score = float(mahalanobis_detector.score(feats[0]))
+            is_ood = mahalanobis_score > mahalanobis_detector.threshold
+
         hr_pred = float(hr_model.predict(feats)[0])
 
         # Optional confidence interval
         hr_low = None
         hr_high = None
         interval_width = None
-        suppressed = False
+        wide_interval = False
         if q_low_model is not None and q_high_model is not None:
             hr_low = float(q_low_model.predict(feats)[0])
             hr_high = float(q_high_model.predict(feats)[0])
             interval_width = hr_high - hr_low
-            if interval_width > max_interval_bpm:
-                suppressed = True
-                n_suppressed += 1
+            wide_interval = interval_width > max_interval_bpm
+
+        # Decide suppression reason: multi_subject > ood > wide_interval
+        suppressed = False
+        suppressed_reason = None
+        if tracker_state == "multi":
+            suppressed = True
+            suppressed_reason = "multi_subject"
+        elif is_ood:
+            suppressed = True
+            suppressed_reason = "ood"
+        elif wide_interval:
+            suppressed = True
+            suppressed_reason = "wide_interval"
+
+        if suppressed:
+            n_suppressed += 1
+            n_suppressed_by_reason[suppressed_reason] = (
+                n_suppressed_by_reason.get(suppressed_reason, 0) + 1
+            )
 
         hr_true = interpolate_hr(hr_unix, hr_bpm, t + window_s / 2)
         err = hr_pred - hr_true
@@ -316,14 +377,42 @@ def run_report(
             "hr_true": round(hr_true, 1),
             "hr_pred": round(hr_pred, 1),
             "error_bpm": round(err, 2),
+            "suppressed": suppressed,
+            "suppressed_reason": suppressed_reason,
+            "fingerprint_similarity": round(sim, 4) if sim is not None else None,
+            "mahalanobis": round(mahalanobis_score, 4)
+            if mahalanobis_score is not None else None,
         }
         if hr_low is not None:
             row["hr_low"] = round(hr_low, 1)
             row["hr_high"] = round(hr_high, 1)
             row["interval_width"] = round(interval_width, 1)
-            row["suppressed"] = suppressed
         rows.append(row)
+
+        # Audit log entry per window
+        audit_writer.write({
+            "window_start_s": round(t - t0, 2),
+            "hr_pred": round(hr_pred, 2),
+            "hr_low": round(hr_low, 2) if hr_low is not None else None,
+            "hr_high": round(hr_high, 2) if hr_high is not None else None,
+            "interval_width": round(interval_width, 2)
+            if interval_width is not None else None,
+            "suppressed": suppressed,
+            "suppressed_reason": suppressed_reason,
+            "fingerprint_similarity": round(sim, 4) if sim is not None else None,
+            "mahalanobis": round(mahalanobis_score, 4)
+            if mahalanobis_score is not None else None,
+            "calibration_id": cal_label,
+            "feature_set_version": FEATURE_SET_VERSION,
+            "pipeline_version": "v2",
+            "capture_hash": capture_hash,
+        })
         t += stride_s
+
+    audit_path = audit_writer.current_path
+    audit_writer.close()
+    if audit_path is not None:
+        print(f"      audit log: {audit_path}")
 
     if not rows:
         print("[!] no windows scored. Check --start-offset and timelines.")
@@ -341,7 +430,9 @@ def run_report(
     print("[4/4] results")
     print(f"      windows scored:     {len(rows)}")
     if n_suppressed > 0:
-        print(f"      suppressed (interval>{max_interval_bpm}): {n_suppressed}")
+        breakdown = ", ".join(f"{k}={v}" for k, v in
+                              sorted(n_suppressed_by_reason.items()))
+        print(f"      suppressed:         {n_suppressed} ({breakdown})")
     print(f"      HR MAE:             {mae:.2f} bpm  (over {len(scored_rows)} accepted windows)")
     print(f"      HR bias:            {bias:+.2f} bpm")
     print(f"      within +-5 bpm:     {within_5*100:.1f}%")
@@ -368,12 +459,15 @@ def run_report(
             "hr_log": str(hr_log_path),
             "window_s": window_s,
             "stride_s": stride_s,
+            "pipeline_version": "v2",
             "summary": {
                 "n_windows": len(rows),
                 "n_suppressed": n_suppressed,
+                "n_suppressed_by_reason": n_suppressed_by_reason,
                 "hr_mae_bpm": mae,
                 "hr_bias_bpm": bias,
                 "within_5_bpm_frac": within_5,
+                "audit_log": str(audit_path) if audit_path is not None else None,
             },
             "windows": rows,
         }
