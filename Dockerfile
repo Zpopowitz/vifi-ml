@@ -35,10 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
-COPY data_gen.py preprocess.py train.py ./
-COPY output/api.py ./api.py
-COPY output/esp32_csi_collector.py ./esp32_csi_collector.py
-COPY output/dashboard.py ./dashboard.py
+COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
+COPY api.py dashboard.py ./
+COPY tools/ ./tools/
 
 USER vifi
 
