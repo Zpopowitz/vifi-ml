@@ -218,6 +218,26 @@ with tab_real:
             head_cols[3].metric("Packet rate",
                                  f"{res['packet_rate_hz']:.1f} Hz")
 
+            # Suppression breakdown by reason (Class II safety telemetry)
+            by_reason = res.get("n_suppressed_by_reason") or {}
+            if by_reason:
+                bd_cols = st.columns(len(by_reason))
+                reason_labels = {
+                    "wide_interval": "Wide CI",
+                    "multi_subject": "Multi-subject",
+                    "ood": "Out of distribution",
+                    "low_quality": "Low quality",
+                }
+                for i, (reason, count) in enumerate(sorted(by_reason.items())):
+                    bd_cols[i].metric(
+                        reason_labels.get(reason, reason),
+                        count,
+                        delta=None,
+                    )
+
+            if res.get("audit_log_path"):
+                st.caption(f"Audit log: `{res['audit_log_path']}`")
+
             if res.get("calibration_applied"):
                 st.success(f"Calibration: {res['calibration_applied']}")
 
@@ -296,6 +316,32 @@ with tab_real:
                     st.caption(
                         f"Windows with interval > {max_interval:.0f} bpm "
                         f"are suppressed in MAE."
+                    )
+
+                # Safety telemetry: rolling fingerprint similarity vs time
+                if "fingerprint_similarity" in df.columns and \
+                        df["fingerprint_similarity"].notna().any():
+                    st.subheader("Multi-subject detector — fingerprint similarity")
+                    sim_df = df[["window_start_s", "fingerprint_similarity"]].dropna()
+                    sim_df = sim_df.set_index("window_start_s")
+                    st.line_chart(sim_df)
+                    st.caption(
+                        "Cosine similarity of each window's RF fingerprint "
+                        "to the calibrated baseline. Drops below 0.55 imply "
+                        "a second subject in the field of view; sustained "
+                        "low values suppress predictions."
+                    )
+
+                # Safety telemetry: Mahalanobis distance vs time
+                if "mahalanobis" in df.columns and df["mahalanobis"].notna().any():
+                    st.subheader("Out-of-distribution detector — Mahalanobis")
+                    m_df = df[["window_start_s", "mahalanobis"]].dropna()
+                    m_df = m_df.set_index("window_start_s")
+                    st.line_chart(m_df)
+                    st.caption(
+                        "Squared Mahalanobis distance from training "
+                        "distribution. Windows above the chi-square 99% "
+                        "threshold are flagged as OOD and suppressed."
                     )
 
                 with st.expander("Per-window table"):
