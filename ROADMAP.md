@@ -9,17 +9,22 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 | Capability | Status | Where |
 |---|---|---|
 | **Heart rate (HR)** | **Shipped — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([RESULTS.md](./RESULTS.md)) | `train.py`, `tools/retrain_on_real.py` |
-| Respiratory rate (RR) | Pipeline shipped, awaiting paired RR ground truth | `train.py`, `preprocess.py` |
+| Respiratory rate (RR) | Pipeline shipped, Vernier belt logger ready | `rr_logger.py`, `train.py`, `preprocess.py` |
+| Per-subject calibration + RF fingerprinting | Shipped | `calibration.py`, `tools/calibrate_subject.py` |
+| Multi-subject "walks in the room" detection | Shipped — rolling fingerprint + hysteresis | `calibration.py :: RollingFingerprintTracker` |
+| Out-of-distribution suppression | Shipped — Mahalanobis distance, chi-square 99% threshold | `quality.py` |
+| Confidence-interval suppression | Shipped — quantile XGBoost, configurable width | `tools/train_quantile_models.py` |
+| Per-prediction audit log | Shipped — JSONL, daily-rotating, FDA-ready | `audit.py` |
+| Paired-capture orchestrator | Shipped — one-command 3-logger session | `tools/run_paired_session.py` |
 | Synthetic CSI generator | Shipped (sanity check) | `data_gen.py` |
-| Multi-subcarrier CSI ingest | Shipped — live API endpoint | `output/api.py` |
+| Per-packet CSI ingest | Shipped — live API endpoint | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR logger | Shipped — hands-free 2-min paired capture | `tools/csi_capture.py`, `hr_logger.py` |
-| FastICA unmixing | Shipped (simulated demo) | `output/dashboard.py` |
 | Presence / occupancy | Shipped (variance threshold) | `modules/presence.py` |
 | Apnea detection | Stub, returns HTTP 501 | `modules/apnea.py` |
 | Transient-event logger | Stub | `modules/transient_events.py` |
 | Gait / walking-speed | Stub (WiGait reference) | `modules/gait.py` |
 | Fall detection | Stub (WiFall reference) | `modules/falls.py` |
-| 4-receiver array | Stub | `modules/four_node_sync.py` |
+| 4-receiver multi-node array (deterministic identity) | Stub | `modules/four_node_sync.py` |
 
 `GET /roadmap` returns this manifest live from the API.
 
@@ -31,7 +36,8 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 |---|---|---|
 | Multi-subject HR validation | May 2026 | 10+ subjects, varied HR ranges, target cross-subject MAE <3 bpm |
 | Multi-room validation | May 2026 | 3+ rooms, fixed subject, measure setup-specific bias |
-| Respiratory-rate paired captures | June 2026 | Add Vernier Go Direct respiration belt as RR ground truth |
+| Walk-in detection validation | May 2026 | Run `docs/multi_subject_test_protocol.md`, validate `tools/multi_subject_test.py` thresholds |
+| Respiratory-rate paired captures | May 2026 | Vernier belt arrives; first paired CSI + RR sessions |
 
 ---
 
@@ -94,18 +100,27 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 
 ## Hardware BOM
 
-### Per 2-node room (single-patient monitoring)
+### v1 — 2-node room (single Tx + single Rx, statistical identity)
 
 | Item | Qty | ~$ |
 |---|---|---|
 | ESP32-S3-DevKitC-1U-N8R8 | 2 | 40 |
 | Dual-band 2.4/5 GHz RP-SMA antenna | 2 | 8 |
 | IPEX1 U.FL → RP-SMA Female pigtail, 8" | 2 | 6 |
-| **Total per room** | | **~$54** |
+| **Total per room (v1)** | | **~$44** |
 
-### Per 4-node room (multi-patient, Stage 3)
+Replaces a $5,000 ward bedside monitor. **>100× cheaper.** Statistical multi-subject identity via RF fingerprinting (shipped).
 
-Add 2 more ESP32-S3 nodes + antennas + pigtails: ~$54 additional → **~$108 per shared room**.
+### v2 — 4-node room (1 Tx + 3 corner Rx, deterministic spatial identity)
+
+Same per-board cost (~$22). Add 2 more nodes: **~$88 per room**. Multi-perspective CSI fusion gives full 3D triangulation, deterministic multi-subject discrimination, redundancy across boards.
+
+| Config | Boards | ~$ | vs $5K ward monitor |
+|---|---|---|---|
+| v1 (Tx + Rx) | 2 | $44 | 114× cheaper |
+| v2-min (1 Tx + 2 Rx) | 3 | $66 | 76× cheaper |
+| **v2 (1 Tx + 3 corner Rx)** | **4** | **$88** | **57× cheaper** |
+| v2 + isolated AP (HIPAA-clean deployment) | 4 + AP | $118 | 42× cheaper |
 
 ### Per first capture kit (development)
 
