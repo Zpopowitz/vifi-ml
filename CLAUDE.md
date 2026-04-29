@@ -23,6 +23,7 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - Real captures are gitignored (`data/`). Models are gitignored (`models/`). Never commit either.
 - Don't add backwards-compat shims for renamed/removed code; just change call sites.
 - Don't write speculative comments. Code already says WHAT — only add a comment for non-obvious WHY.
+- Branches: trunk-based off `main`. Prefix new branches with `feat/`, `fix/`, `chore/`, `docs/`, or `exp/` (see README "Contributing").
 
 ## Out of scope (don't suggest)
 - SpO2, body temperature, BP, ECG waveform — wrong physics for WiFi CSI.

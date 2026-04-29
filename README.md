@@ -243,6 +243,22 @@ See [ROADMAP.md](./ROADMAP.md) for sequenced milestones.
 
 ---
 
+## Contributing
+
+Trunk-based: `main` is always deployable. Work happens on short-lived branches off `main`, prefixed by intent:
+
+| Prefix | Use for |
+|---|---|
+| `feat/` | New functionality (e.g. `feat/phase-features`) |
+| `fix/`  | Bug fixes (e.g. `fix/oot-mahalanobis-nan`) |
+| `chore/`| Refactors, deps, tooling, repo hygiene |
+| `docs/` | Documentation only |
+| `exp/`  | Experiments / spikes (may be discarded) |
+
+Merge to `main` via squash, delete the branch. A "hotfix" is just a `fix/` branch off `main` — no separate flow needed at this stage.
+
+---
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
