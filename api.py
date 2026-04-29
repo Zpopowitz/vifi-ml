@@ -4,11 +4,6 @@ This file is in a transient half-uploaded state. Do not run uvicorn against
 this revision. The next commit replaces this stub with the full upgraded
 FastAPI service (multi-subject detection, OOD scoring, audit logging).
 """
-<<<<<<< HEAD
-# Intentionally minimal so this commit lands quickly. The next commit
-# overwrites this file with the real implementation.
-app = None
-=======
 from __future__ import annotations
 
 import json
@@ -789,4 +784,3 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
->>>>>>> 01c26d5 (api: full implementation with multi-subject + OOD + audit log)
