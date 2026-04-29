@@ -120,11 +120,11 @@ The signal-processing approach is from peer-reviewed academic work (PhaseBeat, F
 
 ---
 
-## Hardware BOM (~$154 first kit)
+## Hardware BOM (~$144 first kit)
 
 | Item | Qty | ~$ |
 |---|---|---|
-| ESP32-S3-DevKitC-1U-N8R8 (external-antenna variant) | 2 | 40 |
+| ESP32-S3-DevKitC-1U-N8R8 (external-antenna variant) | 2 | 30 |
 | Dual-band 2.4/5 GHz RP-SMA antenna | 2 | 8 |
 | IPEX1 U.FL → RP-SMA Female pigtail, 8" | 2 | 6 |
 | USB-C data cable | 2 | 10 |
