@@ -9,7 +9,7 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 | Capability | Status | Where |
 |---|---|---|
 | **Heart rate (HR)** | **Shipped — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([RESULTS.md](./RESULTS.md)) | `train.py`, `tools/retrain_on_real.py` |
-| Respiratory rate (RR) | Pipeline shipped, Vernier belt logger ready | `rr_logger.py`, `train.py`, `preprocess.py` |
+| Respiratory rate (RR) | Pipeline + synthetic regressor only; awaiting first Vernier paired captures | `rr_logger.py`, `train.py` (synthetic), `preprocess.py` |
 | Per-subject calibration + RF fingerprinting | Shipped | `calibration.py`, `tools/calibrate_subject.py` |
 | Multi-subject "walks in the room" detection | Shipped — rolling fingerprint + hysteresis | `calibration.py :: RollingFingerprintTracker` |
 | Out-of-distribution suppression | Shipped — Mahalanobis distance, chi-square 99% threshold | `quality.py` |

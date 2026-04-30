@@ -895,7 +895,11 @@ def create_app(model_dir: Path = MODEL_DIR,
 
     @app.get("/roadmap")
     def roadmap():
-        return {"shipped": ["hr", "rr"], "planned": _ROADMAP}
+        return {
+            "shipped": ["hr"],
+            "synthetic_only": ["rr"],
+            "planned": _ROADMAP,
+        }
 
     return app
 

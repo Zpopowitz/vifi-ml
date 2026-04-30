@@ -34,7 +34,9 @@ def test_roadmap_listing(client):
     r = client.get("/roadmap")
     assert r.status_code == 200
     body = r.json()
-    assert body["shipped"] == ["hr", "rr"]
+    # HR is real-hardware validated; RR is synthetic-only until Vernier captures land.
+    assert body["shipped"] == ["hr"]
+    assert body["synthetic_only"] == ["rr"]
     planned_caps = set(body["planned"].keys())
     assert {"apnea", "gait", "falls",
             "transients", "multi_patient"} <= planned_caps
