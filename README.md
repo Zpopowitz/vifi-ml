@@ -145,7 +145,7 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | 80% prediction-interval suppression | Shipped — quantile XGBoost, configurable width | `tools/train_quantile_models.py` |
 | Per-prediction audit log | Shipped — JSONL, daily-rotating, FDA-grade | `audit.py` |
 | Paired-capture orchestrator | Shipped — one command, three loggers, validates session.json | `tools/run_paired_session.py` |
-| Respiratory rate (RR) | Pipeline shipped; Vernier belt logger ready | `rr_logger.py`, `train.py` |
+| Respiratory rate (RR) | Pipeline + synthetic regressor only; awaiting first Vernier paired captures | `rr_logger.py`, `train.py` (synthetic) |
 | Presence / occupancy | Shipped, variance-threshold detection | `modules/presence.py` |
 | Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
