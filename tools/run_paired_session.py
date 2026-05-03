@@ -275,6 +275,39 @@ def run_session(args: argparse.Namespace) -> int:
     print(f"[orchestrator] combined log:     {combined_log_path}")
     print()
     print(f"validate with:  python tools/validate_session_metadata.py")
+
+    # Auto-run the report (calibration + monitoring metrics) if HR ground truth
+    # exists and the user didn't disable it.
+    if args.run_report and not args.no_h10 and not interrupted["flag"]:
+        if capture_path.exists() and capture_path.stat().st_size > 0 \
+                and hr_log_path.exists() and hr_log_path.stat().st_size > 0:
+            print()
+            print("=" * 60)
+            print(f"[orchestrator] running auto-report with "
+                  f"--calibration-mode={args.calibration_mode}")
+            print("=" * 60)
+            try:
+                from tools.first_capture_report import run_report  # noqa: E402
+                report_json = session_dir / "report.json"
+                run_report(
+                    capture_path=capture_path,
+                    hr_log_path=hr_log_path,
+                    start_offset_s=0.0,
+                    window_s=args.window,
+                    stride_s=args.stride,
+                    fs_resample=args.fs,
+                    json_out=report_json,
+                    capture_duration_s=float(args.duration),
+                    calibration_mode=args.calibration_mode,
+                )
+                print(f"[orchestrator] report saved to {report_json}")
+            except Exception as exc:
+                print(f"[orchestrator] auto-report failed: {exc}")
+                print(f"[orchestrator] you can re-run manually with:")
+                print(f"  python tools/first_capture_report.py "
+                      f"--capture {capture_path} --hr-log {hr_log_path} "
+                      f"--calibration-mode {args.calibration_mode}")
+
     return 0 if not interrupted["flag"] else 130
 
 
@@ -313,6 +346,24 @@ def main() -> None:
                        help="skip the Polar H10 logger")
     g_csi.add_argument("--no-rr", action="store_true",
                        help="skip the Vernier respiration belt logger")
+
+    g_report = p.add_argument_group("auto-report after capture")
+    g_report.add_argument("--run-report", dest="run_report", action="store_true",
+                          default=True,
+                          help="auto-run first_capture_report after capture (default)")
+    g_report.add_argument("--no-report", dest="run_report", action="store_false",
+                          help="skip the auto-report step")
+    g_report.add_argument("--calibration-mode", choices=["none", "per_session"],
+                          default="per_session",
+                          help="calibration mode for the auto-report "
+                               "(default 'per_session': uses first 30s of capture "
+                               "as bias offset baseline)")
+    g_report.add_argument("--window", type=float, default=10.0,
+                          help="report window size in seconds (default 10)")
+    g_report.add_argument("--stride", type=float, default=5.0,
+                          help="report window stride in seconds (default 5)")
+    g_report.add_argument("--fs", type=float, default=100.0,
+                          help="resample rate for feature extraction (default 100)")
 
     p.add_argument("--dry-run", action="store_true",
                    help="print the plan and exit without spawning anything")
