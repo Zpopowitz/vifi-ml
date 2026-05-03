@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
@@ -900,6 +900,49 @@ def create_app(model_dir: Path = MODEL_DIR,
             "synthetic_only": ["rr"],
             "planned": _ROADMAP,
         }
+
+    # ------------------------------------------------------------------
+    # /api/v1/ namespace
+    # ------------------------------------------------------------------
+    # Versioned aliases for every existing endpoint so future v2 (e.g. the
+    # 4-receiver array endpoints) can coexist without breaking v1 callers.
+    # Same handler functions, additional URL paths.
+
+    from fastapi.routing import APIRoute  # noqa: E402
+
+    _existing_paths = [
+        (route.path, route.endpoint, list(route.methods or []), route.response_model)
+        for route in list(app.routes)
+        if isinstance(route, APIRoute)
+        and not route.path.startswith("/api/")
+        and route.path not in ("/openapi.json", "/docs", "/redoc")
+    ]
+    for path, endpoint, methods, response_model in _existing_paths:
+        app.add_api_route(
+            f"/api/v1{path}",
+            endpoint,
+            methods=methods,
+            response_model=response_model,
+            name=f"v1_{endpoint.__name__}",
+        )
+
+    # ------------------------------------------------------------------
+    # /api/v1/stream -- placeholder for live HR/RR streaming.
+    # ------------------------------------------------------------------
+    # Reserves the URL for the future live dashboard. Currently echoes a
+    # not-implemented message so clients can detect and handle gracefully.
+    @app.websocket("/api/v1/stream")
+    async def stream(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_json({
+            "status": "not_implemented",
+            "message": (
+                "Live streaming endpoint reserved for v2. "
+                "Use /api/v1/predict/csi for per-window predictions."
+            ),
+            "model_version": MODEL_VERSION,
+        })
+        await websocket.close()
 
     return app
 
