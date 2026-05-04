@@ -114,7 +114,9 @@ def install_prometheus_endpoint(app) -> bool:
         return False
 
     from fastapi import Request
-    from fastapi.responses import Response  # noqa: F401  (used as string annotation below)
+    from fastapi.responses import (
+        Response,  # noqa: F401  (used as string annotation below)
+    )
 
     registry = CollectorRegistry()
     request_count = Counter(
