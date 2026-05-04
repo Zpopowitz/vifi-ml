@@ -30,7 +30,16 @@
 x-app-base: &app-base
   build: .
   environment: &app-env
-    VIFI_BUS_URL: ${VIFI_BUS_URL:-redis://redis:6379/0}
+    # In-network bus URL. Containers reach Redis at the service name
+    # `redis` (NOT localhost) -- localhost inside a container is the
+    # container itself. The host loggers, which run outside compose,
+    # use redis://localhost:6379/0 with their own VIFI_BUS_URL export.
+    # Do NOT substitute from $VIFI_BUS_URL here -- that variable is
+    # for the host's shell, and leaking it into the container breaks
+    # inter-service connectivity.
+    # For production with password, set VIFI_BUS_URL_INTERNAL in .env
+    # to redis://:<password>@redis:6379/0.
+    VIFI_BUS_URL: ${VIFI_BUS_URL_INTERNAL:-redis://redis:6379/0}
     VIFI_PATIENT_ID: ${VIFI_PATIENT_ID:-default}
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
     # Security (passed through from .env file or shell)

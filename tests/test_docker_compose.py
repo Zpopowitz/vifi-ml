@@ -69,6 +69,23 @@ def test_api_exposes_8000(compose):
     )
 
 
+def test_compose_does_not_inherit_host_vifi_bus_url():
+    """The host's VIFI_BUS_URL (used by hardware loggers, set to
+    redis://localhost:6379/0) must NOT be substituted into compose
+    services -- inside a container, `localhost` is the container
+    itself, not the Redis service. Use VIFI_BUS_URL_INTERNAL instead
+    when overriding (e.g. to add a password)."""
+    raw = (ROOT / "docker-compose.yml").read_text()
+    # Look for the dangerous pattern. The literal env var assignment
+    # (VIFI_BUS_URL: <something>) is fine; it's interpolation from
+    # the *host*'s VIFI_BUS_URL that breaks inter-container traffic.
+    assert "${VIFI_BUS_URL:" not in raw and "${VIFI_BUS_URL}" not in raw, (
+        "docker-compose.yml interpolates ${VIFI_BUS_URL} from the host "
+        "shell into containers. Use ${VIFI_BUS_URL_INTERNAL:-...} "
+        "(or hardcode redis://redis:6379/0) instead."
+    )
+
+
 def test_app_services_share_one_bus_url(compose):
     """All app services must point at the same Redis instance."""
     services = compose["services"]
