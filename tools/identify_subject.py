@@ -30,8 +30,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from calibration import (  # noqa: E402
-    DEFAULT_MATCH_THRESHOLD, DEFAULT_MULTI_SUBJECT_THRESHOLD,
-    compute_fingerprint, identify, load_all_calibrations,
+    DEFAULT_MATCH_THRESHOLD,
+    DEFAULT_MULTI_SUBJECT_THRESHOLD,
+    compute_fingerprint,
+    identify,
+    load_all_calibrations,
 )
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 
@@ -93,7 +96,7 @@ def main() -> None:
         return
 
     if result.matched:
-        print(f"RESULT: MATCH found")
+        print("RESULT: MATCH found")
         print(f"  subject_id:  {result.subject_id}")
         print(f"  room_id:     {result.room_id}")
         print(f"  posture:     {result.posture}")
@@ -103,7 +106,7 @@ def main() -> None:
         print(f"RESULT: NO MATCH (best similarity {result.confidence:.3f})")
         print(f"  notes: {result.notes}")
         if result.multi_subject_suspected:
-            print(f"  WARNING: multi-subject suspected - verify exactly one patient is in the field of view")
+            print("  WARNING: multi-subject suspected - verify exactly one patient is in the field of view")
 
     print()
     print("Top candidates (by similarity):")

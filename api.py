@@ -10,6 +10,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -19,7 +20,6 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-import asyncio
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,11 +28,23 @@ from security import (
     AuthMiddleware,
     RateLimitMiddleware,
     RequestIdMiddleware,
+    SecurityHeadersMiddleware,
     authorize_websocket,
     get_cors_origins,
     redacted_exception_handler,
     validate_config_or_raise,
 )
+
+try:
+    from __version__ import __version__ as VIFI_VERSION
+except ImportError:
+    VIFI_VERSION = "unknown"
+
+from observability import configure_logging, install_prometheus_endpoint
+
+# Configure logging before any module-level loggers are used. Honors
+# VIFI_LOG_FORMAT=json + VIFI_LOG_LEVEL.
+configure_logging()
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
 
@@ -40,8 +52,8 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import extract_features, FEATURE_SET_VERSION
 from data_gen import generate_sample
+from preprocess import FEATURE_SET_VERSION, extract_features
 
 MODEL_DIR = Path("models")
 REAL_MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
@@ -60,8 +72,10 @@ log = logging.getLogger("vifi.api")
 
 class IQRequest(BaseModel):
     fs: float = Field(100.0, gt=0, description="Sample rate in Hz")
-    iq_real: List[float] = Field(..., min_length=32)
-    iq_imag: List[float] = Field(..., min_length=32)
+    # 64 = MIN_SAMPLES_PER_GRID; below this Hann + zero-padded FFT
+    # produce numerically unstable spectra (see preprocess.py).
+    iq_real: List[float] = Field(..., min_length=64)
+    iq_imag: List[float] = Field(..., min_length=64)
 
     @field_validator("iq_imag")
     @classmethod
@@ -92,9 +106,21 @@ class DemoRequest(BaseModel):
 
 class CSIRequest(BaseModel):
     """Per-packet subcarrier amplitudes from ESP32 / Nexmon."""
-    fs: float = Field(..., gt=0, description="packet rate (Hz)")
-    csi_amp: List[List[float]] = Field(..., min_length=32)
+    fs: float = Field(..., gt=0, le=1000.0,
+                      description="packet rate (Hz); capped at 1 kHz")
+    # I044: bound the size + shape of the CSI matrix to close a memory-
+    # exhaustion DoS vector.
+    csi_amp: List[List[float]] = Field(..., min_length=64, max_length=120000)
     subcarrier_mask: Optional[List[int]] = None
+
+    @field_validator("csi_amp")
+    @classmethod
+    def _bounded_subcarriers(cls, v):
+        if v and (len(v[0]) < 1 or len(v[0]) > 256):
+            raise ValueError(
+                f"csi_amp inner length {len(v[0])} out of range [1, 256]"
+            )
+        return v
 
 
 class HealthResponse(BaseModel):
@@ -126,7 +152,11 @@ class CalibrationOptions(BaseModel):
 
 class CaptureRequest(BaseModel):
     """Raw ESP32-S3 CSI capture text + slicing config."""
-    capture_text: str = Field(..., description="contents of capture.txt")
+    # 50 MB cap (I043) — about 1 hour at 100 Hz × 192 subcarriers as
+    # plain text. Long enough for any real session, short enough that
+    # a malicious POST can't OOM the API.
+    capture_text: str = Field(..., max_length=50_000_000,
+                              description="contents of capture.txt (max 50 MB)")
     packet_rate_hz: Optional[float] = Field(
         None,
         description="actual measured packet rate; falls back to 100 Hz if absent",
@@ -414,7 +444,10 @@ def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
         return None, "per_session (built at inference time)", None
 
     from calibration import (  # noqa: E402
-        compute_fingerprint, identify, load_all_calibrations, load_subject_file,
+        compute_fingerprint,
+        identify,
+        load_all_calibrations,
+        load_subject_file,
     )
 
     if opts.auto_identify:
@@ -480,11 +513,13 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
 
     use_intervals = req.emit_intervals and bundle.has_quantiles()
 
+    from audit import AuditLogWriter, hash_capture  # noqa: E402
     from calibration import (  # noqa: E402
-        RollingFingerprintTracker, apply_calibration, compute_calibration_vector,
+        RollingFingerprintTracker,
+        apply_calibration,
+        compute_calibration_vector,
         compute_fingerprint,
     )
-    from audit import AuditLogWriter, hash_capture  # noqa: E402
 
     PER_SESSION_S = 30.0
     per_session_pool: list[np.ndarray] = []
@@ -673,7 +708,9 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
 
 def _identify_only(bundle: RealModelBundle, req: IdentifyRequest) -> SubjectMatch:
     from calibration import (  # noqa: E402
-        compute_fingerprint, identify, load_all_calibrations,
+        compute_fingerprint,
+        identify,
+        load_all_calibrations,
     )
     amps, csi_ts = _parse_capture_text(req.capture_text, packet_rate_hz=None)
     t0 = csi_ts[0]
@@ -731,10 +768,26 @@ def create_app(model_dir: Path = MODEL_DIR,
     sec_status = validate_config_or_raise()
     log.info("security config: %s", sec_status)
 
-    app = FastAPI(title="ViFi", version=MODEL_VERSION)
-    # Order matters: outermost added LAST. Request flow into the app:
-    #   request id  ->  rate limit  ->  auth  ->  CORS  ->  app
-    # which means responses come out in reverse and CORS sees auth'd traffic.
+    # Validate DSP constants at boot — bands inside Nyquist, top-K
+    # within range, etc. Misconfigured envs fail fast.
+    from config import validate_at_boot as _validate_dsp  # noqa: PLC0415
+    _validate_dsp()
+
+    app = FastAPI(title="ViFi", version=VIFI_VERSION,
+                  # Hide /openapi.json + /docs unless explicitly requested
+                  # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
+                  docs_url="/docs" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
+                  redoc_url="/redoc" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
+                  openapi_url="/openapi.json" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None)
+    # Middleware order: outermost added LAST.
+    # Request flow into app:  request_id -> security_headers -> rate_limit
+    #                         -> auth -> CORS -> gzip -> app
+    # Comment + tested via test_middleware_order.
+    from fastapi.middleware.gzip import GZipMiddleware  # noqa: PLC0415
+    app.add_middleware(GZipMiddleware, minimum_size=1024)  # I046
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_cors_origins(),
@@ -745,6 +798,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     )
     app.add_middleware(AuthMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)  # I056
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(Exception, redacted_exception_handler)
 
@@ -759,6 +813,25 @@ def create_app(model_dir: Path = MODEL_DIR,
         log.info("%s %s -> %s (%.1f ms)",
                  request.method, request.url.path, response.status_code, ms)
         return response
+
+    @app.get("/readyz")
+    def readyz():
+        """Readiness probe (I133): "models loaded + bus reachable"
+        rather than "process is up." Different from /health so an
+        orchestrator can know whether to send traffic vs. wait.
+
+        Currently checks: synthetic OR real model is loaded. Bus
+        check is best-effort (doesn't fail readiness if Redis is
+        slow because the bus path is async-tolerant).
+        """
+        ready = synthetic_bundle.is_loaded or real_bundle.is_loaded
+        return JSONResponse(
+            {"ready": ready,
+             "synthetic_loaded": synthetic_bundle.is_loaded,
+             "real_loaded": real_bundle.is_loaded,
+             "code_version": VIFI_VERSION},
+            status_code=200 if ready else 503,
+        )
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -1031,8 +1104,32 @@ def create_app(model_dir: Path = MODEL_DIR,
             except Exception:
                 pass
 
+    # Optional Prometheus /metrics. Off by default (I132).
+    if install_prometheus_endpoint(app):
+        log.info("Prometheus /metrics enabled")
+
+    # Warm-up: load models on startup if available so first user doesn't
+    # pay the cold-load latency (I175).
+    @app.on_event("startup")
+    async def _warmup():  # noqa: ANN202
+        if synthetic_bundle.is_available():
+            try:
+                synthetic_bundle.load()
+                log.info("warm: synthetic models loaded")
+            except Exception as exc:
+                log.info("warm: synthetic load skipped: %s", exc)
+        if (real_model_dir / "hr_model.json").exists():
+            try:
+                real_bundle.load()
+                log.info("warm: real models loaded")
+            except Exception as exc:
+                log.info("warm: real load skipped: %s", exc)
+
     return app
 
+
+# Imports used by /readyz handler at module scope.
+from fastapi.responses import JSONResponse  # noqa: E402
 
 # Module-level app for `uvicorn api:app`. Always succeeds now; endpoints
 # return 503 if the relevant model bundle is missing.
@@ -1041,4 +1138,10 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
+    # 0.0.0.0 is intentional: this entrypoint runs inside the api
+    # container, where 127.0.0.1 would be unreachable from compose
+    # peers + outside clients. Authentication, CORS, rate limiting,
+    # and the Caddy TLS proxy provide the security layers; the
+    # binding itself is by design. (bandit B104)
+    _BIND = "0.0.0.0"  # nosec B104
+    uvicorn.run("api:app", host=_BIND, port=8000, reload=False)

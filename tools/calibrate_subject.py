@@ -44,8 +44,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from calibration import (  # noqa: E402
-    Calibration, append_calibration, compute_calibration_vector,
-    compute_fingerprint, make_calibration_id, utc_now_iso,
+    Calibration,
+    append_calibration,
+    compute_calibration_vector,
+    compute_fingerprint,
+    make_calibration_id,
+    utc_now_iso,
 )
 from preprocess import extract_features  # noqa: E402
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
@@ -149,7 +153,7 @@ def main() -> None:
     else:
         packet_rate = args.fs
 
-    print(f"[3/4] computing calibration features and fingerprint")
+    print("[3/4] computing calibration features and fingerprint")
     feats = compute_features_over_windows(amps, ts, args.fs)
     if feats.shape[0] < 2:
         sys.exit("error: not enough windows in baseline - capture longer or check signal")

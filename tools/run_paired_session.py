@@ -311,7 +311,7 @@ def run_session(args: argparse.Namespace) -> int:
 
     elapsed = time.time() - start_wall
     print(f"\n[orchestrator] session finished in {elapsed:.1f}s")
-    print(f"[orchestrator] outputs:")
+    print("[orchestrator] outputs:")
     for name, p in [("CSI", capture_path),
                     ("HR", hr_log_path if h10_cmd else None),
                     ("RR", rr_log_path if rr_cmd else None)]:
@@ -325,7 +325,7 @@ def run_session(args: argparse.Namespace) -> int:
     print(f"[orchestrator] session metadata: {session_json_path}")
     print(f"[orchestrator] combined log:     {combined_log_path}")
     print()
-    print(f"validate with:  python tools/validate_session_metadata.py")
+    print("validate with:  python tools/validate_session_metadata.py")
 
     # Auto-run the report (calibration + monitoring metrics) if HR ground truth
     # exists and the user didn't disable it.
@@ -354,7 +354,7 @@ def run_session(args: argparse.Namespace) -> int:
                 print(f"[orchestrator] report saved to {report_json}")
             except Exception as exc:
                 print(f"[orchestrator] auto-report failed: {exc}")
-                print(f"[orchestrator] you can re-run manually with:")
+                print("[orchestrator] you can re-run manually with:")
                 print(f"  python tools/first_capture_report.py "
                       f"--capture {capture_path} --hr-log {hr_log_path} "
                       f"--calibration-mode {args.calibration_mode}")

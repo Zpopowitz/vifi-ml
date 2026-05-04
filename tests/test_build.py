@@ -27,12 +27,12 @@ def test_dockerfile_exists_and_is_sane():
 def test_dockerfile_copies_every_runtime_module():
     """Every Python module that api.py / workers import at runtime must
     be COPY-ed into the runtime image. Forgetting one is a silent
-    container build success followed by a runtime ModuleNotFoundError
-    (e.g., the missing-`security.py` outage on first deploy)."""
+    container build success followed by a runtime ModuleNotFoundError."""
     df = (ROOT / "Dockerfile").read_text()
-    for mod in ("api.py", "audit.py", "calibration.py", "data_gen.py",
-                "preprocess.py", "pseudonymize.py", "quality.py",
-                "security.py", "train.py"):
+    for mod in ("api.py", "audit.py", "calibration.py", "config.py",
+                "data_gen.py", "observability.py", "preprocess.py",
+                "pseudonymize.py", "quality.py", "security.py",
+                "train.py", "__version__.py"):
         assert mod in df, (
             f"Dockerfile is missing COPY {mod}. Add it next to its "
             f"siblings in the runtime stage."

@@ -6,8 +6,11 @@ import pytest
 
 from data_gen import generate_dataset, generate_sample
 from preprocess import (
-    DEFAULT_BAND, FEATURE_NAMES,
-    bandpass_filter, extract_features, preprocess_dataset,
+    DEFAULT_BAND,
+    FEATURE_NAMES,
+    bandpass_filter,
+    extract_features,
+    preprocess_dataset,
 )
 
 

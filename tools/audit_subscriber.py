@@ -136,6 +136,21 @@ def main() -> None:
 
     bus = bus_from_env()
     stop = threading.Event()
+    writer: Optional[AuditLogWriter] = None
+
+    # Graceful shutdown (I219): SIGTERM (Docker stop) drains any
+    # already-fetched messages, closes the audit writer cleanly so the
+    # final fsync lands, and exits 0. Without this, a rolling deploy
+    # could lose the last buffered records.
+    import signal
+
+    def _on_signal(signum, _frame):
+        log.info("received signal %s; draining + shutting down", signum)
+        stop.set()
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
     try:
         writer = run(
             bus=bus,
@@ -144,12 +159,17 @@ def main() -> None:
             from_id=EARLIEST if args.from_start else LATEST,
             stop=stop,
         )
-        writer.close()
     except KeyboardInterrupt:
-        log.info("shutting down")
+        log.info("shutting down (KeyboardInterrupt)")
         stop.set()
     finally:
-        bus.close()
+        if writer is not None:
+            writer.close()
+        try:
+            bus.close()
+        except Exception:
+            pass
+        log.info("audit subscriber exited cleanly")
 
 
 if __name__ == "__main__":

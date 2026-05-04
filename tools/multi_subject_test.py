@@ -50,8 +50,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from calibration import (  # noqa: E402
-    DEFAULT_MATCH_THRESHOLD, DEFAULT_MULTI_SUBJECT_THRESHOLD,
-    RollingFingerprintTracker, compute_fingerprint, load_subject_file,
+    DEFAULT_MATCH_THRESHOLD,
+    DEFAULT_MULTI_SUBJECT_THRESHOLD,
+    RollingFingerprintTracker,
+    compute_fingerprint,
+    load_subject_file,
 )
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 
@@ -96,14 +99,14 @@ def run(capture_path: Path, events_path: Path,
     duration = float(ts[-1] - ts[0])
     print(f"      {amps.shape[0]} packets, {duration:.1f}s")
 
-    print(f"[2/3] resolving baseline fingerprint")
+    print("[2/3] resolving baseline fingerprint")
     baseline = _baseline_fingerprint(events, capture_path, window_s)
     tracker = RollingFingerprintTracker(
         baseline, match_threshold=match_threshold,
         multi_threshold=multi_threshold, hysteresis_n=hysteresis_n,
     )
 
-    print(f"[3/3] scoring rolling fingerprint")
+    print("[3/3] scoring rolling fingerprint")
     timeline = []
     t0 = ts[0]
     t = t0

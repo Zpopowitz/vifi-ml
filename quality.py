@@ -60,6 +60,17 @@ class MahalanobisDetector:
 
         regularization adds lambda*I to the empirical covariance so the
         inverse is stable on small N or near-collinear features.
+
+        Numerical safety (I022): if the regularized covariance has a
+        condition number > 1e10, falls back to the Moore-Penrose
+        pseudoinverse to avoid garbage from a singular `np.linalg.inv`.
+
+        Caveat (I020): the chi-square threshold assumes the training
+        feature distribution is multivariate Gaussian. Real CSI features
+        (bounded ratios, bimodal under motion) are not strictly Gaussian.
+        Treat the threshold as a calibrated heuristic rather than a
+        formal probability bound. A future revision may swap this for a
+        non-parametric detector (kernel density / isolation forest).
         """
         if features.ndim != 2:
             raise ValueError(f"expected (N, F) matrix, got {features.shape}")
@@ -72,7 +83,15 @@ class MahalanobisDetector:
         centered = features.astype(np.float64) - mu
         cov = (centered.T @ centered) / max(n - 1, 1)
         cov_reg = cov + regularization * np.eye(f, dtype=np.float64)
-        inv_cov = np.linalg.inv(cov_reg)
+
+        # Numerical robustness: detect a near-singular regularized cov
+        # and fall back to pinv. Direct np.linalg.inv on an ill-conditioned
+        # matrix returns garbage with no warning.
+        cond = float(np.linalg.cond(cov_reg))
+        if cond > 1e10:
+            inv_cov = np.linalg.pinv(cov_reg)
+        else:
+            inv_cov = np.linalg.inv(cov_reg)
 
         # Threshold: chi-square 99th percentile on F degrees of freedom.
         threshold = float(chi2.ppf(1.0 - tail_probability, df=f))

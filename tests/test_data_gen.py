@@ -5,8 +5,12 @@ import numpy as np
 import pytest
 
 from data_gen import (
-    HR_MAX_BPM, HR_MIN_BPM, RR_MAX_BPM, RR_MIN_BPM,
-    generate_dataset, generate_sample,
+    HR_MAX_BPM,
+    HR_MIN_BPM,
+    RR_MAX_BPM,
+    RR_MIN_BPM,
+    generate_dataset,
+    generate_sample,
 )
 
 

@@ -21,11 +21,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import json
+
 import security  # noqa: E402
 from security import (  # noqa: E402
+    PUBLIC_PATHS,
     AuthMiddleware,
     AuthMode,
-    PUBLIC_PATHS,
     RateLimitMiddleware,
     RequestIdMiddleware,
     _key_is_valid,
@@ -38,7 +40,6 @@ from security import (  # noqa: E402
     require_api_key,
     validate_config_or_raise,
 )
-
 
 # ---------------------------------------------------------------------------
 # Config
@@ -304,14 +305,148 @@ def test_rate_limit_exempts_health(monkeypatch):
 # Public path enumeration
 # ---------------------------------------------------------------------------
 
+def test_normalize_path_collapses_double_slashes(monkeypatch):
+    """Path-confusion bypass class: /api/v1//health bypassed checks (I064)."""
+    from security import _normalize_path
+    assert _normalize_path("/api/v1//health") == "/api/v1/health"
+    assert _normalize_path("/health/") == "/health"
+    assert _normalize_path("/") == "/"
+    assert _normalize_path("/health//") == "/health"
+
+
+def test_double_slash_path_does_not_bypass_auth(monkeypatch):
+    """Hitting `/api/v1//health` should NOT match the public path
+    `/api/v1/health` for the public check, but normalize and pass."""
+    monkeypatch.setenv("VIFI_AUTH_MODE", "api_key")
+    monkeypatch.setenv("VIFI_API_KEYS", "secret-1")
+    app = _make_app()
+    with TestClient(app) as c:
+        # /health/ (trailing slash) should still be public after normalization.
+        r = c.get("/health/")
+        assert r.status_code == 200, r.text
+
+
+def test_xff_honored_only_for_trusted_proxy(monkeypatch):
+    """X-Forwarded-For honored only when the immediate peer is in
+    VIFI_TRUSTED_PROXIES (I059). Walks right-to-left through XFF and
+    returns the first untrusted hop."""
+    from starlette.requests import Request
+
+    from security import _client_ip
+    # Trust both the loopback and the 198.51.100.0/24 hop so we get
+    # the original client at the leftmost position.
+    monkeypatch.setenv("VIFI_TRUSTED_PROXIES",
+                       "127.0.0.1/32, 198.51.100.0/24")
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/predict",
+        "headers": [(b"x-forwarded-for", b"203.0.113.45, 198.51.100.7")],
+        "client": ("127.0.0.1", 9999),
+    }
+    req = Request(scope)
+    assert _client_ip(req) == "203.0.113.45"
+
+    # If immediate peer is NOT trusted, ignore XFF entirely.
+    scope["client"] = ("8.8.8.8", 9999)
+    req2 = Request(scope)
+    assert _client_ip(req2) == "8.8.8.8"
+
+    # If only loopback is trusted, the first untrusted hop in XFF is
+    # the rightmost entry.
+    monkeypatch.setenv("VIFI_TRUSTED_PROXIES", "127.0.0.1/32")
+    scope["client"] = ("127.0.0.1", 9999)
+    req3 = Request(scope)
+    assert _client_ip(req3) == "198.51.100.7"
+
+
+def test_security_headers_attached(monkeypatch):
+    """SecurityHeadersMiddleware adds defense-in-depth headers (I056)."""
+    from fastapi import FastAPI
+
+    from security import SecurityHeadersMiddleware
+    monkeypatch.setenv("VIFI_AUTH_MODE", "none")
+    app = FastAPI()
+
+    @app.get("/x")
+    def x():
+        return {"ok": True}
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    with TestClient(app) as c:
+        r = c.get("/x")
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert r.headers["x-frame-options"] == "DENY"
+        assert r.headers["referrer-policy"] == "no-referrer"
+        assert r.headers["cache-control"] == "no-store"
+
+
+def test_failed_auth_logs_structured(monkeypatch, caplog):
+    """Each failed auth attempt logs structured fields for forensics (I063)."""
+    monkeypatch.setenv("VIFI_AUTH_MODE", "api_key")
+    monkeypatch.setenv("VIFI_API_KEYS", "secret-1")
+    app = _make_app()
+    with caplog.at_level("WARNING", logger="vifi.security"):
+        with TestClient(app) as c:
+            c.get("/predict",
+                  headers={"X-API-Key": "wrong-key-foobar",
+                           "User-Agent": "test-ua"})
+    auth_failures = [r for r in caplog.records
+                     if r.message == "auth_failed"]
+    assert auth_failures
+    rec = auth_failures[0]
+    assert rec.event == "auth_failed"
+    assert rec.path == "/predict"
+    assert rec.user_agent == "test-ua"
+    assert rec.attempted_key_prefix == "wrong-..."
+
+
+def test_validate_config_rejects_bad_cors(monkeypatch):
+    """Typos like missing http:// silently never match — fail fast (I068)."""
+    monkeypatch.setenv("VIFI_AUTH_MODE", "none")
+    monkeypatch.setenv("VIFI_CORS_ORIGINS", "example.com")  # missing scheme
+    from security import validate_config_or_raise
+    with pytest.raises(RuntimeError, match="not a URL"):
+        validate_config_or_raise()
+
+
+def test_api_key_file_loads_active_keys(tmp_path, monkeypatch):
+    """VIFI_API_KEYS_FILE merges with VIFI_API_KEYS; revoked + expired
+    keys are filtered out (I062)."""
+    from datetime import datetime, timedelta, timezone
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(json.dumps({
+        "vifi_active1": {"name": "alice", "scopes": ["read"], "revoked": False},
+        "vifi_revoked": {"name": "bob", "revoked": True},
+        "vifi_expired": {
+            "expires_at": (datetime.now(timezone.utc) - timedelta(days=1))
+                          .isoformat(),
+        },
+        "vifi_future": {
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=365))
+                          .isoformat(),
+        },
+    }))
+    import json as _json   # noqa
+    monkeypatch.setenv("VIFI_API_KEYS_FILE", str(keys_file))
+    monkeypatch.setenv("VIFI_API_KEYS", "vifi_env_key")
+    from security import get_api_keys
+    keys = get_api_keys()
+    assert "vifi_active1" in keys
+    assert "vifi_future" in keys
+    assert "vifi_env_key" in keys
+    assert "vifi_revoked" not in keys
+    assert "vifi_expired" not in keys
+
+
 def test_public_paths_includes_only_metadata_endpoints():
     """Every public path must be either a health probe or static
     metadata (no PHI). If someone adds a new path here in a future PR,
     they must justify it -- the failure of this test is a forcing
     function for review."""
     expected = {
-        "/", "/health", "/roadmap",
-        "/api/v1/", "/api/v1/health", "/api/v1/roadmap",
+        "/", "/health", "/readyz", "/roadmap",
+        "/api/v1/", "/api/v1/health", "/api/v1/readyz", "/api/v1/roadmap",
         "/docs", "/redoc", "/openapi.json",
     }
     assert set(PUBLIC_PATHS) == expected, (

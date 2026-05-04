@@ -1,4 +1,8 @@
-FROM python:3.11-slim AS builder
+# Pinning by digest for reproducibility (I109). Bump deliberately;
+# the digest pins us to a specific OS + libssl + libpython snapshot.
+# To update: `docker pull python:3.11-slim` then `docker images
+# --digests` for the new digest.
+FROM python:3.11-slim@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,11 +22,14 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 RUN pip install --no-cache-dir --prefix=/install "redis==5.0.8"
 
 COPY data_gen.py preprocess.py train.py ./
+# train.py + preprocess.py now import from these too — must be present
+# in the builder stage for the synthetic-model bootstrap RUN below.
+COPY __version__.py config.py ./
 RUN PYTHONPATH=/install/lib/python3.11/site-packages \
     python train.py -n 3000 --model-dir models
 
 # ---- runtime ----
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -34,12 +41,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /bin/bash vifi
+    # Pinned UID/GID (I112) for predictable file ownership on
+    # bind-mounted volumes and across hosts.
+    && groupadd --gid 10001 vifi \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash vifi
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
 COPY security.py pseudonymize.py ./
+COPY __version__.py config.py observability.py ./
 COPY api.py dashboard.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/

@@ -29,7 +29,6 @@ from typing import Literal
 
 import numpy as np
 
-
 VitalKind = Literal["hr", "rr"]
 
 

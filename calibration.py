@@ -15,7 +15,7 @@ A subject can have multiple stored calibrations across different rooms and postu
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -24,19 +24,32 @@ import numpy as np
 
 # ---------------------------------------------------------------------------
 # Which feature indices are amplitude-dependent and need per-subject calibration.
-# Indices reference preprocess.FEATURE_NAMES order:
-#   0 rr_peak_hz       (frequency, no cal)
-#   1 rr_peak_ratio    (already band-energy normalized, no cal)
-#   2 hr_peak_hz       (frequency, no cal - this IS what we predict)
-#   3 hr_peak_ratio    (already normalized, no cal)
-#   4 env_std          (amplitude -> divide by baseline)
-#   5 env_mean_abs     (amplitude -> divide by baseline)
-#   6 env_peak         (amplitude -> divide by baseline)
-#   7 zero_crossings   (rate, no cal)
-#   8 log_band_energy  (log amplitude -> subtract baseline)
+# Resolved BY NAME at import time so a future reorder of FEATURE_NAMES doesn't
+# silently miscalibrate (I017). If a name disappears, we fail loudly here.
+#   amplitude features → divide by baseline
+#   log features       → subtract baseline (log-space division)
 # ---------------------------------------------------------------------------
-AMPLITUDE_DIVIDE_INDICES = [4, 5, 6]
-LOG_SUBTRACT_INDICES = [8]
+_AMPLITUDE_DIVIDE_NAMES = ("env_std", "env_mean_abs", "env_peak")
+_LOG_SUBTRACT_NAMES = ("log_band_energy",)
+
+
+def _resolve_indices(names: tuple[str, ...]) -> list[int]:
+    from preprocess import FEATURE_NAMES  # noqa: PLC0415 — break import cycle
+    out = []
+    for n in names:
+        try:
+            out.append(FEATURE_NAMES.index(n))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"calibration expects feature {n!r} but it's not in "
+                f"preprocess.FEATURE_NAMES={FEATURE_NAMES}. The feature "
+                f"set was changed without updating calibration."
+            ) from exc
+    return out
+
+
+AMPLITUDE_DIVIDE_INDICES = _resolve_indices(_AMPLITUDE_DIVIDE_NAMES)
+LOG_SUBTRACT_INDICES = _resolve_indices(_LOG_SUBTRACT_NAMES)
 ALL_CAL_INDICES = AMPLITUDE_DIVIDE_INDICES + LOG_SUBTRACT_INDICES
 
 DEFAULT_FINGERPRINT_DIM = 192  # one ESP32-S3 packet's subcarrier count
@@ -95,12 +108,28 @@ def compute_calibration_vector(features_matrix: np.ndarray) -> np.ndarray:
 def apply_calibration(features: np.ndarray, calibration_vector: np.ndarray) -> np.ndarray:
     """Per-subject calibration on prediction features.
 
-    For amplitude features (indices 4, 5, 6): divide current by baseline.
-    For log-energy feature (index 8): subtract baseline (log-space division).
+    For amplitude features: divide current by baseline.
+    For log-energy feature: subtract baseline (log-space division).
     All other features pass through unchanged.
 
     Works on either a 1-D feature vector or a (N, F) matrix.
+    Raises ValueError on shape mismatch (I016) — silent passthrough on
+    a wrong shape would invisibly bypass calibration.
     """
+    from preprocess import FEATURE_NAMES  # noqa: PLC0415
+    expected = len(FEATURE_NAMES)
+    last_dim = features.shape[-1] if features.ndim else 0
+    if last_dim != expected:
+        raise ValueError(
+            f"apply_calibration: features last dim {last_dim} != "
+            f"len(FEATURE_NAMES)={expected}. Likely a model/code "
+            f"version mismatch — refusing to silently pass through."
+        )
+    if calibration_vector.shape[-1] != expected:
+        raise ValueError(
+            f"apply_calibration: calibration_vector last dim "
+            f"{calibration_vector.shape[-1]} != {expected}."
+        )
     out = features.astype(np.float32, copy=True)
     cal = calibration_vector.astype(np.float32)
     if out.ndim == 1:
@@ -123,19 +152,26 @@ def compute_fingerprint(amps: np.ndarray) -> np.ndarray:
 
     `amps` is the (N_packets, 192) amplitude matrix from a calibration window.
     Returns a 192-dim vector. Used for cosine-similarity matching.
+
+    Always returns an L2-normalized vector; degenerate (all-zero) inputs
+    are normalized with an epsilon offset rather than passing through
+    un-normalized (I013) — downstream cosine_similarity assumes unit
+    length and was getting garbage on the all-zero edge case.
     """
     if amps.ndim != 2:
         raise ValueError(f"expected (N, 192) amplitude matrix, got {amps.shape}")
     centered = amps - np.mean(amps, axis=0, keepdims=True)
     variances = np.var(centered, axis=0).astype(np.float32)
     norm = float(np.linalg.norm(variances))
-    if norm < 1e-9:
-        return variances
-    return (variances / norm).astype(np.float32)
+    return (variances / (norm + 1e-9)).astype(np.float32)
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity of two L2-normalized vectors. Returns -1..1."""
+    """Cosine similarity of two vectors. Returns -1..1.
+
+    Robust to non-normalized inputs: re-divides by norms with epsilon.
+    Returns 0.0 when either input has near-zero magnitude.
+    """
     a = a.flatten().astype(np.float32)
     b = b.flatten().astype(np.float32)
     if a.shape != b.shape:
@@ -261,15 +297,19 @@ def identify(unknown_fingerprint: np.ndarray, candidates: list[Calibration],
 
 def make_calibration_id(subject_id: str, room_id: str, posture: str,
                         captured_at: Optional[str] = None) -> str:
-    """Stable ID like 'subj01_quiet_seated_2026-04-27T215000Z'."""
+    """Stable ID like 'subj01_quiet_seated_2026-04-27T215000Z'.
+
+    `captured_at` includes microseconds when generated here so two
+    calibrations made in the same second don't collide (I218)."""
     if captured_at is None:
-        captured_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
-    safe = lambda s: str(s).replace(" ", "_").replace("/", "_")
+        # Microsecond precision on the timestamp so back-to-back
+        # calibrations within the same second produce distinct IDs.
+        captured_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S%fZ")
+
+    def safe(s: object) -> str:
+        return str(s).replace(" ", "_").replace("/", "_")
+
     return f"{safe(subject_id)}_{safe(room_id)}_{safe(posture)}_{captured_at}"
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class RollingFingerprintTracker:

@@ -20,23 +20,23 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from calibration import (  # noqa: E402
+    AMPLITUDE_DIVIDE_INDICES,
+    LOG_SUBTRACT_INDICES,
+    apply_calibration,
+    compute_calibration_vector,
+    compute_fingerprint,
+    cosine_similarity,
+)
 from preprocess import (  # noqa: E402
-    extract_features,
-    extract_features_v2,
-    calibrate_cfo_sfo,
-    estimate_cfo_hz,
     FEATURE_NAMES,
     FEATURE_NAMES_V2,
     FEATURE_SET_VERSION,
     FEATURE_SET_VERSION_V2,
-)
-from calibration import (  # noqa: E402
-    compute_fingerprint,
-    compute_calibration_vector,
-    apply_calibration,
-    cosine_similarity,
-    AMPLITUDE_DIVIDE_INDICES,
-    LOG_SUBTRACT_INDICES,
+    calibrate_cfo_sfo,
+    estimate_cfo_hz,
+    extract_features,
+    extract_features_v2,
 )
 
 

@@ -11,8 +11,24 @@ from api import create_app
 from data_gen import generate_sample
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _enable_cors(monkeypatch_module):
+    """CORS is opt-in via VIFI_CORS_ORIGINS. Existing tests assume an
+    open CORS policy on /health, so set it here for the test session."""
+    monkeypatch_module.setenv("VIFI_CORS_ORIGINS", "http://example.com")
+
+
 @pytest.fixture(scope="module")
-def client() -> TestClient:
+def monkeypatch_module():
+    """Module-scoped monkeypatch (pytest's default is function-scoped)."""
+    from _pytest.monkeypatch import MonkeyPatch
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
+
+
+@pytest.fixture(scope="module")
+def client(_enable_cors) -> TestClient:
     app = create_app(Path("models"))
     return TestClient(app)
 
@@ -195,9 +211,10 @@ def test_predict_csi_endpoint_recovers_vitals(client):
 
 
 def test_predict_csi_rejects_misshaped_mask(client):
+    # 64 = MIN_SAMPLES_PER_GRID (Pydantic accepts; mask check fails server-side).
     r = client.post("/predict/csi", json={
         "fs": 100.0,
-        "csi_amp": [[1.0, 2.0, 3.0]] * 32,
+        "csi_amp": [[1.0, 2.0, 3.0]] * 64,
         "subcarrier_mask": [True, False],   # length 2, csi_amp width 3
     })
     assert r.status_code == 400

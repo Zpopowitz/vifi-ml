@@ -56,6 +56,22 @@ x-app-base: &app-base
     redis:
       condition: service_healthy
   restart: unless-stopped
+  # Bounded log volume (I115) — Docker's default json-file driver
+  # otherwise grows the host disk indefinitely. 10 files × 10 MB =
+  # 100 MB max per container.
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "10"
+  # Resource ceilings (I114) — blast-radius containment.
+  deploy:
+    resources:
+      limits:
+        memory: 2g
+        cpus: "2"
+      reservations:
+        memory: 256m
 
 services:
   redis:

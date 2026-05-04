@@ -1,0 +1,31 @@
+# CODEOWNERS — every PR touching these paths requires review from
+# the listed owners. Pre-funding, this is just the founder; post-funding
+# split into roles (security, ML, regulatory).
+#
+# Format: <pattern> <owner> <owner> ...
+
+# Default owner of everything
+*       @Zpopowitz
+
+# Critical-path: security and audit. Any change here is a high-stakes
+# review. Once we have a security engineer, list them here too.
+/security.py            @Zpopowitz
+/pseudonymize.py        @Zpopowitz
+/audit.py               @Zpopowitz
+/Caddyfile              @Zpopowitz
+/SECURITY.md            @Zpopowitz
+/COMPLIANCE.md          @Zpopowitz
+
+# ML / DSP pipeline. Owners need to understand the science decisions.
+/preprocess.py          @Zpopowitz
+/train.py               @Zpopowitz
+/calibration.py         @Zpopowitz
+/quality.py             @Zpopowitz
+/data_gen.py            @Zpopowitz
+/config.py              @Zpopowitz
+
+# Infra / deploy
+/Dockerfile             @Zpopowitz
+/docker-compose.yml     @Zpopowitz
+/.github/               @Zpopowitz
+/deploy.sh              @Zpopowitz

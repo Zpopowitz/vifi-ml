@@ -111,7 +111,11 @@ def pseudonymize(subject_id: Optional[str]) -> Optional[str]:
     digest = hmac.new(salt.encode("utf-8"),
                       subject_id.encode("utf-8"),
                       hashlib.sha256).hexdigest()
-    return f"{_PROD_PREFIX}{digest[:16]}"
+    # 128-bit (32 hex) pseudonym (I071). 64-bit was brute-forceable on
+    # GPUs in hours; 128-bit raises the floor to "impractical for the
+    # foreseeable future" without growing the audit-log footprint
+    # meaningfully.
+    return f"{_PROD_PREFIX}{digest[:32]}"
 
 
 def is_pseudonymous(value: Optional[str]) -> bool:

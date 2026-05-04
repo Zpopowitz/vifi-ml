@@ -10,7 +10,6 @@ from data_gen import generate_sample
 from modules import presence
 from tools.parse_csi_capture import parse_capture_file
 
-
 # ------------------------------------------------------------------- presence
 
 def test_presence_score_positive_on_vitals_signal():

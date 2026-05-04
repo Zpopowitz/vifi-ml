@@ -1,0 +1,33 @@
+# Development + test dependencies. NOT installed in production images.
+#
+# Install:
+#     pip install -r requirements-dev.txt
+# Or:
+#     make install-dev
+
+# Test
+# Bumped to 8.3.4 to clear GHSA-6w46-j5rx-g56g; pytest 9 has API
+# changes we don't want to chase right now.
+pytest==8.3.4
+pytest-cov==5.0.0
+pytest-asyncio==0.24.0
+pytest-timeout==2.3.1
+hypothesis==6.115.0          # property-based DSP testing
+
+# Lint + type
+ruff==0.6.9
+mypy==1.11.2
+types-redis==4.6.0.20240903
+types-PyYAML==6.0.12.20240917
+PyYAML==6.0.2                # for compose tests
+
+# Security scanning
+pip-audit==2.7.3
+bandit==1.7.10
+
+# Build artifacts. cyclonedx-bom 4.6.1 is the latest in the 4.x line;
+# upgrade to 5.x or 7.x in a follow-up after verifying the CLI shape.
+cyclonedx-bom==4.6.1         # SBOM generation
+
+# Pre-commit
+pre-commit==3.8.0

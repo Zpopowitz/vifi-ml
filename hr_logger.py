@@ -96,20 +96,30 @@ async def scan() -> None:
 
 async def log(address: str, duration_s: float, out_path: Path,
               bus_publisher: Optional["_BusPublisher"] = None,
-              reconnect_max: int = 20, reconnect_wait_s: float = 1.5) -> int:
+              reconnect_max: int = 20,
+              reconnect_wait_s: float = 1.5,
+              reconnect_max_wait_s: float = 30.0) -> int:
     """Connect to the H10 and log HR readings to CSV for `duration_s` of
     wall-clock time. If Windows BLE drops the connection mid-stream
     (very common with bleak on Win11), reconnect and keep going until
-    the full duration has elapsed."""
+    the full duration has elapsed.
+
+    Reconnect backoff is exponential (I096): wait grows as
+    reconnect_wait_s * 2^n, capped at reconnect_max_wait_s. After 20
+    reconnects with the default 1.5 s base + 30 s cap, the total
+    cumulative wait is bounded around 4 minutes — well within a typical
+    180 s session."""
     _require_bleak()
     return await _log_impl(address, duration_s, out_path,
-                           bus_publisher, reconnect_max, reconnect_wait_s)
+                           bus_publisher, reconnect_max,
+                           reconnect_wait_s, reconnect_max_wait_s)
 
 
 async def _log_impl(address: str, duration_s: float, out_path: Path,
                     bus_publisher: Optional["_BusPublisher"],
                     reconnect_max: int,
-                    reconnect_wait_s: float) -> int:
+                    reconnect_wait_s: float,
+                    reconnect_max_wait_s: float = 30.0) -> int:
     """Body of log(); pulled out so _require_bleak runs before any
     closures capture the (possibly None) Bleak symbols.
 
@@ -173,8 +183,11 @@ async def _log_impl(address: str, duration_s: float, out_path: Path,
                     break
                 if time.time() >= deadline:
                     break
-                print(f"  reconnecting in {reconnect_wait_s}s...")
-                await asyncio.sleep(reconnect_wait_s)
+                # Exponential backoff capped at reconnect_max_wait_s.
+                wait_s = min(reconnect_wait_s * (2 ** (reconnect_count - 1)),
+                             reconnect_max_wait_s)
+                print(f"  reconnecting in {wait_s:.1f}s...")
+                await asyncio.sleep(wait_s)
 
     elapsed = time.time() - start_wall
     print(f"Done. Logged {total_count} readings over {elapsed:.1f}s "

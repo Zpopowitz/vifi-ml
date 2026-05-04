@@ -89,12 +89,16 @@ def discover_subjects(data_root: Path) -> dict[str, list[Path]]:
 
 def train_one_fold(train_pairs, model_dir, feature_version, seed):
     """Train one XGBoost regressor in-process, return fitted model + feature dim."""
-    from preprocess import extract_features, extract_features_v2
-    from tools.parse_csi_capture import parse_capture_file
-    from tools.first_capture_report import (align_csi_to_unix, interpolate_hr,
-                                             load_hr_log)
-    from calibration import compute_calibration_vector, apply_calibration
     from xgboost import XGBRegressor
+
+    from calibration import apply_calibration, compute_calibration_vector
+    from preprocess import extract_features, extract_features_v2
+    from tools.first_capture_report import (
+        align_csi_to_unix,
+        interpolate_hr,
+        load_hr_log,
+    )
+    from tools.parse_csi_capture import parse_capture_file
 
     feats_all: list[np.ndarray] = []
     labels_all: list[float] = []
@@ -167,11 +171,14 @@ def train_one_fold(train_pairs, model_dir, feature_version, seed):
 
 def evaluate_session(models, eval_pair, feature_version, expected_dim):
     """Evaluate one held-out session. Returns dict with mae, bias, within_5, n_windows."""
+    from calibration import apply_calibration, compute_calibration_vector
     from preprocess import extract_features, extract_features_v2
+    from tools.first_capture_report import (
+        align_csi_to_unix,
+        interpolate_hr,
+        load_hr_log,
+    )
     from tools.parse_csi_capture import parse_capture_file
-    from tools.first_capture_report import (align_csi_to_unix, interpolate_hr,
-                                             load_hr_log)
-    from calibration import compute_calibration_vector, apply_calibration
 
     cap_path, log_path = eval_pair
     if feature_version == "v2":
