@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same PR when a new commit is pushed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+      - name: Ruff check
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+
+  type:
+    name: Type check (mypy on strict modules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: mypy strict modules
+        run: mypy security.py pseudonymize.py audit.py config.py __version__.py
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Train synthetic models (needed by some tests)
+        run: python train.py -n 500
+      - name: pytest
+        run: pytest -v --cov --cov-report=xml --cov-report=term-missing
+      - name: Upload coverage
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  security:
+    name: Security scan (pip-audit + bandit)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory until baseline is clean
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install pip-audit==2.7.3 bandit==1.7.10
+      - name: pip-audit
+        run: pip-audit
+      - name: bandit
+        run: bandit -r . -x tests,build,sbom -ll
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install cyclonedx-bom
+        run: pip install cyclonedx-bom==4.7.1
+      - name: Generate Python SBOM
+        run: |
+          mkdir -p sbom
+          cyclonedx-py requirements -i requirements.txt --of JSON -o sbom/python-deps.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+  docker-build:
+    name: Docker build + structural compose check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: vifi-ml:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Compose config validates
+        run: docker compose config --quiet
+      - name: Trivy vulnerability scan (image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: vifi-ml:ci
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '0'           # advisory until baseline is clean

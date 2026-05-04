@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vifi"
+dynamic = ["version"]
+description = "Contactless heart-rate and respiratory-rate monitoring from WiFi CSI on ESP32-S3 hardware."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "ViFi contributors" }]
+
+[tool.setuptools.dynamic]
+version = { attr = "__version__.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["modules", "tools"]
+exclude = ["tests*", "data*", "models*"]
+
+# ---------------------------------------------------------------------------
+# ruff: replaces black + isort + flake8 + pyupgrade + pep8-naming. Single
+# tool, fast, well-documented. Configured to be strict on new files but
+# tolerant of the existing codebase (gradual cleanup).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = [
+    "data",
+    "models",
+    "models_real",
+    ".venv",
+    "build",
+]
+
+[tool.ruff.lint]
+# Rule sets:
+#   E,W : pycodestyle errors + warnings
+#   F   : pyflakes (unused imports, undefined names)
+#   I   : isort
+#   N   : pep8-naming
+#   B   : bugbear (likely bugs)
+#   S   : flake8-bandit (security)
+#   T20 : print-statement detection
+#   UP  : pyupgrade
+#   PLR : pylint-refactor (selected)
+select = ["E", "W", "F", "I", "N", "B", "S", "T20", "UP", "PLR"]
+
+# Pragmatic ignores:
+ignore = [
+    "E501",     # line length handled by formatter
+    "E731",     # lambdas allowed in DSP for math expressivity
+    "PLR0912",  # too-many-branches (DSP code is naturally branchy)
+    "PLR0913",  # too-many-arguments
+    "PLR0915",  # too-many-statements
+    "S101",     # assert allowed in research code (boundary checks)
+    "S104",     # 0.0.0.0 binding — required in container
+    "S301",     # pickle (we don't use it but XGBoost might)
+    "S603",     # subprocess without shell=True (false positives in orchestrator)
+    "S607",     # partial executable path (sys.executable is fine)
+    "B008",     # function calls in argument defaults (FastAPI Depends pattern)
+    "N806",     # Variable in function should be lowercase (X, Y are conventional)
+    "N803",     # Argument in function should be lowercase (X is conventional)
+    "PLR2004",  # magic number (covered by config.py centralization)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S105", "S106", "S108",   # hardcoded secrets in tests — that's the point
+    "T201",                    # print() allowed in tests
+    "PLR2004",                 # magic numbers fine in tests
+]
+"tools/*" = ["T201"]            # CLI tools print to stdout
+"hr_logger.py" = ["T201"]
+"rr_logger.py" = ["T201"]
+"data_gen.py" = ["T201"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["modules", "tools"]
+combine-as-imports = true
+
+# ---------------------------------------------------------------------------
+# mypy: strict on new modules, lenient on existing science code.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false  # tests intentionally ignore some
+ignore_missing_imports = true
+exclude = ["build/", "data/", "models/"]
+
+[[tool.mypy.overrides]]
+module = ["security", "pseudonymize", "audit", "config", "__version__"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["preprocess", "calibration", "quality", "data_gen", "train"]
+# Science code uses numpy duck typing extensively; full strict mode is
+# more friction than value here. Loosen until the team chooses to invest.
+strict = false
+
+# ---------------------------------------------------------------------------
+# pytest: test discovery + markers
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "e2e: end-to-end tests requiring docker compose (slow)",
+    "perf: performance regression tests (timing-sensitive)",
+    "hardware: tests that require real BLE/USB hardware (skip in CI)",
+    "slow: tests >5s",
+]
+addopts = [
+    "-ra",          # short summary of skips/xfails
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "data_gen.py",  # synthetic generator is sanity-only; not on prod path
+    "*/__init__.py",
+    "build/*",
+]
+branch = true
+
+[tool.coverage.report]
+fail_under = 70           # gradual ramp; bump to 85 over time
+show_missing = true
+exclude_also = [
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

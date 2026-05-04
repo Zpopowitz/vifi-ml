@@ -1,0 +1,58 @@
+# Pre-commit hooks for ViFi.
+#
+# Install:
+#     pip install pre-commit
+#     pre-commit install
+#
+# Run on every commit; on every PR (CI) via the GitHub Action.
+#
+# What runs:
+#  - ruff:        format + lint
+#  - mypy:        type check (strict only on new modules; see pyproject.toml)
+#  - basic safety:trailing whitespace, eof, large files, secrets
+#
+# Skip a hook ad-hoc:
+#     git commit --no-verify  (avoid; CI will catch it)
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        # Only strict-check the modules we've fully annotated.
+        files: ^(security|pseudonymize|audit|config|__version__)\.py$
+        additional_dependencies:
+          - fastapi
+          - pydantic
+          - cryptography
+          - types-redis
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Secret detection (gitleaks). Catches API keys, AWS keys, etc. that
+  # would otherwise get committed.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
