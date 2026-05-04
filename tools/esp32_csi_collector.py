@@ -178,7 +178,11 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
     except OSError as exc:
         log.warning("could not enlarge UDP RCVBUF (%s); using kernel default",
                     exc)
-    sock.bind(("0.0.0.0", int(port)))
+    # 0.0.0.0 is intentional: this listener receives UDP from the
+    # ESP32 across the LAN; binding to 127.0.0.1 would silently
+    # drop every real packet. The host firewall is the right place
+    # to constrain who can reach this port. (bandit B104)
+    sock.bind(("0.0.0.0", int(port)))  # nosec B104
     sock.settimeout(1.0)
     log.info("listening for ESP32 CSI on UDP 0.0.0.0:%s", port)
     recv_count = 0

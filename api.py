@@ -1138,4 +1138,10 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
+    # 0.0.0.0 is intentional: this entrypoint runs inside the api
+    # container, where 127.0.0.1 would be unreachable from compose
+    # peers + outside clients. Authentication, CORS, rate limiting,
+    # and the Caddy TLS proxy provide the security layers; the
+    # binding itself is by design. (bandit B104)
+    _BIND = "0.0.0.0"  # nosec B104
+    uvicorn.run("api:app", host=_BIND, port=8000, reload=False)
