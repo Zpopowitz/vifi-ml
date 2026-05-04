@@ -46,8 +46,18 @@ from typing import Optional
 try:
     from bleak import BleakClient, BleakScanner
 except ImportError:
-    print("ERROR: bleak not installed. Run: pip install bleak", file=sys.stderr)
-    sys.exit(1)
+    # Lazy fallback: tests can import this module without bleak (hardware
+    # extra). Anything that actually needs BleakClient/BleakScanner calls
+    # _require_bleak() and gets a clear error.
+    BleakClient = None  # type: ignore[assignment]
+    BleakScanner = None  # type: ignore[assignment]
+
+
+def _require_bleak() -> None:
+    if BleakClient is None or BleakScanner is None:
+        print("ERROR: bleak not installed. Run: pip install bleak",
+              file=sys.stderr)
+        sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -76,6 +86,7 @@ def _parse_hr(data: bytes) -> int:
 
 async def scan() -> None:
     """Scan and print nearby BLE devices; highlight Polar devices."""
+    _require_bleak()
     print("Scanning for 10 seconds...")
     devices = await BleakScanner.discover(timeout=10.0)
     for d in devices:
@@ -89,7 +100,18 @@ async def log(address: str, duration_s: float, out_path: Path,
     """Connect to the H10 and log HR readings to CSV for `duration_s` of
     wall-clock time. If Windows BLE drops the connection mid-stream
     (very common with bleak on Win11), reconnect and keep going until
-    the full duration has elapsed.
+    the full duration has elapsed."""
+    _require_bleak()
+    return await _log_impl(address, duration_s, out_path,
+                           bus_publisher, reconnect_max, reconnect_wait_s)
+
+
+async def _log_impl(address: str, duration_s: float, out_path: Path,
+                    bus_publisher: Optional["_BusPublisher"],
+                    reconnect_max: int,
+                    reconnect_wait_s: float) -> int:
+    """Body of log(); pulled out so _require_bleak runs before any
+    closures capture the (possibly None) Bleak symbols.
 
     The CSV is opened once and stays open for the whole run, so all
     reconnect chunks land in the same file with continuous timestamps.

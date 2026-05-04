@@ -28,9 +28,17 @@ from typing import Optional
 try:
     import serial
 except ImportError:
-    print("ERROR: pyserial not installed. Run: pip install pyserial",
-          file=sys.stderr)
-    sys.exit(1)
+    # Lazy fallback: tests can import this module without pyserial
+    # (hardware extra). Anything that opens a serial port calls
+    # _require_serial() and gets a clear error if it's missing.
+    serial = None  # type: ignore[assignment]
+
+
+def _require_serial() -> None:
+    if serial is None:
+        print("ERROR: pyserial not installed. Run: pip install pyserial",
+              file=sys.stderr)
+        sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -62,6 +70,7 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
     csi_count = 0
     last_status = time.time()
 
+    _require_serial()
     print(f"Opening {port} at {baud} baud, capturing for {duration_s:.0f}s...")
     try:
         ser = serial.Serial(port, baudrate=baud, timeout=0.5)
