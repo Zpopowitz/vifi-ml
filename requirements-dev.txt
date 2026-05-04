@@ -27,7 +27,7 @@ bandit==1.7.10
 
 # Build artifacts. cyclonedx-bom 4.6.1 is the latest in the 4.x line;
 # upgrade to 5.x or 7.x in a follow-up after verifying the CLI shape.
-cyclonedx-bom==4.6.1         # SBOM generation
+cyclonedx-bom==7.3.0         # SBOM generation
 
 # Pre-commit
 pre-commit==3.8.0
