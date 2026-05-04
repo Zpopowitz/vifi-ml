@@ -272,7 +272,11 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
 | Live message bus (Redis Streams) | Shipped — pub/sub, replay, audit-as-subscriber | `modules/bus.py` |
 | Live HR + RR dashboard (predicted vs reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
-| Containerized live stack (Redis + API + workers) | Shipped | `docker-compose.yml`, `Dockerfile` |
+| Containerized live stack (Redis + API + workers + dashboard + TLS) | Shipped — dev + prod profiles | `docker-compose.yml`, `Dockerfile`, `Caddyfile` |
+| API authentication, CORS allowlist, rate limiting, error redaction | Shipped | `security.py` |
+| HIPAA-aligned subject id pseudonymization + optional audit log encryption | Shipped | `pseudonymize.py`, `audit.py` |
+| Security policy + threat model | Shipped | `SECURITY.md` |
+| FDA + HIPAA gap analysis | Shipped | `COMPLIANCE.md` |
 | Apnea detection | Planned, returns HTTP 501 | `modules/apnea.py` |
 | Gait / walking-speed | Planned, returns HTTP 501 | `modules/gait.py` |
 | Fall detection | Planned, returns HTTP 501 | `modules/falls.py` |

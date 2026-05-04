@@ -1,36 +1,48 @@
 # ViFi live software stack — fully containerized.
 #
-# Bring up everything (Redis + API + inference + audit + dashboard):
-#
-#     docker compose up -d
-#
-# Open the dashboard at http://localhost:8501  (Live tab,
-# patient_id=default).
-#
-# To test the pipeline end-to-end without hardware, also start the
-# simulator (a synthetic CSI publisher):
-#
+# DEV (synthetic data, auth disabled, no TLS):
 #     docker compose --profile dev up -d
+#     -> dashboard at http://localhost:8501, API at http://localhost:8000
+#
+# PROD (auth, TLS, encrypted audit log, Redis password):
+#     # 1. Set every secret in a .env file alongside this compose file
+#     #    (see .env.example for the full list).
+#     # 2. Generate keys + secrets:
+#     #      python -c "from security import generate_api_key; print(generate_api_key())"
+#     #      python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#     #      openssl rand -hex 32   # for VIFI_PSEUDO_SALT and VIFI_REDIS_PASSWORD
+#     # 3. docker compose --profile prod up -d
+#     # 4. Front everything with Caddy: TLS terminates at https://<your-host>,
+#     #    proxies to the API + dashboard inside the compose network.
 #
 # Hardware loggers stay on the host because they need direct BLE / USB
-# serial access:
+# serial access. Point them at the bus with VIFI_BUS_URL (and the same
+# VIFI_REDIS_PASSWORD).
 #
-#     # On the host:
-#     export VIFI_BUS_URL=redis://localhost:6379/0
-#     python hr_logger.py  --address AA:BB:... --bus --patient-id alice ...
-#     python rr_logger.py  --bus --patient-id alice ...
-#     python tools/csi_capture.py --port COM6 --bus --patient-id alice ...
-#
-# Patient id defaults to ${VIFI_PATIENT_ID:-default}; export
-# VIFI_PATIENT_ID before `docker compose up` to scope every service
-# (worker, audit, simulator) to a different patient.
+# Security defaults:
+#  * VIFI_AUTH_MODE defaults to "none" (dev). Production MUST set
+#    VIFI_AUTH_MODE=api_key + VIFI_API_KEYS, or the API refuses to boot.
+#  * Audit log encryption is OFF by default; set VIFI_AUDIT_ENCRYPTION_KEY
+#    in production.
+#  * Subject ids are pseudonymized in audit logs once VIFI_PSEUDO_SALT
+#    is set. Without it dev runs use a clearly-marked "pseudo-dev:" prefix.
 
 x-app-base: &app-base
   build: .
   environment: &app-env
-    VIFI_BUS_URL: redis://redis:6379/0
+    VIFI_BUS_URL: ${VIFI_BUS_URL:-redis://redis:6379/0}
     VIFI_PATIENT_ID: ${VIFI_PATIENT_ID:-default}
-    LOG_LEVEL: INFO
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # Security (passed through from .env file or shell)
+    VIFI_AUTH_MODE: ${VIFI_AUTH_MODE:-none}
+    VIFI_API_KEYS: ${VIFI_API_KEYS:-}
+    VIFI_CORS_ORIGINS: ${VIFI_CORS_ORIGINS:-}
+    VIFI_RATE_LIMIT: ${VIFI_RATE_LIMIT:-60/minute}
+    VIFI_REVEAL_ERRORS: ${VIFI_REVEAL_ERRORS:-false}
+    # Privacy
+    VIFI_PSEUDO_SALT: ${VIFI_PSEUDO_SALT:-}
+    VIFI_REQUIRE_PSEUDO: ${VIFI_REQUIRE_PSEUDO:-false}
+    VIFI_AUDIT_ENCRYPTION_KEY: ${VIFI_AUDIT_ENCRYPTION_KEY:-}
   depends_on:
     redis:
       condition: service_healthy
@@ -40,10 +52,24 @@ services:
   redis:
     image: redis:7-alpine
     container_name: vifi-redis
+    # In dev (no password set) Redis listens openly on localhost. In
+    # prod, requirepass forces every client (workers + host loggers) to
+    # authenticate with VIFI_REDIS_PASSWORD.
+    command: >
+      sh -c "
+      if [ -n \"$$VIFI_REDIS_PASSWORD\" ]; then
+        redis-server --requirepass \"$$VIFI_REDIS_PASSWORD\";
+      else
+        redis-server;
+      fi
+      "
+    environment:
+      VIFI_REDIS_PASSWORD: ${VIFI_REDIS_PASSWORD:-}
     ports:
-      - "6379:6379"
+      - "${VIFI_REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL",
+             "redis-cli ${VIFI_REDIS_PASSWORD:+-a $$VIFI_REDIS_PASSWORD} ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -54,10 +80,9 @@ services:
     <<: *app-base
     container_name: vifi-api
     ports:
-      - "8000:8000"
+      - "${VIFI_API_PORT:-8000}:8000"
     command: uvicorn api:app --host 0.0.0.0 --port 8000
     healthcheck:
-      # The API serves a real /health endpoint; curl is in the runtime image.
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 10s
       timeout: 3s
@@ -72,8 +97,6 @@ services:
       --patient-id ${VIFI_PATIENT_ID:-default}
       --window 10 --stride 2 --fs-resample 100
     healthcheck:
-      # Worker has no HTTP surface, so liveness is "can still talk to the
-      # bus." If Redis becomes unreachable the worker's stuck anyway.
       test: ["CMD", "python", "-c",
              "import os, redis; redis.from_url(os.environ['VIFI_BUS_URL']).ping()"]
       interval: 15s
@@ -85,8 +108,6 @@ services:
     <<: *app-base
     container_name: vifi-audit
     volumes:
-      # Persist audit JSONL on the host so it survives container restarts
-      # and can be inspected without `docker exec`.
       - ./data/audit:/app/data/audit
     environment:
       <<: *app-env
@@ -114,7 +135,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "8501:8501"
+      - "${VIFI_DASHBOARD_PORT:-8501}:8501"
     command: >
       streamlit run dashboard.py
       --server.address 0.0.0.0 --server.port 8501
@@ -128,10 +149,7 @@ services:
       start_period: 15s
 
   # Synthetic CSI publisher for end-to-end testing without hardware.
-  # Behind the `dev` profile so it doesn't start in production-style runs.
-  #
-  #     docker compose --profile dev up -d        # bring up sim too
-  #     docker compose stop simulator              # stop just the sim
+  # Behind the `dev` profile so it doesn't run in production deployments.
   simulator:
     <<: *app-base
     container_name: vifi-simulator
@@ -140,11 +158,33 @@ services:
       python tools/esp32_csi_collector.py
       --simulate --bus --bus-only
       --patient-id ${VIFI_PATIENT_ID:-default}
-    # No healthcheck: it's a one-shot generator, not a service. If it
-    # crashes the dashboard simply stops getting new windows.
+
+  # TLS reverse proxy. Only starts under the `prod` profile because
+  # dev runs over plain HTTP on localhost and don't need it. In
+  # production this is the ONLY service exposed to the internet:
+  # the api/dashboard ports above can be removed, leaving Caddy to
+  # terminate TLS and proxy to them on the internal network.
+  caddy:
+    image: caddy:2-alpine
+    container_name: vifi-caddy
+    profiles: ["prod"]
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      VIFI_DOMAIN: ${VIFI_DOMAIN:-localhost}
+    depends_on:
+      api:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  # Reserved for future Redis persistence (RDB/AOF). Today the bus is
-  # ephemeral; predictions and reference readings are durable in audit
-  # logs (./data/audit) and CSV files written by the host loggers.
   redis_data:
+  caddy_data:
+  caddy_config:

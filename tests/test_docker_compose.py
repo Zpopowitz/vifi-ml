@@ -50,17 +50,23 @@ def test_simulator_is_dev_profile_only(compose):
 
 def test_redis_exposes_6379(compose):
     redis = compose["services"]["redis"]
-    assert "6379:6379" in redis["ports"]
+    assert any(":6379" in p for p in redis["ports"]), (
+        f"redis must expose 6379; got {redis['ports']}"
+    )
 
 
 def test_dashboard_exposes_8501(compose):
     dashboard = compose["services"]["dashboard"]
-    assert any("8501:8501" in p for p in dashboard["ports"])
+    assert any(":8501" in p for p in dashboard["ports"]), (
+        f"dashboard must expose 8501; got {dashboard['ports']}"
+    )
 
 
 def test_api_exposes_8000(compose):
     api = compose["services"]["api"]
-    assert any("8000:8000" in p for p in api["ports"])
+    assert any(":8000" in p for p in api["ports"]), (
+        f"api must expose 8000; got {api['ports']}"
+    )
 
 
 def test_app_services_share_one_bus_url(compose):
@@ -151,3 +157,66 @@ def test_api_healthcheck_uses_health_endpoint(compose):
     assert any("/health" in str(c) for c in cmd), (
         f"api healthcheck should curl /health; got {cmd}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Security wiring
+# ---------------------------------------------------------------------------
+
+SECURITY_ENVS = (
+    "VIFI_AUTH_MODE", "VIFI_API_KEYS", "VIFI_CORS_ORIGINS",
+    "VIFI_RATE_LIMIT", "VIFI_REVEAL_ERRORS",
+    "VIFI_PSEUDO_SALT", "VIFI_REQUIRE_PSEUDO",
+    "VIFI_AUDIT_ENCRYPTION_KEY",
+)
+
+
+def test_every_app_service_threads_security_env(compose):
+    """Auth + privacy env vars must be present on every service that
+    runs ViFi code. Forgetting one is how a misconfigured service ends
+    up running in 'none' mode in prod."""
+    services = compose["services"]
+    for name in APP_SERVICES:
+        env = services[name].get("environment", {})
+        for var in SECURITY_ENVS:
+            assert var in env, (
+                f"{name} is missing {var}; security env must be threaded "
+                f"through every app service"
+            )
+
+
+def test_caddy_is_prod_profile_only(compose):
+    """Caddy is the TLS reverse proxy. Dev runs over plain HTTP on
+    localhost; Caddy must not start unless --profile prod is passed."""
+    caddy = compose["services"].get("caddy")
+    assert caddy is not None, "caddy service missing"
+    assert caddy.get("profiles") == ["prod"], (
+        f"caddy must be behind 'prod' profile; got {caddy.get('profiles')}"
+    )
+
+
+def test_caddy_exposes_443_and_80(compose):
+    caddy = compose["services"]["caddy"]
+    ports = caddy.get("ports", [])
+    assert any("443:443" in p for p in ports), "caddy must expose 443 for TLS"
+    assert any("80:80" in p for p in ports), "caddy must bind 80 for ACME challenges"
+
+
+def test_caddyfile_exists():
+    assert (ROOT / "Caddyfile").exists(), (
+        "Caddyfile is referenced by the compose 'caddy' service and must "
+        "live next to docker-compose.yml"
+    )
+
+
+def test_env_example_documents_every_security_env():
+    env_example = (ROOT / ".env.example").read_text()
+    for var in SECURITY_ENVS + ("VIFI_REDIS_PASSWORD", "VIFI_DOMAIN"):
+        assert var in env_example, (
+            f".env.example must document {var}"
+        )
+
+
+def test_env_is_gitignored():
+    gi = (ROOT / ".gitignore").read_text()
+    assert ".env" in gi, ".env must be gitignored to prevent secret leaks"
