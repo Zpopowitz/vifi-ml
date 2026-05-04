@@ -32,6 +32,8 @@ from modules.bus import (
     bus_from_env,
     hr_predicted,
     hr_reference,
+    rr_predicted,
+    rr_reference,
 )
 
 API_URL = os.environ.get("VIFI_API", "http://localhost:8000")
@@ -80,13 +82,20 @@ def _get_live_bus():
 
 
 def _live_topics(patient_id: str) -> list[str]:
-    return [hr_predicted(patient_id), hr_reference(patient_id)]
+    return [
+        hr_predicted(patient_id),
+        hr_reference(patient_id),
+        rr_predicted(patient_id),
+        rr_reference(patient_id),
+    ]
 
 
 def _drain_into_state(patient_id: str) -> int:
     """Read new bus messages into st.session_state.live_rows.
 
-    Returns how many messages were appended this call.
+    Each row carries one vital reading (HR or RR) tagged by stream and
+    role. Empty payloads are dropped quietly. Returns the number of
+    messages appended this call.
     """
     bus = _get_live_bus()
     cursors = st.session_state.live_cursors
@@ -95,18 +104,22 @@ def _drain_into_state(patient_id: str) -> int:
     for m in msgs:
         cursors[m.topic] = m.msg_id
         payload = m.payload or {}
-        hr = payload.get("hr_bpm")
-        if hr is None:
+        # Topic format: "<stream>.<role>.<patient>"
+        parts = m.topic.split(".")
+        if len(parts) < 2:
             continue
-        role = "predicted" if "predicted" in m.topic else "reference"
+        stream_kind, role = parts[0], parts[1]
+        value_key = "hr_bpm" if stream_kind == "hr" else "rr_bpm"
+        value = payload.get(value_key)
+        if value is None:
+            continue
         st.session_state.live_rows.append({
             "ts_ms": m.ts_ms,
             "ts_unix": payload.get("ts_unix", m.ts_ms / 1000.0),
+            "stream": stream_kind,
             "role": role,
-            "hr_bpm": float(hr),
-            "hr_low": payload.get("hr_low"),
-            "hr_high": payload.get("hr_high"),
-            "confidence": payload.get("hr_confidence"),
+            "value_bpm": float(value),
+            "confidence": payload.get(f"{stream_kind}_confidence"),
         })
         appended += 1
     return appended
@@ -161,6 +174,50 @@ with tab_live:
             t: LATEST for t in _live_topics(live_patient)
         }
 
+    def _vital_section(df: pd.DataFrame, stream_kind: str,
+                       label: str, units: str = "bpm") -> None:
+        """Render one vital sign (HR or RR) -- metrics + line chart +
+        rolling MAE over the visible window."""
+        sub = df[df["stream"] == stream_kind]
+        if sub.empty:
+            st.info(f"No {label} messages yet.")
+            return
+        latest_pred = sub[sub["role"] == "predicted"].tail(1)
+        latest_ref = sub[sub["role"] == "reference"].tail(1)
+
+        cols = st.columns(3)
+        if not latest_pred.empty and not latest_ref.empty:
+            p = float(latest_pred["value_bpm"].iloc[0])
+            r = float(latest_ref["value_bpm"].iloc[0])
+            cols[0].metric(f"Predicted {label}", f"{p:.1f} {units}")
+            cols[1].metric(f"Reference {label}", f"{r:.1f} {units}")
+            cols[2].metric("Error", f"{p - r:+.1f} {units}")
+        elif not latest_pred.empty:
+            p = float(latest_pred["value_bpm"].iloc[0])
+            cols[0].metric(f"Predicted {label}", f"{p:.1f} {units}")
+            cols[1].info("No reference yet")
+        elif not latest_ref.empty:
+            r = float(latest_ref["value_bpm"].iloc[0])
+            cols[0].info("No prediction yet")
+            cols[1].metric(f"Reference {label}", f"{r:.1f} {units}")
+
+        sub_df = sub.copy()
+        sub_df["t_rel_s"] = (sub_df["ts_ms"] - sub_df["ts_ms"].min()) / 1000.0
+        pivot = (sub_df.pivot_table(index="t_rel_s", columns="role",
+                                    values="value_bpm", aggfunc="last")
+                       .sort_index()
+                       .ffill())
+        st.line_chart(pivot)
+
+        if "predicted" in pivot.columns and "reference" in pivot.columns:
+            paired = pivot.dropna()
+            if len(paired) >= 2:
+                mae = float((paired["predicted"] - paired["reference"]).abs().mean())
+                st.caption(
+                    f"Rolling MAE over last {history_s}s: **{mae:.2f} {units}** "
+                    f"({len(paired)} matched samples)"
+                )
+
     @st.fragment(run_every=None if paused else f"{refresh_s}s")
     def _live_panel() -> None:
         if not paused:
@@ -168,52 +225,21 @@ with tab_live:
             _trim_to_window(history_s)
 
         rows = st.session_state.live_rows
-        cols = st.columns(3)
-        latest_pred = next(
-            (r for r in reversed(rows) if r["role"] == "predicted"),
-            None,
-        )
-        latest_ref = next(
-            (r for r in reversed(rows) if r["role"] == "reference"),
-            None,
-        )
-        if latest_pred is not None and latest_ref is not None:
-            err = latest_pred["hr_bpm"] - latest_ref["hr_bpm"]
-            cols[0].metric("Predicted HR", f"{latest_pred['hr_bpm']:.1f} bpm")
-            cols[1].metric("Reference HR", f"{latest_ref['hr_bpm']:.1f} bpm")
-            cols[2].metric("Error", f"{err:+.1f} bpm")
-        elif latest_pred is not None:
-            cols[0].metric("Predicted HR", f"{latest_pred['hr_bpm']:.1f} bpm")
-            cols[1].info("No reference yet")
-        elif latest_ref is not None:
-            cols[0].info("No prediction yet")
-            cols[1].metric("Reference HR", f"{latest_ref['hr_bpm']:.1f} bpm")
-        else:
+        if not rows:
             st.info("Waiting for messages on the bus...")
             return
 
         df = pd.DataFrame(rows)
-        df["t_rel_s"] = (df["ts_ms"] - df["ts_ms"].min()) / 1000.0
-        pivot = (df.pivot_table(index="t_rel_s", columns="role",
-                                values="hr_bpm", aggfunc="last")
-                   .sort_index()
-                   .ffill())
-        st.line_chart(pivot)
 
-        # Rolling MAE over the visible window if both series have at
-        # least one matched timestamp.
-        if "predicted" in pivot.columns and "reference" in pivot.columns:
-            paired = pivot.dropna()
-            if len(paired) >= 2:
-                mae = float((paired["predicted"] - paired["reference"]).abs().mean())
-                st.caption(
-                    f"Rolling MAE over last {history_s}s: **{mae:.2f} bpm** "
-                    f"({len(paired)} matched samples)"
-                )
+        st.markdown("### Heart rate")
+        _vital_section(df, "hr", "HR")
+
+        st.markdown("### Respiratory rate")
+        _vital_section(df, "rr", "RR")
 
         with st.expander("Recent messages"):
-            st.dataframe(df.tail(20)[["ts_unix", "role", "hr_bpm",
-                                      "confidence"]])
+            st.dataframe(df.tail(30)[["ts_unix", "stream", "role",
+                                      "value_bpm", "confidence"]])
 
     with live_left:
         _live_panel()

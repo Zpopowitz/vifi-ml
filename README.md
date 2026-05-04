@@ -66,34 +66,56 @@ python tools/first_capture_report.py `
     --capture "$dir\capture.txt" --hr-log "$dir\hr_log.csv"
 ```
 
-### Live dashboard (predicted HR vs Polar reference, real-time)
+### Live dashboard (predicted HR + RR vs reference, real-time)
 
-The Live tab in `dashboard.py` plots model predictions against the
-Polar H10 chest strap as both streams arrive. Components communicate
-over a Redis Streams message bus, so each piece (logger, inference,
-audit, dashboard) can be restarted, replaced, or run on a different
-host without changing call sites elsewhere.
+The Live tab in `dashboard.py` plots model predictions against ground
+truth (Polar H10 for HR, Vernier GDX-RB for RR) as both streams
+arrive. Components communicate over a Redis Streams message bus, so
+each piece (logger, inference, audit, dashboard) can be restarted,
+replaced, or run on a different host without changing call sites.
+
+**Recommended: run the software stack via Docker Compose.** Hardware
+loggers stay on the host because they need direct BLE / USB serial
+access; everything else lives in containers (`docker-compose.yml`).
 
 ```bash
-# 1. Start Redis (one-time).
-docker run -d --name vifi-redis -p 6379:6379 redis:7-alpine
-# Or in WSL/Linux native: sudo apt install redis-server && sudo service redis-server start
+# 1. Bring up Redis + API + inference worker + audit subscriber.
+docker compose up -d
 
-# 2. Point everything at the same bus.
+# 2. On the host, point loggers at the bus and start a paired capture.
 export VIFI_BUS_URL=redis://localhost:6379/0
-
-# 3. Run a paired capture in bus mode -- spawns CSI capture + H10
-#    logger + inference worker + audit subscriber as one orchestrated
-#    session. Patient id is the --subject-id.
 python tools/run_paired_session.py \
     --subject-id founder --room-id quiet --posture seated \
     --csi-port COM6 --h10-address AA:BB:CC:DD:EE:FF \
     --duration 180 --bus
 
-# 4. In a second terminal, open the dashboard.
+# 3. Open the dashboard, switch to "Live" tab, set patient_id=founder.
 streamlit run dashboard.py
-# -> "Live" tab, set patient_id to "founder"
 ```
+
+The Live tab shows two synchronized panels (HR and RR). Each panel
+displays predicted, reference, and rolling MAE over the visible
+window; RR stays empty until the Vernier belt is connected and
+publishing — no UI change needed.
+
+**Alternative: native Redis (no Docker).**
+
+```bash
+# WSL / Linux:
+sudo apt install -y redis-server && sudo service redis-server start
+# Then in each shell that runs ViFi:
+export VIFI_BUS_URL=redis://localhost:6379/0
+# Start services manually:
+python -m tools.audit_subscriber --patient-id founder &
+python -m tools.inference_worker --patient-id founder &
+uvicorn api:app &
+streamlit run dashboard.py
+```
+
+Use `docker compose logs -f inference_worker` to tail any service in
+the containerized setup. To run multiple patients, set
+`VIFI_PATIENT_ID` per service or replicate the worker / subscriber
+with different patient ids.
 
 ### Reproduce the headline result
 
@@ -155,42 +177,51 @@ consumers subscribe. Each piece can be restarted, swapped, or moved
 to a different host without touching the others.
 
 ```
-                              csi.raw.<patient>
-   ┌──────────────────┐    ┌─────────────────────┐    ┌────────────────────┐
-   │ csi_capture.py   │───►│                     │───►│ inference_worker   │
-   │ (serial + bus)   │    │                     │    │ (subscribes csi,   │
-   └──────────────────┘    │                     │    │  publishes hr.pred)│
-                           │                     │    └─────────┬──────────┘
-                           │                     │              │
-                           │   Redis Streams     │   hr.predicted.<patient>
-   hr.reference.<patient>  │   (the bus)         │              │
-   ┌──────────────────┐    │                     │◄─────────────┘
-   │ hr_logger.py     │───►│                     │
-   │ (BLE + bus)      │    │                     │       ┌────────────────────┐
-   └──────────────────┘    │                     │──────►│ dashboard.py       │
-                           │                     │       │ (Live tab)         │
-                           │                     │       └────────────────────┘
-                           │                     │       ┌────────────────────┐
-                           │                     │──────►│ audit_subscriber   │
-                           │                     │       │ (writes JSONL)     │
-                           └─────────────────────┘       └────────────────────┘
+   ┌──────────────────┐    csi.raw.<p>    ┌──────────────────────┐
+   │ csi_capture.py   │──────────────────►│  inference_worker    │
+   │ (serial + bus)   │                   │  (1 model bundle ->  │
+   └──────────────────┘                   │   HR + RR predicts)  │
+                                          └──────┬────────┬──────┘
+   ┌──────────────────┐  hr.reference.<p>        │        │
+   │ hr_logger.py     │─────►┐            hr.predicted    rr.predicted
+   │ (Polar H10 BLE)  │      │                   │        │
+   └──────────────────┘      │                   ▼        ▼
+   ┌──────────────────┐      │      ┌──────────────────────────────────┐
+   │ rr_logger.py     │──────┤      │       Redis Streams (bus)        │
+   │ (Vernier GDX-RB) │      │      └────┬─────────┬──────────────┬────┘
+   └──────────────────┘  rr.reference.<p>│         │              │
+                                ─────────┘         ▼              ▼
+                                         ┌────────────────┐  ┌────────────────┐
+                                         │ dashboard.py   │  │ audit_         │
+                                         │ (Live tab)     │  │ subscriber     │
+                                         │ HR + RR panels │  │ (-> JSONL)     │
+                                         └────────────────┘  └────────────────┘
+                                         ┌────────────────────────────────────┐
+                                         │ api.py /api/v1/stream (WebSocket)  │
+                                         │ fans out HR + RR to remote clients │
+                                         └────────────────────────────────────┘
 ```
 
-Topic naming: `<stream>.<role>.<patient_id>` (e.g.
-`hr.predicted.alice`). Multi-patient is one topic per patient; the bus
-backend handles the fanout. The bus implementation lives in
+Topic naming: `<stream>.<role>.<patient_id>` (e.g. `hr.predicted.alice`,
+`rr.reference.alice`). Multi-patient is one topic per patient; the
+bus backend handles the fanout. The bus implementation lives in
 `modules/bus.py` and ships with two backends: Redis Streams for
 production and in-memory for tests + single-process dev.
 
-| Component | Role | Topic |
+| Component | Role | Topic(s) |
 |---|---|---|
 | `tools/csi_capture.py --bus` | producer | `csi.raw.<p>` |
 | `tools/esp32_csi_collector.py --bus-only` | producer | `csi.raw.<p>` |
 | `hr_logger.py --bus` | producer | `hr.reference.<p>` |
-| `tools/inference_worker.py` | consumer + producer | reads `csi.raw.<p>`, writes `hr.predicted.<p>` |
-| `dashboard.py` (Live tab) | consumer | reads `hr.predicted.<p>`, `hr.reference.<p>` |
+| `rr_logger.py --bus` | producer | `rr.reference.<p>` |
+| `tools/inference_worker.py` | consumer + producer | reads `csi.raw.<p>`, writes `hr.predicted.<p>` (+ `rr.predicted.<p>` when an RR model is loaded) |
+| `dashboard.py` (Live tab) | consumer | reads HR + RR predicted + reference |
 | `tools/audit_subscriber.py` | consumer | reads every topic, writes JSONL |
-| `api.py` `/api/v1/stream` (WebSocket) | consumer | reads `hr.predicted.<p>`, `hr.reference.<p>`; pushes to client |
+| `api.py` `/api/v1/stream` (WebSocket) | consumer | reads HR + RR predicted + reference; pushes to client |
+
+The same set of topics extends to future vital streams (SpO2 clip,
+ECG-derived HRV, etc.): adding a new sensor is one publisher and one
+topic — no protocol change in the API or dashboard.
 
 ---
 
@@ -224,7 +255,8 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
 | Live message bus (Redis Streams) | Shipped — pub/sub, replay, audit-as-subscriber | `modules/bus.py` |
-| Live HR dashboard (predicted vs Polar reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
+| Live HR + RR dashboard (predicted vs reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
+| Containerized live stack (Redis + API + workers) | Shipped | `docker-compose.yml`, `Dockerfile` |
 | Apnea detection | Planned, returns HTTP 501 | `modules/apnea.py` |
 | Gait / walking-speed | Planned, returns HTTP 501 | `modules/gait.py` |
 | Fall detection | Planned, returns HTTP 501 | `modules/falls.py` |

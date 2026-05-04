@@ -24,8 +24,16 @@ from modules.bus import (  # noqa: E402
     InMemoryBus,
     csi_raw,
     hr_predicted,
+    rr_predicted,
 )
-from tools.inference_worker import _Window, _Packet, _resample, loop, run_once  # noqa: E402
+from tools.inference_worker import (  # noqa: E402
+    _ModelBundle,
+    _Packet,
+    _resample,
+    _Window,
+    loop,
+    run_once,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +92,17 @@ class _StubModel:
         return np.array([self.hr], dtype=np.float32)
 
 
+def _hr_only_bundle(hr: float = 72.5) -> _ModelBundle:
+    return _ModelBundle(hr_model=_StubModel(hr=hr), hr_ratio_idx=None)
+
+
+def _hr_rr_bundle(hr: float = 72.5, rr: float = 18.0) -> _ModelBundle:
+    return _ModelBundle(
+        hr_model=_StubModel(hr=hr), hr_ratio_idx=None,
+        rr_model=_StubModel(hr=rr), rr_ratio_idx=None,
+    )
+
+
 def _fill_window(w: _Window, fs: float = 100.0, duration_s: float = 10.0,
                  n_sub: int = 16) -> None:
     """Drop a synthetic 1 Hz sinusoid into the window so feature
@@ -99,36 +118,41 @@ def _fill_window(w: _Window, fs: float = 100.0, duration_s: float = 10.0,
 def test_run_once_returns_none_on_empty_window():
     w = _Window(duration_s=10.0)
     out = run_once(w, fs_resample=100.0, window_s=10.0,
-                   hr_model=_StubModel(), hr_ratio_idx=None)
+                   bundle=_hr_only_bundle())
     assert out is None
 
 
-def test_run_once_predicts_when_window_has_data():
+def test_run_once_predicts_hr_when_window_has_data():
     w = _Window(duration_s=15.0)
     _fill_window(w, fs=100.0, duration_s=10.0, n_sub=16)
-    model = _StubModel(hr=72.5)
-    out = run_once(w, fs_resample=100.0, window_s=10.0,
-                   hr_model=model, hr_ratio_idx=None)
+    bundle = _hr_only_bundle(hr=72.5)
+    out = run_once(w, fs_resample=100.0, window_s=10.0, bundle=bundle)
     assert out is not None
     assert out["hr_bpm"] == 72.5
+    assert "rr_bpm" not in out  # HR-only bundle: no RR field
     assert out["n_subcarriers"] == 16
     assert out["window_s"] == 10.0
-    assert len(model.called_with) == 1
+
+
+def test_run_once_predicts_both_hr_and_rr_when_bundle_has_rr():
+    w = _Window(duration_s=15.0)
+    _fill_window(w, fs=100.0, duration_s=10.0, n_sub=16)
+    bundle = _hr_rr_bundle(hr=72.5, rr=18.0)
+    out = run_once(w, fs_resample=100.0, window_s=10.0, bundle=bundle)
+    assert out is not None
+    assert out["hr_bpm"] == 72.5
+    assert out["rr_bpm"] == 18.0
 
 
 # ---------------------------------------------------------------------------
 # Full loop: pre-publish packets, run with max_iterations
 # ---------------------------------------------------------------------------
 
-def test_loop_consumes_csi_and_publishes_predictions():
-    bus = InMemoryBus()
-    patient = "alice"
-
-    # Pre-publish a 10s sinusoidal CSI window (101 packets).
-    fs = 10.0
-    n_sub = 8
-    base_ts = 1_000_000.0
-    for i in range(101):
+def _publish_synthetic_csi(bus: InMemoryBus, patient: str,
+                           n_packets: int = 101, fs: float = 10.0,
+                           n_sub: int = 8, base_ts: float = 1_000_000.0
+                           ) -> None:
+    for i in range(n_packets):
         t = base_ts + i / fs
         env = np.sin(2 * np.pi * 1.2 * (i / fs))
         gains = np.linspace(0.5, 1.5, n_sub)
@@ -140,16 +164,19 @@ def test_loop_consumes_csi_and_publishes_predictions():
             "patient_id": patient,
         }, ts_ms=int(t * 1000))
 
-    model = _StubModel(hr=88.0)
+
+def test_loop_consumes_csi_and_publishes_hr_predictions():
+    bus = InMemoryBus()
+    patient = "alice"
+    _publish_synthetic_csi(bus, patient, n_sub=8)
 
     loop(
         bus=bus,
         patient_id=patient,
         window_s=10.0,
-        stride_s=0.0,        # don't gate on wall-clock
+        stride_s=0.0,
         fs_resample=10.0,
-        hr_model=model,
-        hr_ratio_idx=None,
+        bundle=_hr_only_bundle(hr=88.0),
         from_id=EARLIEST,
         max_iterations=2,
     )
@@ -159,34 +186,58 @@ def test_loop_consumes_csi_and_publishes_predictions():
     p = preds[-1].payload
     assert p["hr_bpm"] == 88.0
     assert p["patient_id"] == "alice"
-    assert p["n_subcarriers"] == n_sub
-    # Right-edge timestamp aligns with the last published CSI packet.
-    expected_right = base_ts + 100 / fs
+    assert p["n_subcarriers"] == 8
+    expected_right = 1_000_000.0 + 100 / 10.0
     assert abs(p["ts_unix"] - expected_right) < 1e-6
     assert p["window_end_s"] == p["ts_unix"]
     assert p["window_start_s"] == p["ts_unix"] - 10.0
+
+    # No RR predictions should have been published (HR-only bundle).
+    rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0)
+    assert rr_preds == []
+
+
+def test_loop_publishes_rr_predictions_when_bundle_has_rr():
+    bus = InMemoryBus()
+    patient = "bob"
+    _publish_synthetic_csi(bus, patient, n_sub=8)
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_rr_bundle(hr=72.0, rr=18.0),
+        from_id=EARLIEST,
+        max_iterations=2,
+    )
+
+    hr_preds = bus.read({hr_predicted(patient): EARLIEST}, block_ms=0)
+    rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0)
+    assert len(hr_preds) >= 1 and len(rr_preds) >= 1
+    assert hr_preds[-1].payload["hr_bpm"] == 72.0
+    assert rr_preds[-1].payload["rr_bpm"] == 18.0
+    # Both predictions should share the same ts_unix (same window).
+    assert hr_preds[-1].payload["ts_unix"] == rr_preds[-1].payload["ts_unix"]
 
 
 def test_loop_drops_malformed_messages_without_crashing():
     bus = InMemoryBus()
     patient = "alice"
-    # Publish a malformed message: missing amps.
     bus.publish(csi_raw(patient), {"ts_unix": 1.0}, ts_ms=1000)
     bus.publish(csi_raw(patient), {"ts_unix": "not a number",
                                     "amps": [1.0, 2.0]}, ts_ms=1001)
 
-    # Should run + return without exception.
     loop(
         bus=bus,
         patient_id=patient,
         window_s=10.0,
         stride_s=0.0,
         fs_resample=100.0,
-        hr_model=_StubModel(),
-        hr_ratio_idx=None,
+        bundle=_hr_only_bundle(),
         from_id=EARLIEST,
         max_iterations=1,
     )
-    # No predictions should have been published (window was empty).
     preds = bus.read({hr_predicted(patient): EARLIEST}, block_ms=0)
     assert preds == []

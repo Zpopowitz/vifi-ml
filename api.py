@@ -943,11 +943,21 @@ def create_app(model_dir: Path = MODEL_DIR,
             bus_from_env,
             hr_predicted,
             hr_reference,
+            rr_predicted,
+            rr_reference,
         )
         patient_id = websocket.query_params.get("patient_id", "default")
         await websocket.accept()
         bus = bus_from_env()
-        topics = [hr_predicted(patient_id), hr_reference(patient_id)]
+        # Subscribe to every (HR and RR, predicted and reference) topic
+        # for the patient. Adding new vital streams later is just one
+        # more entry here -- no protocol change.
+        topics = [
+            hr_predicted(patient_id),
+            hr_reference(patient_id),
+            rr_predicted(patient_id),
+            rr_reference(patient_id),
+        ]
         cursors: dict[str, str] = {t: LATEST for t in topics}
         await websocket.send_json({
             "type": "hello",
@@ -964,9 +974,15 @@ def create_app(model_dir: Path = MODEL_DIR,
                 )
                 for m in msgs:
                     cursors[m.topic] = m.msg_id
-                    role = "predicted" if "predicted" in m.topic else "reference"
+                    # Topic format: "<stream>.<role>.<patient>" e.g.
+                    # "hr.predicted.alice" or "rr.reference.alice".
+                    parts = m.topic.split(".")
+                    stream_kind = parts[0] if len(parts) >= 2 else "unknown"
+                    role = parts[1] if len(parts) >= 2 else "unknown"
                     await websocket.send_json({
-                        "type": role,
+                        "type": f"{stream_kind}.{role}",
+                        "stream": stream_kind,
+                        "role": role,
                         "topic": m.topic,
                         "msg_id": m.msg_id,
                         "ts_ms": m.ts_ms,

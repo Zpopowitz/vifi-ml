@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# The message bus extra (Redis Streams) is optional in requirements.txt;
+# install it explicitly here so the API + workers can talk to Redis.
+RUN pip install --no-cache-dir --prefix=/install "redis==5.0.8"
 
 COPY data_gen.py preprocess.py train.py ./
 RUN PYTHONPATH=/install/lib/python3.11/site-packages \
@@ -37,6 +40,7 @@ COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
 COPY api.py dashboard.py ./
+COPY modules/ ./modules/
 COPY tools/ ./tools/
 
 USER vifi

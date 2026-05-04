@@ -43,6 +43,7 @@ from modules.bus import (  # noqa: E402
     bus_from_env,
     csi_raw,
     hr_predicted,
+    rr_predicted,
 )
 from preprocess import extract_features  # noqa: E402
 
@@ -121,11 +122,26 @@ def _resample(packets: list[_Packet], fs: float, duration_s: float
     return out
 
 
-def _load_model(model: str = "synthetic"):
-    """Load the chosen model + feature index for HR confidence.
+@dataclass
+class _ModelBundle:
+    """Loaded HR + optional RR model for the inference worker."""
+    hr_model: object
+    hr_ratio_idx: Optional[int]
+    rr_model: object = None
+    rr_ratio_idx: Optional[int] = None
 
-    Returns (predict_fn, hr_ratio_idx). predict_fn maps a (1, F) feature
-    matrix to a float HR prediction.
+    @property
+    def has_rr(self) -> bool:
+        return self.rr_model is not None
+
+
+def _load_model(model: str = "synthetic") -> _ModelBundle:
+    """Load HR + optional RR models.
+
+    Returns a bundle. RR is optional: real captures don't have RR
+    ground truth yet so models_real typically only ships HR. The
+    bundle's `has_rr` flag tells callers whether to publish to
+    rr.predicted at all.
     """
     from xgboost import XGBRegressor
 
@@ -139,6 +155,7 @@ def _load_model(model: str = "synthetic"):
         raise ValueError(f"unknown --model: {model!r}")
 
     hr_path = model_dir / "hr_model.json"
+    rr_path = model_dir / "rr_model.json"
     meta_path = model_dir / "metadata.json"
     if not hr_path.exists() or not meta_path.exists():
         raise FileNotFoundError(
@@ -152,21 +169,40 @@ def _load_model(model: str = "synthetic"):
     meta = json.loads(meta_path.read_text())
     feature_names = list(meta.get("feature_names", []))
     hr_ratio_idx: Optional[int] = None
+    rr_ratio_idx: Optional[int] = None
     try:
         hr_ratio_idx = feature_names.index("hr_peak_ratio")
     except ValueError:
         pass
-    log.info("loaded %s model from %s (%d features)",
-             model, model_dir, len(feature_names))
-    return hr, hr_ratio_idx
+    try:
+        rr_ratio_idx = feature_names.index("rr_peak_ratio")
+    except ValueError:
+        pass
+
+    rr_model = None
+    if rr_path.exists():
+        rr_model = XGBRegressor()
+        rr_model.load_model(rr_path)
+        log.info("loaded %s model from %s (HR + RR, %d features)",
+                 model, model_dir, len(feature_names))
+    else:
+        log.info("loaded %s model from %s (HR only, %d features)",
+                 model, model_dir, len(feature_names))
+    return _ModelBundle(
+        hr_model=hr,
+        hr_ratio_idx=hr_ratio_idx,
+        rr_model=rr_model,
+        rr_ratio_idx=rr_ratio_idx,
+    )
 
 
 def run_once(window: _Window, fs_resample: float, window_s: float,
-             hr_model, hr_ratio_idx: Optional[int]
-             ) -> Optional[dict]:
-    """Run the model on the current window contents.
+             bundle: _ModelBundle) -> Optional[dict]:
+    """Run the bundle's models on the current window contents.
 
-    Returns the prediction payload, or None if there isn't enough data.
+    Returns a dict with `hr_bpm` always (when there's enough data) and
+    `rr_bpm` whenever `bundle.has_rr`. Returns None if the window is
+    too short.
     """
     pkts = window.snapshot()
     if len(pkts) < 16:
@@ -176,36 +212,56 @@ def run_once(window: _Window, fs_resample: float, window_s: float,
         return None
     envelope = _csi_to_envelope(grid)
     feats = extract_features(envelope, fs=fs_resample).reshape(1, -1)
-    hr = float(hr_model.predict(feats)[0])
+
+    hr = float(bundle.hr_model.predict(feats)[0])
     hr_conf = 0.0
-    if hr_ratio_idx is not None and hr_ratio_idx < feats.shape[1]:
-        hr_conf = float(np.clip(feats[0, hr_ratio_idx], 0.0, 1.0))
-    return {
+    if bundle.hr_ratio_idx is not None and bundle.hr_ratio_idx < feats.shape[1]:
+        hr_conf = float(np.clip(feats[0, bundle.hr_ratio_idx], 0.0, 1.0))
+
+    out = {
         "hr_bpm": round(hr, 2),
         "hr_confidence": round(hr_conf, 3),
         "window_s": window_s,
         "n_packets": int(len(pkts)),
         "n_subcarriers": int(grid.shape[1]),
     }
+    if bundle.has_rr:
+        rr = float(bundle.rr_model.predict(feats)[0])
+        rr_conf = 0.0
+        if bundle.rr_ratio_idx is not None \
+                and bundle.rr_ratio_idx < feats.shape[1]:
+            rr_conf = float(np.clip(feats[0, bundle.rr_ratio_idx], 0.0, 1.0))
+        out["rr_bpm"] = round(rr, 2)
+        out["rr_confidence"] = round(rr_conf, 3)
+    return out
 
 
 def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
-         fs_resample: float, hr_model, hr_ratio_idx: Optional[int],
+         fs_resample: float, bundle: _ModelBundle,
          from_id: str = LATEST,
          max_iterations: Optional[int] = None) -> None:
     """Subscribe -> buffer -> predict -> publish.
+
+    Publishes HR predictions to hr.predicted.<patient> always; RR
+    predictions to rr.predicted.<patient> only when the bundle has an
+    RR model (synthetic does, real currently doesn't until the first
+    Vernier paired captures land).
 
     Runs forever (until KeyboardInterrupt) unless `max_iterations` is set
     (used by tests to bound the loop deterministically).
     """
     in_topic = csi_raw(patient_id)
-    out_topic = hr_predicted(patient_id)
+    hr_topic = hr_predicted(patient_id)
+    rr_topic = rr_predicted(patient_id)
     cursors = {in_topic: from_id}
     window = _Window(duration_s=window_s * 1.5)
     last_predict = 0.0
     iterations = 0
-    log.info("worker for patient_id=%r: subscribing to %s, publishing to %s",
-             patient_id, in_topic, out_topic)
+    log.info(
+        "worker for patient_id=%r: subscribing to %s, publishing to %s%s",
+        patient_id, in_topic, hr_topic,
+        f" + {rr_topic}" if bundle.has_rr else " (RR disabled, no rr_model)",
+    )
 
     while max_iterations is None or iterations < max_iterations:
         iterations += 1
@@ -223,19 +279,35 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
         now = time.time()
         if now - last_predict < stride_s:
             continue
-        pred = run_once(window, fs_resample, window_s, hr_model, hr_ratio_idx)
+        pred = run_once(window, fs_resample, window_s, bundle)
         if pred is None:
             continue
         last_predict = now
         # ts_unix is the right edge of the prediction window.
         ts_unix = window._buf[-1].ts_unix if len(window) else now
-        bus.publish(out_topic, {
+        bus.publish(hr_topic, {
             "ts_unix": ts_unix,
             "patient_id": patient_id,
             "window_start_s": ts_unix - window_s,
             "window_end_s": ts_unix,
-            **pred,
+            "hr_bpm": pred["hr_bpm"],
+            "hr_confidence": pred["hr_confidence"],
+            "window_s": pred["window_s"],
+            "n_packets": pred["n_packets"],
+            "n_subcarriers": pred["n_subcarriers"],
         }, ts_ms=int(ts_unix * 1000))
+        if "rr_bpm" in pred:
+            bus.publish(rr_topic, {
+                "ts_unix": ts_unix,
+                "patient_id": patient_id,
+                "window_start_s": ts_unix - window_s,
+                "window_end_s": ts_unix,
+                "rr_bpm": pred["rr_bpm"],
+                "rr_confidence": pred["rr_confidence"],
+                "window_s": pred["window_s"],
+                "n_packets": pred["n_packets"],
+                "n_subcarriers": pred["n_subcarriers"],
+            }, ts_ms=int(ts_unix * 1000))
 
 
 def main() -> None:
@@ -263,7 +335,7 @@ def main() -> None:
     )
 
     bus = bus_from_env()
-    hr_model, hr_ratio_idx = _load_model(args.model)
+    bundle = _load_model(args.model)
     try:
         loop(
             bus=bus,
@@ -271,8 +343,7 @@ def main() -> None:
             window_s=args.window,
             stride_s=args.stride,
             fs_resample=args.fs_resample,
-            hr_model=hr_model,
-            hr_ratio_idx=hr_ratio_idx,
+            bundle=bundle,
             from_id=EARLIEST if args.from_start else LATEST,
         )
     except KeyboardInterrupt:

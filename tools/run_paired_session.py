@@ -211,6 +211,7 @@ def run_session(args: argparse.Namespace) -> int:
             sys.executable, "-u", str(ROOT / "rr_logger.py"),
             "--duration", str(args.duration),
             "--out", str(rr_log_path),
+            *bus_args,
         ]
 
     inference_cmd: Optional[list[str]] = None

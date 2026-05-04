@@ -24,6 +24,8 @@ from modules.bus import (  # noqa: E402
     InMemoryBus,
     hr_predicted,
     hr_reference,
+    rr_predicted,
+    rr_reference,
 )
 
 
@@ -64,16 +66,18 @@ def test_stream_sends_hello_with_patient_topics(client, shared_bus):
         hello = ws.receive_json()
         assert hello["type"] == "hello"
         assert hello["patient_id"] == "alice"
+        # All four (HR + RR, predicted + reference) for the patient.
         assert hr_predicted("alice") in hello["topics"]
         assert hr_reference("alice") in hello["topics"]
+        assert rr_predicted("alice") in hello["topics"]
+        assert rr_reference("alice") in hello["topics"]
 
 
-def test_stream_forwards_predicted_messages_to_client(client, shared_bus):
+def test_stream_forwards_hr_predicted_messages(client, shared_bus):
     with client.websocket_connect("/api/v1/stream?patient_id=alice") as ws:
         ws.receive_json()  # hello
 
         def publisher():
-            # Give the WebSocket handler time to start its first read().
             time.sleep(0.1)
             shared_bus.publish(hr_predicted("alice"), {
                 "ts_unix": 100.0, "hr_bpm": 73.5, "hr_confidence": 0.8,
@@ -82,12 +86,14 @@ def test_stream_forwards_predicted_messages_to_client(client, shared_bus):
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
-        assert msg["type"] == "predicted"
+        assert msg["type"] == "hr.predicted"
+        assert msg["stream"] == "hr"
+        assert msg["role"] == "predicted"
         assert msg["topic"] == hr_predicted("alice")
         assert msg["payload"]["hr_bpm"] == 73.5
 
 
-def test_stream_forwards_reference_messages_to_client(client, shared_bus):
+def test_stream_forwards_hr_reference_messages(client, shared_bus):
     with client.websocket_connect("/api/v1/stream?patient_id=alice") as ws:
         ws.receive_json()  # hello
 
@@ -100,9 +106,44 @@ def test_stream_forwards_reference_messages_to_client(client, shared_bus):
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
-        assert msg["type"] == "reference"
+        assert msg["type"] == "hr.reference"
         assert msg["topic"] == hr_reference("alice")
         assert msg["payload"]["hr_bpm"] == 72
+
+
+def test_stream_forwards_rr_predicted_messages(client, shared_bus):
+    with client.websocket_connect("/api/v1/stream?patient_id=alice") as ws:
+        ws.receive_json()  # hello
+
+        def publisher():
+            time.sleep(0.1)
+            shared_bus.publish(rr_predicted("alice"), {
+                "ts_unix": 300.0, "rr_bpm": 16.5, "rr_confidence": 0.7,
+                "patient_id": "alice",
+            }, ts_ms=300_000)
+
+        threading.Thread(target=publisher, daemon=True).start()
+        msg = ws.receive_json()
+        assert msg["type"] == "rr.predicted"
+        assert msg["stream"] == "rr"
+        assert msg["payload"]["rr_bpm"] == 16.5
+
+
+def test_stream_forwards_rr_reference_messages(client, shared_bus):
+    with client.websocket_connect("/api/v1/stream?patient_id=alice") as ws:
+        ws.receive_json()  # hello
+
+        def publisher():
+            time.sleep(0.1)
+            shared_bus.publish(rr_reference("alice"), {
+                "ts_unix": 400.0, "rr_bpm": 18.0,
+                "source": "vernier_gdx_rb", "patient_id": "alice",
+            }, ts_ms=400_000)
+
+        threading.Thread(target=publisher, daemon=True).start()
+        msg = ws.receive_json()
+        assert msg["type"] == "rr.reference"
+        assert msg["payload"]["source"] == "vernier_gdx_rb"
 
 
 def test_stream_isolates_clients_by_patient_id(client, shared_bus):

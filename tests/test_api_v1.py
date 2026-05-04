@@ -64,7 +64,8 @@ def test_v1_stream_websocket_sends_hello_with_model_version(client):
         msg = ws.receive_json()
     assert msg["type"] == "hello"
     assert msg["patient_id"] == "default"
-    assert "topics" in msg and len(msg["topics"]) == 2
+    # Four topics per patient: hr + rr, predicted + reference.
+    assert "topics" in msg and len(msg["topics"]) == 4
     assert "model_version" in msg
 
 
