@@ -75,8 +75,9 @@ def test_daily_rotation(tmp_path):
     w.close()
 
     assert p1 != p2
-    assert p1.name == "audit-2026-04-28.jsonl"
-    assert p2.name == "audit-2026-04-29.jsonl"
+    # Trailing 'Z' makes UTC explicit on disk (audit.py).
+    assert p1.name == "audit-2026-04-28Z.jsonl"
+    assert p2.name == "audit-2026-04-29Z.jsonl"
     assert len(p1.read_text().strip().splitlines()) == 1
     assert len(p2.read_text().strip().splitlines()) == 1
 

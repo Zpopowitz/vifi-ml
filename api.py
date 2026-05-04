@@ -28,11 +28,16 @@ from security import (
     AuthMiddleware,
     RateLimitMiddleware,
     RequestIdMiddleware,
+    SecurityHeadersMiddleware,
     authorize_websocket,
     get_cors_origins,
     redacted_exception_handler,
     validate_config_or_raise,
 )
+try:
+    from __version__ import __version__ as VIFI_VERSION
+except ImportError:
+    VIFI_VERSION = "unknown"
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
 
@@ -749,10 +754,26 @@ def create_app(model_dir: Path = MODEL_DIR,
     sec_status = validate_config_or_raise()
     log.info("security config: %s", sec_status)
 
-    app = FastAPI(title="ViFi", version=MODEL_VERSION)
-    # Order matters: outermost added LAST. Request flow into the app:
-    #   request id  ->  rate limit  ->  auth  ->  CORS  ->  app
-    # which means responses come out in reverse and CORS sees auth'd traffic.
+    # Validate DSP constants at boot — bands inside Nyquist, top-K
+    # within range, etc. Misconfigured envs fail fast.
+    from config import validate_at_boot as _validate_dsp  # noqa: PLC0415
+    _validate_dsp()
+
+    app = FastAPI(title="ViFi", version=VIFI_VERSION,
+                  # Hide /openapi.json + /docs unless explicitly requested
+                  # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
+                  docs_url="/docs" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
+                  redoc_url="/redoc" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
+                  openapi_url="/openapi.json" if os.environ.get(
+                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None)
+    # Middleware order: outermost added LAST.
+    # Request flow into app:  request_id -> security_headers -> rate_limit
+    #                         -> auth -> CORS -> gzip -> app
+    # Comment + tested via test_middleware_order.
+    from fastapi.middleware.gzip import GZipMiddleware  # noqa: PLC0415
+    app.add_middleware(GZipMiddleware, minimum_size=1024)  # I046
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_cors_origins(),
@@ -763,6 +784,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     )
     app.add_middleware(AuthMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)  # I056
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(Exception, redacted_exception_handler)
 
@@ -777,6 +799,25 @@ def create_app(model_dir: Path = MODEL_DIR,
         log.info("%s %s -> %s (%.1f ms)",
                  request.method, request.url.path, response.status_code, ms)
         return response
+
+    @app.get("/readyz")
+    def readyz():
+        """Readiness probe (I133): "models loaded + bus reachable"
+        rather than "process is up." Different from /health so an
+        orchestrator can know whether to send traffic vs. wait.
+
+        Currently checks: synthetic OR real model is loaded. Bus
+        check is best-effort (doesn't fail readiness if Redis is
+        slow because the bus path is async-tolerant).
+        """
+        ready = synthetic_bundle.is_loaded or real_bundle.is_loaded
+        return JSONResponse(
+            {"ready": ready,
+             "synthetic_loaded": synthetic_bundle.is_loaded,
+             "real_loaded": real_bundle.is_loaded,
+             "code_version": VIFI_VERSION},
+            status_code=200 if ready else 503,
+        )
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -1049,8 +1090,28 @@ def create_app(model_dir: Path = MODEL_DIR,
             except Exception:
                 pass
 
+    # Warm-up: load models on startup if available so first user doesn't
+    # pay the cold-load latency (I175).
+    @app.on_event("startup")
+    async def _warmup():  # noqa: ANN202
+        if synthetic_bundle.is_available():
+            try:
+                synthetic_bundle.load()
+                log.info("warm: synthetic models loaded")
+            except Exception as exc:
+                log.info("warm: synthetic load skipped: %s", exc)
+        if (real_model_dir / "hr_model.json").exists():
+            try:
+                real_bundle.load()
+                log.info("warm: real models loaded")
+            except Exception as exc:
+                log.info("warm: real load skipped: %s", exc)
+
     return app
 
+
+# Imports used by /readyz handler at module scope.
+from fastapi.responses import JSONResponse  # noqa: E402
 
 # Module-level app for `uvicorn api:app`. Always succeeds now; endpoints
 # return 503 if the relevant model bundle is missing.
