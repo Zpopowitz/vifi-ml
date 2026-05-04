@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
+COPY security.py pseudonymize.py ./
 COPY api.py dashboard.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/
