@@ -23,6 +23,16 @@ import asyncio
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+
+from security import (
+    AuthMiddleware,
+    RateLimitMiddleware,
+    RequestIdMiddleware,
+    authorize_websocket,
+    get_cors_origins,
+    redacted_exception_handler,
+    validate_config_or_raise,
+)
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
 
@@ -718,13 +728,25 @@ def create_app(model_dir: Path = MODEL_DIR,
     """Build the FastAPI app. Always succeeds — missing models are reported
     via 503 from the relevant endpoints, not as a boot failure.
     """
+    sec_status = validate_config_or_raise()
+    log.info("security config: %s", sec_status)
+
     app = FastAPI(title="ViFi", version=MODEL_VERSION)
+    # Order matters: outermost added LAST. Request flow into the app:
+    #   request id  ->  rate limit  ->  auth  ->  CORS  ->  app
+    # which means responses come out in reverse and CORS sees auth'd traffic.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=get_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["authorization", "x-api-key", "content-type",
+                       "x-request-id"],
     )
+    app.add_middleware(AuthMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestIdMiddleware)
+    app.add_exception_handler(Exception, redacted_exception_handler)
 
     synthetic_bundle = SyntheticModelBundle(model_dir)
     real_bundle = RealModelBundle(real_model_dir)
@@ -946,8 +968,14 @@ def create_app(model_dir: Path = MODEL_DIR,
             rr_predicted,
             rr_reference,
         )
-        patient_id = websocket.query_params.get("patient_id", "default")
+        # Accept first so we can return a clean close code on auth
+        # failure (Starlette requires accept() before close()).
+        # Browsers can't set headers on `new WebSocket()`, so we accept
+        # ?api_key=... as well.
         await websocket.accept()
+        if not await authorize_websocket(websocket):
+            return
+        patient_id = websocket.query_params.get("patient_id", "default")
         bus = bus_from_env()
         # Subscribe to every (HR and RR, predicted and reference) topic
         # for the patient. Adding new vital streams later is just one

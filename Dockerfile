@@ -39,15 +39,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
+COPY security.py pseudonymize.py ./
 COPY api.py dashboard.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/
+
+# Pre-create the audit log directory with vifi ownership BEFORE
+# `USER vifi`. Docker copies the directory's contents (and ownership)
+# into the named volume on first mount, so the audit_subscriber's
+# vifi user can write to it without manual chown.
+RUN mkdir -p /app/data/audit \
+    && chown -R vifi:vifi /app/data
 
 USER vifi
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+# Note: no HEALTHCHECK in the image. Each service (api, inference_worker,
+# audit_subscriber, dashboard) defines its own healthcheck in
+# docker-compose.yml because they have different liveness signals: the
+# api answers HTTP /health, the workers ping Redis, the dashboard hits
+# its Streamlit health endpoint.
 
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

@@ -20,13 +20,33 @@ def test_dockerfile_exists_and_is_sane():
     assert "pip install" in df
     assert "uvicorn" in df and "api:app" in df
     assert "EXPOSE 8000" in df
-    assert "HEALTHCHECK" in df
+    # HEALTHCHECK lives per-service in docker-compose.yml now (each
+    # service has a different liveness signal).
+
+
+def test_dockerfile_copies_every_runtime_module():
+    """Every Python module that api.py / workers import at runtime must
+    be COPY-ed into the runtime image. Forgetting one is a silent
+    container build success followed by a runtime ModuleNotFoundError
+    (e.g., the missing-`security.py` outage on first deploy)."""
+    df = (ROOT / "Dockerfile").read_text()
+    for mod in ("api.py", "audit.py", "calibration.py", "data_gen.py",
+                "preprocess.py", "pseudonymize.py", "quality.py",
+                "security.py", "train.py"):
+        assert mod in df, (
+            f"Dockerfile is missing COPY {mod}. Add it next to its "
+            f"siblings in the runtime stage."
+        )
+    # And the directories.
+    assert "modules/" in df
+    assert "tools/" in df
 
 
 def test_requirements_pins_core_libs():
     req = (ROOT / "requirements.txt").read_text().lower()
     for pkg in ("numpy", "scipy", "scikit-learn", "xgboost",
-                "fastapi", "uvicorn", "pydantic", "streamlit"):
+                "fastapi", "uvicorn", "pydantic", "streamlit",
+                "cryptography"):
         assert pkg in req, f"missing {pkg} in requirements.txt"
 
 

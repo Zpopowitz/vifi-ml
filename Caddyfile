@@ -1,0 +1,54 @@
+# Caddy reverse proxy for ViFi production deployments.
+#
+# Caddy auto-provisions Let's Encrypt certificates for the configured
+# domain. Set VIFI_DOMAIN=your.host.example.com in .env before running
+# `docker compose --profile prod up -d`.
+#
+# For local prod-like testing without a public domain, replace the
+# {$VIFI_DOMAIN} below with `localhost` and Caddy will issue an
+# internal cert (browser will warn -- that's expected).
+#
+# Only routes accepting external traffic should be exposed here.
+# Internal services (Redis, the inference worker, the audit
+# subscriber) stay on the compose network and are unreachable from
+# the internet.
+
+{$VIFI_DOMAIN} {
+    encode gzip zstd
+
+    # Strict transport security -- once over TLS, never fall back.
+    header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    header X-Content-Type-Options "nosniff"
+    header X-Frame-Options "DENY"
+    header Referrer-Policy "no-referrer"
+    # The dashboard fetches from the API on the same origin, so a tight
+    # CSP is feasible. Tune as the UI grows.
+    header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:"
+
+    # Streamlit UI at the root.
+    handle / {
+        reverse_proxy dashboard:8501
+    }
+    handle /static/* {
+        reverse_proxy dashboard:8501
+    }
+    handle /_stcore/* {
+        reverse_proxy dashboard:8501
+    }
+
+    # API (HTTP + WebSocket) under /api/.
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle /health {
+        reverse_proxy api:8000
+    }
+    handle /roadmap {
+        reverse_proxy api:8000
+    }
+
+    # Anything else 404s rather than leaking implementation paths.
+    handle {
+        respond 404
+    }
+}

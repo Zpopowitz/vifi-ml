@@ -9,6 +9,21 @@ One JSON object per line, one file per day, rotated automatically.
 Filenames: `audit-YYYY-MM-DD.jsonl` under `$VIFI_AUDIT_DIR`
 (default `data/audit/`).
 
+Privacy controls (HIPAA Safe Harbor, 45 CFR 164.514(b)(2)):
+  * `subject_id` is pseudonymized on write via `pseudonymize.pseudonymize`.
+    The audit log never contains real subject identifiers; the mapping
+    real-id -> pseudonym is held outside this system (see
+    `pseudonymize.py`).
+  * Optional record-level encryption with Fernet (AES-128-CBC + HMAC).
+    Enabled by setting `VIFI_AUDIT_ENCRYPTION_KEY` to a base64-encoded
+    32-byte key. Each line becomes
+        {"ts_iso": "...", "ciphertext": "...", "request_id": "..."}
+    where `ciphertext` is the Fernet-encrypted JSON of the original
+    record. Plaintext-mode (no key) logs a startup warning.
+
+Generate an encryption key:
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
 Usage:
     from audit import AuditLogWriter
 
@@ -38,12 +53,41 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from pseudonymize import is_pseudonymous, pseudonymize
+
 DEFAULT_AUDIT_DIR = Path("data/audit")
+
+log = logging.getLogger("vifi.audit")
+
+# Subject-bearing fields that must always be pseudonymized before
+# being persisted. Anything else passing as a "subject id" should be
+# added here so the writer redacts it automatically.
+_SUBJECT_FIELDS = ("subject_id", "patient_id")
+
+
+def _load_fernet():
+    """Return a Fernet cipher from VIFI_AUDIT_ENCRYPTION_KEY, or None.
+
+    Lazy so tests + dev runs don't require the cryptography package
+    when encryption is disabled.
+    """
+    key = os.environ.get("VIFI_AUDIT_ENCRYPTION_KEY")
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError as exc:
+        raise RuntimeError(
+            "VIFI_AUDIT_ENCRYPTION_KEY is set but `cryptography` "
+            "is not installed. Add it to requirements or unset the env."
+        ) from exc
+    return Fernet(key.encode("ascii"))
 
 
 def utc_now_iso() -> str:
@@ -70,7 +114,8 @@ class AuditLogWriter:
     """
 
     def __init__(self, audit_dir: Optional[Path] = None,
-                 now_fn=None):
+                 now_fn=None,
+                 fernet=None):
         if audit_dir is None:
             env = os.environ.get("VIFI_AUDIT_DIR")
             audit_dir = Path(env) if env else DEFAULT_AUDIT_DIR
@@ -79,6 +124,25 @@ class AuditLogWriter:
         self._current_date: Optional[str] = None
         self._handle = None  # type: ignore[assignment]
         self._current_path: Optional[Path] = None
+        # Optional Fernet cipher. Pass `fernet=False` to skip env lookup
+        # entirely (used by tests). Pass a Fernet instance to override.
+        if fernet is False:
+            self._fernet = None
+        elif fernet is None:
+            self._fernet = _load_fernet()
+            if self._fernet is None:
+                log.warning(
+                    "audit log encryption is OFF "
+                    "(VIFI_AUDIT_ENCRYPTION_KEY not set). Records will "
+                    "be persisted in clear. This is FINE for dev with "
+                    "synthetic data; do not use in production."
+                )
+        else:
+            self._fernet = fernet
+
+    @property
+    def encrypted(self) -> bool:
+        return self._fernet is not None
 
     @property
     def current_path(self) -> Optional[Path]:
@@ -100,14 +164,43 @@ class AuditLogWriter:
         self._current_path = path
 
     def write(self, record: dict[str, Any]) -> None:
-        """Append one record. Adds `ts_iso` if absent, then flushes."""
+        """Append one record. Adds `ts_iso` if absent, pseudonymizes
+        any subject-bearing fields, optionally encrypts the body, then
+        flushes."""
         self._open_for_today()
+        record = self._sanitize(record)
         if "ts_iso" not in record:
             record = {"ts_iso": utc_now_iso(), **record}
-        line = json.dumps(record, separators=(",", ":"))
+
+        if self._fernet is not None:
+            inner = json.dumps(record, separators=(",", ":")).encode("utf-8")
+            ciphertext = self._fernet.encrypt(inner).decode("ascii")
+            envelope = {
+                "ts_iso": record["ts_iso"],
+                "request_id": record.get("request_id"),
+                "ciphertext": ciphertext,
+            }
+            line = json.dumps(envelope, separators=(",", ":"))
+        else:
+            line = json.dumps(record, separators=(",", ":"))
+
         assert self._handle is not None  # for type checkers
         self._handle.write(line + "\n")
         self._handle.flush()
+
+    @staticmethod
+    def _sanitize(record: dict[str, Any]) -> dict[str, Any]:
+        """Replace any raw subject identifiers with their pseudonyms.
+
+        Already-pseudonymized values pass through unchanged so callers
+        that pseudonymize upstream don't double-encode.
+        """
+        out = dict(record)
+        for field in _SUBJECT_FIELDS:
+            if field in out and out[field] is not None \
+                    and not is_pseudonymous(out[field]):
+                out[field] = pseudonymize(out[field])
+        return out
 
     def close(self) -> None:
         if self._handle is not None:

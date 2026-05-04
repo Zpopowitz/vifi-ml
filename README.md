@@ -74,48 +74,64 @@ arrive. Components communicate over a Redis Streams message bus, so
 each piece (logger, inference, audit, dashboard) can be restarted,
 replaced, or run on a different host without changing call sites.
 
-**Recommended: run the software stack via Docker Compose.** Hardware
-loggers stay on the host because they need direct BLE / USB serial
-access; everything else lives in containers (`docker-compose.yml`).
+**The whole software stack is one command.** Hardware loggers stay
+on the host because they need direct BLE / USB serial access;
+everything else (Redis, API, inference, audit, dashboard) runs in
+containers — no host Python venv required.
+
+#### Smoke test the stack with synthetic data (no hardware)
 
 ```bash
-# 1. Bring up Redis + API + inference worker + audit subscriber.
+docker compose --profile dev up -d
+```
+
+Then open <http://localhost:8501>, click the **Live** tab, set
+`patient_id` to `default`, and within ~10 s you should see HR around
+75 bpm and RR around 18 bpm — those are the values the bundled
+synthetic CSI publisher generates. This proves Redis, the API, the
+inference worker, the audit subscriber and the dashboard are all
+talking to each other end-to-end.
+
+Stop everything:
+
+```bash
+docker compose --profile dev down
+```
+
+#### Run with real hardware
+
+```bash
+# 1. Pick a patient id for this session (used as the bus topic suffix).
+export VIFI_PATIENT_ID=founder
+
+# 2. Bring up the software stack -- without the simulator this time.
 docker compose up -d
 
-# 2. On the host, point loggers at the bus and start a paired capture.
+# 3. On the host, run the hardware loggers in --bus mode.
 export VIFI_BUS_URL=redis://localhost:6379/0
 python tools/run_paired_session.py \
-    --subject-id founder --room-id quiet --posture seated \
+    --subject-id $VIFI_PATIENT_ID --room-id quiet --posture seated \
     --csi-port COM6 --h10-address AA:BB:CC:DD:EE:FF \
     --duration 180 --bus
-
-# 3. Open the dashboard, switch to "Live" tab, set patient_id=founder.
-streamlit run dashboard.py
 ```
 
-The Live tab shows two synchronized panels (HR and RR). Each panel
-displays predicted, reference, and rolling MAE over the visible
-window; RR stays empty until the Vernier belt is connected and
-publishing — no UI change needed.
+Open <http://localhost:8501>, **Live** tab, `patient_id=founder` →
+predicted HR plotted against the Polar H10 reference, predicted RR
+plotted against the Vernier GDX-RB reference (when connected), with
+rolling MAE for each.
 
-**Alternative: native Redis (no Docker).**
+#### Day-to-day commands
 
 ```bash
-# WSL / Linux:
-sudo apt install -y redis-server && sudo service redis-server start
-# Then in each shell that runs ViFi:
-export VIFI_BUS_URL=redis://localhost:6379/0
-# Start services manually:
-python -m tools.audit_subscriber --patient-id founder &
-python -m tools.inference_worker --patient-id founder &
-uvicorn api:app &
-streamlit run dashboard.py
+docker compose ps               # see what's running
+docker compose logs -f api      # tail any service
+docker compose down             # stop everything
+docker compose down -v          # also wipe Redis state
 ```
 
-Use `docker compose logs -f inference_worker` to tail any service in
-the containerized setup. To run multiple patients, set
-`VIFI_PATIENT_ID` per service or replicate the worker / subscriber
-with different patient ids.
+Multi-patient is one env var: re-run `docker compose up` with a
+different `VIFI_PATIENT_ID`. The audit log directory
+(`./data/audit/`) persists across container restarts.
 
 ### Reproduce the headline result
 
@@ -256,7 +272,11 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
 | Live message bus (Redis Streams) | Shipped — pub/sub, replay, audit-as-subscriber | `modules/bus.py` |
 | Live HR + RR dashboard (predicted vs reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
-| Containerized live stack (Redis + API + workers) | Shipped | `docker-compose.yml`, `Dockerfile` |
+| Containerized live stack (Redis + API + workers + dashboard + TLS) | Shipped — dev + prod profiles | `docker-compose.yml`, `Dockerfile`, `Caddyfile` |
+| API authentication, CORS allowlist, rate limiting, error redaction | Shipped | `security.py` |
+| HIPAA-aligned subject id pseudonymization + optional audit log encryption | Shipped | `pseudonymize.py`, `audit.py` |
+| Security policy + threat model | Shipped | `SECURITY.md` |
+| FDA + HIPAA gap analysis | Shipped | `COMPLIANCE.md` |
 | Apnea detection | Planned, returns HTTP 501 | `modules/apnea.py` |
 | Gait / walking-speed | Planned, returns HTTP 501 | `modules/gait.py` |
 | Fall detection | Planned, returns HTTP 501 | `modules/falls.py` |
