@@ -90,21 +90,32 @@ def _live_topics(patient_id: str) -> list[str]:
     ]
 
 
-def _drain_into_state(patient_id: str) -> int:
+# Hard cap on in-memory rows so a long-running session doesn't OOM
+# Streamlit on a small VM (I091). 5000 entries ~ 20 minutes at 4 Hz
+# combined HR+RR predicted+reference, comfortably above any reasonable
+# history slider.
+_LIVE_ROWS_HARD_CAP = 5000
+
+
+def _drain_into_state(patient_id: str) -> tuple[int, str | None]:
     """Read new bus messages into st.session_state.live_rows.
 
-    Each row carries one vital reading (HR or RR) tagged by stream and
-    role. Empty payloads are dropped quietly. Returns the number of
-    messages appended this call.
+    Returns (n_appended, error_message). error_message is None on
+    success, or a short string describing why the bus call failed —
+    surfaced as a red banner so the operator knows the stream isn't
+    flowing.
     """
     bus = _get_live_bus()
     cursors = st.session_state.live_cursors
-    msgs = bus.read(cursors, block_ms=0, count=200)
+    try:
+        msgs = bus.read(cursors, block_ms=0, count=200)
+    except Exception as exc:
+        # I094: surface bus failures instead of freezing silently.
+        return 0, f"bus read failed: {type(exc).__name__}: {exc}"
     appended = 0
     for m in msgs:
         cursors[m.topic] = m.msg_id
         payload = m.payload or {}
-        # Topic format: "<stream>.<role>.<patient>"
         parts = m.topic.split(".")
         if len(parts) < 2:
             continue
@@ -122,7 +133,11 @@ def _drain_into_state(patient_id: str) -> int:
             "confidence": payload.get(f"{stream_kind}_confidence"),
         })
         appended += 1
-    return appended
+    # Hard cap so memory stays bounded regardless of the history slider.
+    if len(st.session_state.live_rows) > _LIVE_ROWS_HARD_CAP:
+        excess = len(st.session_state.live_rows) - _LIVE_ROWS_HARD_CAP
+        st.session_state.live_rows = st.session_state.live_rows[excess:]
+    return appended, None
 
 
 def _trim_to_window(history_s: float) -> None:
@@ -221,8 +236,10 @@ with tab_live:
     @st.fragment(run_every=None if paused else f"{refresh_s}s")
     def _live_panel() -> None:
         if not paused:
-            _drain_into_state(live_patient)
+            _, error = _drain_into_state(live_patient)
             _trim_to_window(history_s)
+            if error:
+                st.error(f"⚠️  {error}")
 
         rows = st.session_state.live_rows
         if not rows:

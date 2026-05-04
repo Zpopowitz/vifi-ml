@@ -170,6 +170,14 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
                  bus_publisher: Optional[_BusPublisher] = None) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Larger receive buffer (I102) — kernel default ~200 KB silently
+    # drops packets on bursty 100 Hz CSI ingestion. 8 MB tolerates
+    # ~80 s of full-rate buffering. Honored only up to net.core.rmem_max.
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
+    except OSError as exc:
+        log.warning("could not enlarge UDP RCVBUF (%s); using kernel default",
+                    exc)
     sock.bind(("0.0.0.0", int(port)))
     sock.settimeout(1.0)
     log.info("listening for ESP32 CSI on UDP 0.0.0.0:%s", port)
@@ -196,22 +204,28 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
 
 def simulator(buf: RingBuffer, stop: threading.Event,
               fs: float = 100.0, n_sub: int = 52,
-              bus_publisher: Optional[_BusPublisher] = None) -> None:
-    """Generate fake ESP32 packets so you can demo without hardware."""
+              bus_publisher: Optional[_BusPublisher] = None,
+              seed: int = 42) -> None:
+    """Generate fake ESP32 packets so you can demo without hardware.
+
+    Seeded by default (I103) so end-to-end smoke tests are repeatable.
+    Pass `seed=None` for non-deterministic output (rarely useful)."""
     try:
         from data_gen import generate_sample
     except Exception as exc:
         log.error("simulator needs the repo on sys.path: %s", exc); return
-    log.info("simulator: synthesising %d subcarriers at %.1f Hz", n_sub, fs)
+    log.info("simulator: synthesising %d subcarriers at %.1f Hz (seed=%s)",
+             n_sub, fs, seed)
     dt = 1.0 / fs
     hr_bpm = 75.0; rr_bpm = 18.0
+    rng = np.random.default_rng(seed)
+    gains = np.abs(rng.standard_normal(n_sub)) + 0.2
+    sub_seed = int(rng.integers(0, 2**31 - 1)) if seed is not None else None
     while not stop.is_set():
         iq, _ = generate_sample(duration_s=1.0, fs=fs,
-                                hr_bpm=hr_bpm, rr_bpm=rr_bpm, snr_db=20.0)
+                                hr_bpm=hr_bpm, rr_bpm=rr_bpm, snr_db=20.0,
+                                seed=sub_seed)
         env = np.abs(iq)
-        # Broadcast the envelope across n_sub synthetic subcarriers with
-        # per-subcarrier random gain so the top-K selector has something to do.
-        gains = np.abs(np.random.default_rng().standard_normal(n_sub)) + 0.2
         for i, sample in enumerate(env):
             amps = (sample * gains).astype(np.float32)
             buf.push(Packet(timestamp=time.monotonic(), amps=amps))

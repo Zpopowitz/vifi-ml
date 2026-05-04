@@ -239,7 +239,8 @@ def run_once(window: _Window, fs_resample: float, window_s: float,
 def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
          fs_resample: float, bundle: _ModelBundle,
          from_id: str = LATEST,
-         max_iterations: Optional[int] = None) -> None:
+         max_iterations: Optional[int] = None,
+         stop: Optional["threading.Event"] = None) -> None:
     """Subscribe -> buffer -> predict -> publish.
 
     Publishes HR predictions to hr.predicted.<patient> always; RR
@@ -263,7 +264,8 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
         f" + {rr_topic}" if bundle.has_rr else " (RR disabled, no rr_model)",
     )
 
-    while max_iterations is None or iterations < max_iterations:
+    while (max_iterations is None or iterations < max_iterations) \
+            and (stop is None or not stop.is_set()):
         iterations += 1
         msgs = bus.read(cursors, block_ms=int(stride_s * 1000), count=1000)
         for m in msgs:
@@ -336,6 +338,21 @@ def main() -> None:
 
     bus = bus_from_env()
     bundle = _load_model(args.model)
+
+    # Graceful shutdown (I220): SIGTERM (Docker stop) breaks the loop's
+    # next blocking bus read so we exit cleanly. Without this, rolling
+    # deploys risk a partially-published prediction.
+    import signal
+    import threading
+    stop_evt = threading.Event()
+
+    def _on_signal(signum, _frame):
+        log.info("received signal %s; shutting down", signum)
+        stop_evt.set()
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
     try:
         loop(
             bus=bus,
@@ -345,11 +362,16 @@ def main() -> None:
             fs_resample=args.fs_resample,
             bundle=bundle,
             from_id=EARLIEST if args.from_start else LATEST,
+            stop=stop_evt,
         )
     except KeyboardInterrupt:
-        log.info("shutting down")
+        log.info("shutting down (KeyboardInterrupt)")
     finally:
-        bus.close()
+        try:
+            bus.close()
+        except Exception:
+            pass
+        log.info("inference worker exited cleanly")
 
 
 if __name__ == "__main__":

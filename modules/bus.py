@@ -150,13 +150,19 @@ def subscribe(bus: MessageBus, topics: list[str], from_id: str = LATEST,
 # ---------------------------------------------------------------------------
 
 class InMemoryBus:
-    """Process-local pub/sub. Thread-safe, append-only, no persistence."""
+    """Process-local pub/sub. Thread-safe, append-only, bounded.
 
-    def __init__(self) -> None:
+    `max_messages_per_topic` (default 100k) caps each topic so a long-
+    running test can't OOM. When exceeded, oldest messages are
+    discarded (FIFO). I084.
+    """
+
+    def __init__(self, max_messages_per_topic: int = 100_000) -> None:
         self._topics: dict[str, list[Message]] = {}
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._seq_within_ms: dict[int, int] = {}
+        self._max_per_topic = int(max_messages_per_topic)
 
     def publish(self, topic: str, payload: dict[str, Any],
                 ts_ms: Optional[int] = None) -> str:
@@ -166,7 +172,12 @@ class InMemoryBus:
             self._seq_within_ms[ts] = seq + 1
             msg_id = f"{ts}-{seq}"
             msg = Message(topic=topic, msg_id=msg_id, ts_ms=ts, payload=payload)
-            self._topics.setdefault(topic, []).append(msg)
+            bucket = self._topics.setdefault(topic, [])
+            bucket.append(msg)
+            # Bounded: drop oldest when over cap.
+            if len(bucket) > self._max_per_topic:
+                drop = len(bucket) - self._max_per_topic
+                del bucket[:drop]
             self._cond.notify_all()
             return msg_id
 
@@ -236,17 +247,50 @@ class RedisStreamBus:
     """
 
     def __init__(self, url: str = "redis://localhost:6379/0",
-                 maxlen: Optional[int] = None) -> None:
+                 maxlen: Optional[int] = None,
+                 *, max_retries: int = 3,
+                 retry_base_s: float = 0.2) -> None:
+        """`maxlen` (approximate, with `~`) trims old messages once the
+        stream exceeds the cap. ~10% overshoot is acceptable for the
+        throughput win — see SECURITY.md "MAXLEN trimming."
+
+        `max_retries` + `retry_base_s` control retry-with-jitter on
+        transient Redis errors (I089). Reads + writes both retry."""
         try:
-            import redis  # noqa: F401  (imported for the side effect of failing fast)
+            import redis  # noqa: F401
         except ImportError as exc:
             raise RuntimeError(
                 "RedisStreamBus needs `redis-py`. Install with "
                 "`pip install redis==5.0.8`."
             ) from exc
         from redis import Redis  # type: ignore[import-not-found]
-        self._client = Redis.from_url(url, decode_responses=True)
+        self._client = Redis.from_url(url, decode_responses=True,
+                                       socket_keepalive=True,
+                                       socket_connect_timeout=5.0)
         self._maxlen = maxlen
+        self._max_retries = int(max_retries)
+        self._retry_base_s = float(retry_base_s)
+
+    def _retry(self, fn, *args, **kwargs):
+        """Retry-with-jitter wrapper around redis-py calls. I089."""
+        import random
+        from redis.exceptions import (
+            ConnectionError as RedisConnError,
+            TimeoutError as RedisTimeout,
+        )
+        last_exc = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                return fn(*args, **kwargs)
+            except (RedisConnError, RedisTimeout) as exc:
+                last_exc = exc
+                if attempt >= self._max_retries:
+                    break
+                # Exponential backoff with full jitter.
+                base = self._retry_base_s * (2 ** attempt)
+                time.sleep(random.uniform(0.0, base))
+        # Surface the last error so the caller can decide.
+        raise last_exc  # type: ignore[misc]
 
     def publish(self, topic: str, payload: dict[str, Any],
                 ts_ms: Optional[int] = None) -> str:
@@ -259,14 +303,16 @@ class RedisStreamBus:
         if self._maxlen is not None:
             kwargs["maxlen"] = self._maxlen
             kwargs["approximate"] = True
-        return str(self._client.xadd(topic, fields, **kwargs))
+        return str(self._retry(self._client.xadd, topic, fields, **kwargs))
 
     def read(self, cursors: dict[str, str], block_ms: int = 1000,
              count: int = 100) -> list[Message]:
         # XREAD's "$" means "only new messages from now"; passing through
         # as-is matches our LATEST sentinel.
         streams = dict(cursors)
-        result = self._client.xread(streams, count=count, block=block_ms)
+        result = self._retry(
+            self._client.xread, streams, count=count, block=block_ms,
+        )
         out: list[Message] = []
         if not result:
             return out
