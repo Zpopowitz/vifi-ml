@@ -51,6 +51,12 @@ def _parse_one_line(line: str
         return None, None, None
     if len(ints) < 4 or len(ints) % 2 != 0:
         return None, None, None
+    # ESP32-S3 ESP-IDF firmware emits int8 I/Q values, range [-128, 127].
+    # Anything outside this range indicates a malformed line, a firmware
+    # mismatch (someone swapped to int16), or file corruption (I037).
+    # Drop the line rather than feed bad data into the pipeline silently.
+    if any(v < -128 or v > 127 for v in ints):
+        return None, None, None
     iq = np.asarray(ints, dtype=np.float32).reshape(-1, 2)
     cplx = (iq[:, 0] + 1j * iq[:, 1]).astype(np.complex64)
     amps = np.abs(cplx).astype(np.float32)

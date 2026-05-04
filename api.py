@@ -60,8 +60,10 @@ log = logging.getLogger("vifi.api")
 
 class IQRequest(BaseModel):
     fs: float = Field(100.0, gt=0, description="Sample rate in Hz")
-    iq_real: List[float] = Field(..., min_length=32)
-    iq_imag: List[float] = Field(..., min_length=32)
+    # 64 = MIN_SAMPLES_PER_GRID; below this Hann + zero-padded FFT
+    # produce numerically unstable spectra (see preprocess.py).
+    iq_real: List[float] = Field(..., min_length=64)
+    iq_imag: List[float] = Field(..., min_length=64)
 
     @field_validator("iq_imag")
     @classmethod
@@ -92,9 +94,21 @@ class DemoRequest(BaseModel):
 
 class CSIRequest(BaseModel):
     """Per-packet subcarrier amplitudes from ESP32 / Nexmon."""
-    fs: float = Field(..., gt=0, description="packet rate (Hz)")
-    csi_amp: List[List[float]] = Field(..., min_length=32)
+    fs: float = Field(..., gt=0, le=1000.0,
+                      description="packet rate (Hz); capped at 1 kHz")
+    # I044: bound the size + shape of the CSI matrix to close a memory-
+    # exhaustion DoS vector.
+    csi_amp: List[List[float]] = Field(..., min_length=64, max_length=120000)
     subcarrier_mask: Optional[List[int]] = None
+
+    @field_validator("csi_amp")
+    @classmethod
+    def _bounded_subcarriers(cls, v):
+        if v and (len(v[0]) < 1 or len(v[0]) > 256):
+            raise ValueError(
+                f"csi_amp inner length {len(v[0])} out of range [1, 256]"
+            )
+        return v
 
 
 class HealthResponse(BaseModel):
@@ -126,7 +140,11 @@ class CalibrationOptions(BaseModel):
 
 class CaptureRequest(BaseModel):
     """Raw ESP32-S3 CSI capture text + slicing config."""
-    capture_text: str = Field(..., description="contents of capture.txt")
+    # 50 MB cap (I043) — about 1 hour at 100 Hz × 192 subcarriers as
+    # plain text. Long enough for any real session, short enough that
+    # a malicious POST can't OOM the API.
+    capture_text: str = Field(..., max_length=50_000_000,
+                              description="contents of capture.txt (max 50 MB)")
     packet_rate_hz: Optional[float] = Field(
         None,
         description="actual measured packet rate; falls back to 100 Hz if absent",

@@ -44,21 +44,26 @@ TOP_K_SUBCARRIERS: int = _env_int("VIFI_TOP_K_SUBCARRIERS", 8)
 # sync energy; trimming reduces baseline drift in features.
 EDGE_SUBCARRIER_GUARD: int = _env_int("VIFI_EDGE_SUBCARRIER_GUARD", 8)
 
-# Band-pass filter cutoffs (Hz). Picks the physiological signal band
-# AND keeps it strictly inside the Nyquist band for the default
-# resample rate (100 Hz -> Nyquist 50 Hz). Validated at boot.
+# Peak-search bands (Hz). Defaults match the bands used in the trained
+# model (preserve model compatibility). Widening would require a model
+# retrain — bump FEATURE_SET_VERSION when you do.
+#
+# HR_BAND covers ~54-108 bpm. The trained model was fit on this range.
+# Athletes (<54 bpm) or tachycardic patients (>108 bpm) need a retrain
+# with a widened band — tracked in ROADMAP.md.
 HR_BAND_HZ: Tuple[float, float] = (
-    _env_float("VIFI_HR_LO_HZ", 0.7),   # 42 bpm
-    _env_float("VIFI_HR_HI_HZ", 3.0),   # 180 bpm
+    _env_float("VIFI_HR_LO_HZ", 0.9),   # 54 bpm
+    _env_float("VIFI_HR_HI_HZ", 1.8),   # 108 bpm
 )
 
+# RR_BAND covers ~9-36 bpm — normal-to-tachypneic adult range.
 RR_BAND_HZ: Tuple[float, float] = (
-    _env_float("VIFI_RR_LO_HZ", 0.1),   # 6 bpm
-    _env_float("VIFI_RR_HI_HZ", 0.7),   # 42 bpm — joins HR band edge
+    _env_float("VIFI_RR_LO_HZ", 0.15),  # 9 bpm
+    _env_float("VIFI_RR_HI_HZ", 0.6),   # 36 bpm
 )
 
-# Total Butterworth band-pass cutoff (covers both HR + RR) used when a
-# single filter applies before splitting into peak-search bands.
+# Total Butterworth band-pass cutoff (covers both HR + RR) used as the
+# single filter before splitting into peak-search bands.
 FILTER_BAND_HZ: Tuple[float, float] = (
     _env_float("VIFI_FILTER_LO_HZ", 0.1),
     _env_float("VIFI_FILTER_HI_HZ", 3.0),

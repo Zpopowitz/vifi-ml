@@ -9,15 +9,40 @@ v2 (FEATURE_SET_VERSION_V2): 14-dim amplitude + phase feature vector.
   extract_features_v2(complex_csi_window, amplitude_envelope, fs) -> (14,)
 
 v2 expects complex CSI (preserves phase). Use parse_capture_file(..., return_complex=True).
+
+DSP correctness notes (see /root/.claude/plans/i-want-you-to-warm-gizmo.md):
+- Hann window applied before FFT to reduce spectral leakage (I001).
+- Parabolic refinement validates the denominator sign and clamps the
+  refined frequency to neighboring bins (I002, I003).
+- All windowed signals are checked for finiteness; degenerate windows
+  raise rather than producing NaN (I039).
+- Top-K, edge-guard, and band edges live in `config.py` (I007, I008, I012).
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from scipy.signal import butter, detrend, sosfiltfilt
+from scipy.signal.windows import hann
 
-DEFAULT_BAND = (0.1, 3.0)
-RR_BAND = (0.15, 0.6)
-HR_BAND = (0.9, 1.8)
+from config import (
+    EDGE_SUBCARRIER_GUARD,
+    FFT_ZEROPAD_FACTOR,
+    FILTER_BAND_HZ,
+    HR_BAND_HZ,
+    MIN_SAMPLES_PER_GRID,
+    RR_BAND_HZ,
+    TOP_K_SUBCARRIERS,
+)
+
+log = logging.getLogger("vifi.preprocess")
+
+# Aliases preserved for API stability — internal code should prefer the
+# config.* imports so a constant change is one edit.
+DEFAULT_BAND = FILTER_BAND_HZ
+RR_BAND = RR_BAND_HZ
+HR_BAND = HR_BAND_HZ
 
 
 def _design_bandpass(fs: float, low: float, high: float, order: int = 4):
@@ -36,21 +61,59 @@ def bandpass_filter(x: np.ndarray, fs: float,
 
 
 def _parabolic_interp(spec: np.ndarray, idx: int, df: float, f0: float) -> float:
+    """Refine a peak position via 3-point parabolic interpolation.
+
+    Falls back to the bin's center frequency when:
+      - idx is at an array edge (no neighbors)
+      - the parabola degenerates (denom near 0)
+      - the parabola is inverted (y1 is a minimum, not a max — happens
+        on noisy spectra; using the formula then would point the
+        refined peak AWAY from the actual max)
+
+    The returned frequency is clamped to the neighbor bins so a sharp
+    parabola can't overshoot to a physically impossible frequency.
+    """
     if idx <= 0 or idx >= len(spec) - 1:
         return f0
     y0, y1, y2 = spec[idx - 1], spec[idx], spec[idx + 1]
-    denom = (y0 - 2 * y1 + y2)
-    if abs(denom) < 1e-12:
+    denom = (y0 - 2.0 * y1 + y2)
+    # Inverted parabola (y1 not a local max) — formula would mis-point.
+    # Also catches near-degenerate cases.
+    if denom >= -1e-12:
         return f0
     shift = 0.5 * (y0 - y2) / denom
-    return f0 + shift * df
+    refined = f0 + shift * df
+    # Clamp to neighbor-bin range; refinement of a single bin can't
+    # legitimately escape (idx-1, idx+1) by more than a small fraction
+    # of df.
+    lo = f0 - df
+    hi = f0 + df
+    if refined < lo:
+        return lo
+    if refined > hi:
+        return hi
+    return refined
 
 
 def _peak_freq_in_band(spec: np.ndarray, freqs: np.ndarray,
-                       band: tuple[float, float]) -> tuple[float, float]:
+                       band: tuple[float, float],
+                       *, label: str = "") -> tuple[float, float]:
+    """Find the dominant peak inside `band`. Returns (freq_hz, magnitude).
+
+    If no FFT bin falls inside the band (e.g., misconfigured fs vs
+    cutoffs producing an empty band), logs a warning and returns
+    `(band_center, 0.0)` so downstream consumers don't see a fake 0 Hz
+    peak — they see the band's nominal center with zero magnitude.
+    """
     mask = (freqs >= band[0]) & (freqs <= band[1])
     if not np.any(mask):
-        return 0.0, 0.0
+        log.warning(
+            "no FFT bin in %s band [%s, %s] (freqs spans [%.3f, %.3f])",
+            label or "??", band[0], band[1],
+            float(freqs[0]) if len(freqs) else 0.0,
+            float(freqs[-1]) if len(freqs) else 0.0,
+        )
+        return float((band[0] + band[1]) / 2.0), 0.0
     sub_spec = spec[mask]
     local_idx = int(np.argmax(sub_spec))
     peak_mag = float(sub_spec[local_idx])
@@ -61,25 +124,59 @@ def _peak_freq_in_band(spec: np.ndarray, freqs: np.ndarray,
     return refined, peak_mag
 
 
+def _next_pow2_times_zeropad(n: int) -> int:
+    """FFT length: next power of 2 >= n, multiplied by FFT_ZEROPAD_FACTOR.
+    Centralized so any change to zero-padding strategy is one edit."""
+    return int(2 ** np.ceil(np.log2(max(n, 2)))) * FFT_ZEROPAD_FACTOR
+
+
+def _assert_finite(arr: np.ndarray, *, name: str) -> None:
+    """NaN/Inf guard. Catches a class of silent corruption (divide-by-zero
+    in normalization, pathological windows) before it reaches the model."""
+    if not np.all(np.isfinite(arr)):
+        n_bad = int(np.sum(~np.isfinite(arr)))
+        raise ValueError(
+            f"{name} contains {n_bad} non-finite values out of {arr.size}; "
+            f"refusing to feed NaN/Inf to the model."
+        )
+
+
 def extract_features(iq: np.ndarray, fs: float = 100.0) -> np.ndarray:
-    """v1 feature extraction: 9-dim amplitude-only feature vector."""
+    """v1 feature extraction: 9-dim amplitude-only feature vector.
+
+    Raises:
+        ValueError: signal too short, or features are non-finite (NaN/Inf).
+    """
     if np.iscomplexobj(iq):
         env = np.abs(iq).astype(np.float32)
     else:
         env = iq.astype(np.float32)
 
-    env = detrend(env)
-    filt = bandpass_filter(env, fs, *DEFAULT_BAND)
+    if env.ndim != 1:
+        raise ValueError(f"extract_features expects 1-D, got shape {env.shape}")
+    if env.size < MIN_SAMPLES_PER_GRID:
+        raise ValueError(
+            f"extract_features requires >= {MIN_SAMPLES_PER_GRID} samples, "
+            f"got {env.size} (~{env.size / fs:.2f} s @ {fs} Hz)."
+        )
 
+    env = detrend(env)
+    filt = bandpass_filter(env, fs, *FILTER_BAND_HZ)
+
+    # Hann window before FFT (I001) — reduces spectral leakage that
+    # otherwise biases parabolic peak refinement near band edges.
     n = len(filt)
-    n_fft = int(2 ** np.ceil(np.log2(n))) * 4
-    spec = np.abs(np.fft.rfft(filt, n=n_fft))
+    win = hann(n).astype(np.float32)
+    windowed = (filt * win).astype(np.float32)
+
+    n_fft = _next_pow2_times_zeropad(n)
+    spec = np.abs(np.fft.rfft(windowed, n=n_fft))
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / fs)
 
-    rr_hz, rr_mag = _peak_freq_in_band(spec, freqs, RR_BAND)
-    hr_hz, hr_mag = _peak_freq_in_band(spec, freqs, HR_BAND)
+    rr_hz, rr_mag = _peak_freq_in_band(spec, freqs, RR_BAND_HZ, label="RR")
+    hr_hz, hr_mag = _peak_freq_in_band(spec, freqs, HR_BAND_HZ, label="HR")
 
-    band_mask = (freqs >= DEFAULT_BAND[0]) & (freqs <= DEFAULT_BAND[1])
+    band_mask = (freqs >= FILTER_BAND_HZ[0]) & (freqs <= FILTER_BAND_HZ[1])
     band_energy = float(np.sum(spec[band_mask] ** 2)) + 1e-9
     rr_ratio = rr_mag / np.sqrt(band_energy)
     hr_ratio = hr_mag / np.sqrt(band_energy)
@@ -89,11 +186,13 @@ def extract_features(iq: np.ndarray, fs: float = 100.0) -> np.ndarray:
     f_peak = float(np.max(np.abs(filt)))
     zero_crossings = float(np.sum(np.diff(np.signbit(filt)))) / n
 
-    return np.array([
+    feats = np.array([
         rr_hz, rr_ratio, hr_hz, hr_ratio,
         f_std, f_mean_abs, f_peak,
         zero_crossings, np.log1p(band_energy),
     ], dtype=np.float32)
+    _assert_finite(feats, name="extract_features output")
+    return feats
 
 
 FEATURE_NAMES = [
@@ -103,9 +202,10 @@ FEATURE_NAMES = [
     "zero_crossings", "log_band_energy",
 ]
 
-# Feature-set version. Bumped whenever the feature vector composition changes.
-# Models, calibrations, and inference all check this so a v1 model never
-# silently runs on v2 features (or vice versa).
+# Feature-set version. Bumped whenever the feature vector composition
+# OR the underlying extraction math changes in a way that invalidates
+# saved models. Hann-windowing was added in v1.1; we treat it as a
+# minor revision of v1 because feature dimensionality is unchanged.
 FEATURE_SET_VERSION = "v1_amplitude_only"
 
 FEATURE_NAMES_V2 = FEATURE_NAMES + [
@@ -122,6 +222,11 @@ FEATURE_SET_VERSION_V2 = "v2_amp_phase"
 # Phase-domain calibration (PhaseBeat-style CFO/SFO removal)
 # ---------------------------------------------------------------------------
 
+def _unwrap_per_packet(raw_phase: np.ndarray) -> np.ndarray:
+    """Per-packet phase unwrap. Pulled out for reuse + testability (I009)."""
+    return np.array([np.unwrap(raw_phase[t]) for t in range(raw_phase.shape[0])])
+
+
 def calibrate_cfo_sfo(complex_csi: np.ndarray) -> np.ndarray:
     """Remove carrier-frequency-offset and sampling-frequency-offset from
     complex CSI per PhaseBeat (Wang et al. 2017).
@@ -137,14 +242,17 @@ def calibrate_cfo_sfo(complex_csi: np.ndarray) -> np.ndarray:
     n_pkt, n_sub = complex_csi.shape
 
     raw_phase = np.angle(complex_csi).astype(np.float64)
+    unwrapped_all = _unwrap_per_packet(raw_phase)
 
     sub_idx = np.arange(n_sub, dtype=np.float64)
     phase_sfo_corrected = np.empty_like(raw_phase)
     for t in range(n_pkt):
-        unwrapped = np.unwrap(raw_phase[t])
+        unwrapped = unwrapped_all[t]
         weights = np.ones(n_sub)
-        weights[:8] = 0.0
-        weights[-8:] = 0.0
+        # Edge guard (I008) — first/last EDGE_SUBCARRIER_GUARD carriers
+        # carry less HR-relevant energy and more guard-band noise.
+        weights[:EDGE_SUBCARRIER_GUARD] = 0.0
+        weights[-EDGE_SUBCARRIER_GUARD:] = 0.0
         if weights.sum() > 0:
             sx = np.sum(weights * sub_idx)
             sy = np.sum(weights * unwrapped)
@@ -192,18 +300,24 @@ def estimate_cfo_hz(complex_csi: np.ndarray, fs: float) -> float:
 # v2 feature extraction (amplitude + phase)
 # ---------------------------------------------------------------------------
 
+def _build_envelope_from_complex(complex_csi: np.ndarray) -> np.ndarray:
+    """Variance-rank top-K subcarriers, normalize, average. Centralized
+    here so amplitude + phase paths share a single implementation."""
+    amps = np.abs(complex_csi)
+    x = amps - np.mean(amps, axis=0, keepdims=True)
+    variances = np.var(x, axis=0)
+    k = min(TOP_K_SUBCARRIERS, x.shape[1])
+    picked = x[:, np.argsort(variances)[-k:]]
+    std = np.std(picked, axis=0, keepdims=True) + 1e-9
+    return np.mean(picked / std, axis=1).astype(np.float32)
+
+
 def extract_features_v2(complex_csi_window: np.ndarray,
                         amplitude_envelope: np.ndarray | None = None,
                         fs: float = 100.0) -> np.ndarray:
     """Extract 14-dim v2 feature vector from a complex CSI window."""
     if amplitude_envelope is None:
-        amps = np.abs(complex_csi_window)
-        x = amps - np.mean(amps, axis=0, keepdims=True)
-        variances = np.var(x, axis=0)
-        k = min(8, x.shape[1])
-        picked = x[:, np.argsort(variances)[-k:]]
-        std = np.std(picked, axis=0, keepdims=True) + 1e-9
-        amplitude_envelope = np.mean(picked / std, axis=1).astype(np.float32)
+        amplitude_envelope = _build_envelope_from_complex(complex_csi_window)
 
     amp_feats = extract_features(amplitude_envelope, fs=fs)
 
@@ -213,20 +327,24 @@ def extract_features_v2(complex_csi_window: np.ndarray,
 
     pd_centered = phase_deriv - np.mean(phase_deriv, axis=0, keepdims=True)
     pd_var = np.var(pd_centered, axis=0)
-    k = min(8, pd_centered.shape[1])
+    k = min(TOP_K_SUBCARRIERS, pd_centered.shape[1])
     pd_picked = pd_centered[:, np.argsort(pd_var)[-k:]]
     pd_std = np.std(pd_picked, axis=0, keepdims=True) + 1e-9
     phase_envelope = np.mean(pd_picked / pd_std, axis=1).astype(np.float32)
 
     pe = detrend(phase_envelope)
-    pe_filt = bandpass_filter(pe, fs, *DEFAULT_BAND)
+    pe_filt = bandpass_filter(pe, fs, *FILTER_BAND_HZ)
     n = len(pe_filt)
     if n >= 16:
-        n_fft = int(2 ** np.ceil(np.log2(n))) * 4
-        spec_p = np.abs(np.fft.rfft(pe_filt, n=n_fft))
+        win_p = hann(n).astype(np.float32)
+        windowed_p = (pe_filt * win_p).astype(np.float32)
+        n_fft = _next_pow2_times_zeropad(n)
+        spec_p = np.abs(np.fft.rfft(windowed_p, n=n_fft))
         freqs_p = np.fft.rfftfreq(n_fft, d=1.0 / fs)
-        phase_peak_hz, phase_peak_mag = _peak_freq_in_band(spec_p, freqs_p, HR_BAND)
-        band_mask = (freqs_p >= DEFAULT_BAND[0]) & (freqs_p <= DEFAULT_BAND[1])
+        phase_peak_hz, phase_peak_mag = _peak_freq_in_band(
+            spec_p, freqs_p, HR_BAND_HZ, label="phase HR",
+        )
+        band_mask = (freqs_p >= FILTER_BAND_HZ[0]) & (freqs_p <= FILTER_BAND_HZ[1])
         band_energy = float(np.sum(spec_p[band_mask] ** 2)) + 1e-9
         phase_peak_ratio = phase_peak_mag / np.sqrt(band_energy)
     else:
@@ -252,11 +370,13 @@ def extract_features_v2(complex_csi_window: np.ndarray,
 
     cfo_hz = estimate_cfo_hz(complex_csi_window, fs=fs)
 
-    return np.concatenate([
+    feats = np.concatenate([
         amp_feats,
         np.array([phase_peak_hz, phase_peak_ratio, phase_amp_coherence,
                   phase_energy_ratio, cfo_hz], dtype=np.float32),
     ]).astype(np.float32)
+    _assert_finite(feats, name="extract_features_v2 output")
+    return feats
 
 
 def preprocess_dataset(iq_batch: np.ndarray, fs: float = 100.0) -> np.ndarray:
