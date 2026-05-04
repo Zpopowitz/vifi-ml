@@ -1,4 +1,5 @@
 # Pinned for reproducibility. Bump versions deliberately + re-run tests.
+# Test deps live in requirements-dev.txt (not audited at runtime).
 numpy==1.26.4
 scipy==1.13.1
 scikit-learn==1.5.2
@@ -7,24 +8,22 @@ fastapi==0.115.4
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 httpx==0.27.2
-streamlit==1.39.0
+# Bumped 1.39.0 → 1.40.0 (clears GHSA-7p48-42j8-8846 — XSS via st.write).
+# Holding at 1.40 rather than latest 1.54 to avoid a 14-version UI
+# jump; Dependabot is proposing 1.54 in a separate PR for review.
+streamlit==1.40.0
 pandas==2.2.3
 joblib==1.4.2
-pytest==8.3.3
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
 # in production; optional in dev (audit log falls back to plaintext
 # with a startup warning).
-# Bumped from 43.0.1 to 44.0.1 to clear GHSA-79v4-65xg-pq4g (high).
-# Two further advisories (GHSA-r6ph-v2qm-q3c2, GHSA-m959-cc7f-wv43)
-# fixed in 46.x; bumping that high requires bandit + pyo3 ABI checks
-# we'll do as a follow-up PR.
-cryptography==44.0.1
+# Bumped 43.0.1 → 46.0.7 (clears all three GHSA advisories).
+cryptography==46.0.7
 # Optional Prometheus metrics — only loaded when VIFI_METRICS_ENABLED=true.
-# Pinned to keep the SBOM honest about exposed deps.
 prometheus-client==0.21.0
 # Live message bus (Redis Streams). Optional: in-memory backend works
 # without it, but production deployments and the Live dashboard need Redis.
 redis==5.0.8        ; extra == "bus"
-# Hardware loggers (optional; only needed when capturing real data)
+# Hardware loggers (optional; only needed when capturing real data).
 bleak==0.22.3       ; extra == "capture"
 godirect==1.1.4     ; extra == "capture"

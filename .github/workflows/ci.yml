@@ -76,7 +76,6 @@ jobs:
   security:
     name: Security scan (pip-audit + bandit)
     runs-on: ubuntu-latest
-    continue-on-error: true   # advisory until baseline is clean
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,7 +87,25 @@ jobs:
           pip install -r requirements.txt
           pip install pip-audit==2.7.3 bandit==1.7.10
       - name: pip-audit
-        run: pip-audit
+        # `--ignore-vuln` for advisories we can't clear without a coupled
+        # FastAPI / streamlit / pip-runtime upgrade. Each is reviewed
+        # below; remove the flag when the upstream bump is feasible.
+        #
+        # GHSA-cfh3-3jmp-rvhc, GHSA-whj4-6x5x-4v2j: pillow 10.4 — pillow
+        #     is transitive from streamlit; clears when streamlit can
+        #     safely move to 1.54 (Dependabot PR pending).
+        # GHSA-2c2j-9gv5-cj73, GHSA-7f5h-v6xp-fcq8: starlette 0.41.3 —
+        #     pinned by FastAPI 0.115.x's range. Clears when FastAPI
+        #     bumps to 0.116+ which allows starlette >=0.42.
+        # GHSA-58qw-9mgm-455v: pip itself in the GitHub runner. We
+        #     can't pin pip in our requirements; runner ships its own.
+        run: |
+          pip-audit \
+            --ignore-vuln GHSA-cfh3-3jmp-rvhc \
+            --ignore-vuln GHSA-whj4-6x5x-4v2j \
+            --ignore-vuln GHSA-2c2j-9gv5-cj73 \
+            --ignore-vuln GHSA-7f5h-v6xp-fcq8 \
+            --ignore-vuln GHSA-58qw-9mgm-455v
       - name: bandit
         run: bandit -r . -x tests,build,sbom -ll
 
