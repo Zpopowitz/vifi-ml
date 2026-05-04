@@ -14,7 +14,7 @@ pytest==8.3.3
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
 # in production; optional in dev (audit log falls back to plaintext
 # with a startup warning).
-cryptography==43.0.1
+cryptography==46.0.7
 # Live message bus (Redis Streams). Optional: in-memory backend works
 # without it, but production deployments and the Live dashboard need Redis.
 redis==5.0.8        ; extra == "bus"
