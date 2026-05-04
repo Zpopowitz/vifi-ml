@@ -38,6 +38,11 @@ try:
     from __version__ import __version__ as VIFI_VERSION
 except ImportError:
     VIFI_VERSION = "unknown"
+
+from observability import configure_logging, install_prometheus_endpoint
+# Configure logging before any module-level loggers are used. Honors
+# VIFI_LOG_FORMAT=json + VIFI_LOG_LEVEL.
+configure_logging()
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
 
@@ -1089,6 +1094,10 @@ def create_app(model_dir: Path = MODEL_DIR,
                 bus.close()
             except Exception:
                 pass
+
+    # Optional Prometheus /metrics. Off by default (I132).
+    if install_prometheus_endpoint(app):
+        log.info("Prometheus /metrics enabled")
 
     # Warm-up: load models on startup if available so first user doesn't
     # pay the cold-load latency (I175).
