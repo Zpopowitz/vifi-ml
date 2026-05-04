@@ -178,11 +178,21 @@ def run_session(args: argparse.Namespace) -> int:
     hr_log_path = session_dir / "hr_log.csv"
     rr_log_path = session_dir / "rr_log.csv"
 
+    bus_args: list[str] = []
+    if args.bus:
+        bus_args = ["--bus", "--patient-id", args.subject_id]
+        if not os.environ.get("VIFI_BUS_URL"):
+            print("[orchestrator] WARNING: --bus is on but VIFI_BUS_URL is "
+                  "unset; loggers will fall back to in-memory (process-local) "
+                  "bus, which other processes (inference worker, dashboard) "
+                  "won't see. Set VIFI_BUS_URL=redis://... before retrying.")
+
     csi_cmd = [
         sys.executable, "-u", str(ROOT / "tools" / "csi_capture.py"),
         "--port", args.csi_port,
         "--duration", str(args.duration),
         "--out", str(capture_path),
+        *bus_args,
     ]
 
     h10_cmd = None
@@ -192,6 +202,7 @@ def run_session(args: argparse.Namespace) -> int:
             "--address", args.h10_address,
             "--duration", str(args.duration),
             "--out", str(hr_log_path),
+            *bus_args,
         ]
 
     rr_cmd = None
@@ -200,6 +211,21 @@ def run_session(args: argparse.Namespace) -> int:
             sys.executable, "-u", str(ROOT / "rr_logger.py"),
             "--duration", str(args.duration),
             "--out", str(rr_log_path),
+        ]
+
+    inference_cmd: Optional[list[str]] = None
+    audit_cmd: Optional[list[str]] = None
+    if args.bus:
+        inference_cmd = [
+            sys.executable, "-u", "-m", "tools.inference_worker",
+            "--patient-id", args.subject_id,
+            "--window", str(args.window),
+            "--stride", str(args.stride),
+            "--fs-resample", str(args.fs),
+        ]
+        audit_cmd = [
+            sys.executable, "-u", "-m", "tools.audit_subscriber",
+            "--patient-id", args.subject_id,
         ]
 
     procs: dict[str, subprocess.Popen] = {}
@@ -225,6 +251,15 @@ def run_session(args: argparse.Namespace) -> int:
         combined.flush()
 
         try:
+            # Audit + inference workers come up first so they're listening
+            # by the time the loggers start publishing.
+            if audit_cmd is not None:
+                procs["AUDIT"] = _spawn("AUDIT", audit_cmd, ROOT)
+                time.sleep(0.3)
+            if inference_cmd is not None:
+                procs["INFER"] = _spawn("INFER", inference_cmd, ROOT)
+                time.sleep(0.3)
+
             procs["CSI"] = _spawn("CSI", csi_cmd, ROOT)
             time.sleep(0.5)
             if h10_cmd is not None:
@@ -245,13 +280,28 @@ def run_session(args: argparse.Namespace) -> int:
             print(f"[orchestrator] all loggers started -- session "
                   f"{args.duration:.0f}s. Ctrl-C to stop early.",
                   flush=True)
+            if args.bus:
+                print(f"[orchestrator] bus mode active (patient_id="
+                      f"{args.subject_id}). Open the dashboard "
+                      f"(streamlit run dashboard.py) and switch to "
+                      f"the Live tab to watch predicted vs reference "
+                      f"in real time.",
+                      flush=True)
 
-            for name, proc in procs.items():
+            # Loggers (CSI/HR/RR) are bounded by --duration. Workers
+            # (INFER/AUDIT) run forever -- wait only on the loggers,
+            # then signal the workers to stop after the session ends.
+            logger_names = [n for n in procs if n in ("CSI", "HR", "RR")]
+            for name in logger_names:
+                proc = procs[name]
                 proc.wait()
                 rc = proc.returncode
                 if rc != 0 and not interrupted["flag"]:
                     print(f"[orchestrator] WARNING: {name} exited with code {rc}",
                           flush=True)
+            for name in ("INFER", "AUDIT"):
+                if name in procs:
+                    _terminate_gracefully(name, procs[name])
         finally:
             for name, p in list(procs.items()):
                 _terminate_gracefully(name, p)
@@ -364,6 +414,14 @@ def main() -> None:
                           help="report window stride in seconds (default 5)")
     g_report.add_argument("--fs", type=float, default=100.0,
                           help="resample rate for feature extraction (default 100)")
+
+    g_bus = p.add_argument_group("live bus mode")
+    g_bus.add_argument("--bus", action="store_true",
+                       help=("publish each capture stream to the ViFi "
+                             "message bus and spawn the inference worker "
+                             "+ audit subscriber. Set "
+                             "VIFI_BUS_URL=redis://... to share with the "
+                             "dashboard. Patient id = --subject-id."))
 
     p.add_argument("--dry-run", action="store_true",
                    help="print the plan and exit without spawning anything")
