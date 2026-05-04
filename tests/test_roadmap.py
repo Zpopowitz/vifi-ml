@@ -47,6 +47,7 @@ def test_roadmap_listing(client):
 def test_presence_endpoint_works(client):
     """Presence endpoint should return 200 with a score, not 501."""
     import numpy as np
+
     from data_gen import generate_sample
     iq, _ = generate_sample(hr_bpm=75.0, rr_bpm=18.0, snr_db=25.0, seed=0)
     gains = np.abs(np.random.default_rng(0).standard_normal(16)) + 0.2
@@ -59,10 +60,10 @@ def test_presence_endpoint_works(client):
 
 
 def test_module_stubs_import_and_raise():
+    import numpy as np
+
     from modules import apnea, falls, gait, transient_events
     from modules.four_node_sync import FourNodeArray
-
-    import numpy as np
     dummy = np.zeros((100, 8), dtype=np.float32)
 
     # presence has been implemented (see test_tools.py), no longer a stub.

@@ -36,46 +36,35 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# Rule sets:
-#   E,W : pycodestyle errors + warnings
-#   F   : pyflakes (unused imports, undefined names)
-#   I   : isort
-#   N   : pep8-naming
-#   B   : bugbear (likely bugs)
-#   S   : flake8-bandit (security)
-#   T20 : print-statement detection
-#   UP  : pyupgrade
-#   PLR : pylint-refactor (selected)
-select = ["E", "W", "F", "I", "N", "B", "S", "T20", "UP", "PLR"]
+# Pragmatic baseline: catch bugs + import hygiene, defer style preferences.
+# Re-add stricter rule families incrementally as we clean up:
+#   N    : pep8-naming      (X, Y conventional in DSP code)
+#   B    : bugbear          (mostly fine; pulls in some false positives)
+#   S    : bandit           (security; bandit job already runs separately)
+#   T20  : print            (we use print() in CLI tools intentionally)
+#   UP   : pyupgrade        (would force py311+ syntax on existing code)
+#   PLR  : pylint refactor  (subjective branching/complexity rules)
+select = ["E", "W", "F", "I"]
 
-# Pragmatic ignores:
 ignore = [
     "E501",     # line length handled by formatter
     "E731",     # lambdas allowed in DSP for math expressivity
-    "PLR0912",  # too-many-branches (DSP code is naturally branchy)
-    "PLR0913",  # too-many-arguments
-    "PLR0915",  # too-many-statements
-    "S101",     # assert allowed in research code (boundary checks)
-    "S104",     # 0.0.0.0 binding — required in container
-    "S301",     # pickle (we don't use it but XGBoost might)
-    "S603",     # subprocess without shell=True (false positives in orchestrator)
-    "S607",     # partial executable path (sys.executable is fine)
-    "B008",     # function calls in argument defaults (FastAPI Depends pattern)
-    "N806",     # Variable in function should be lowercase (X, Y are conventional)
-    "N803",     # Argument in function should be lowercase (X is conventional)
-    "PLR2004",  # magic number (covered by config.py centralization)
+    "E402",     # module-level import not at top (sys.path inserts before imports)
+    "E701",     # multiple statements on one line (colon) — used in some terse DSP loops
+    "E702",     # multiple statements on one line (semicolon) — same
+    "E741",     # ambiguous variable name (l, I, O)
+    "F401",     # imported but unused — caught more reliably by mypy on strict modules
+    "F403",     # star imports — sometimes unavoidable in workflow tools
+    "F405",     # name may be undefined from star import
+    "F841",     # local var assigned but never used (common in DSP variants)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
-    "S105", "S106", "S108",   # hardcoded secrets in tests — that's the point
-    "T201",                    # print() allowed in tests
-    "PLR2004",                 # magic numbers fine in tests
+    "F811",   # redefinition (fixtures + parametrize sometimes redefine)
+    "E501",
 ]
-"tools/*" = ["T201"]            # CLI tools print to stdout
-"hr_logger.py" = ["T201"]
-"rr_logger.py" = ["T201"]
-"data_gen.py" = ["T201"]
+"docs/*" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["modules", "tools"]

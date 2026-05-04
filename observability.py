@@ -100,8 +100,11 @@ def install_prometheus_endpoint(app) -> bool:
         return False
     try:
         from prometheus_client import (
-            CollectorRegistry, Counter, Histogram,
-            generate_latest, CONTENT_TYPE_LATEST,
+            CONTENT_TYPE_LATEST,
+            CollectorRegistry,
+            Counter,
+            Histogram,
+            generate_latest,
         )
     except ImportError:
         logging.getLogger("vifi.observability").warning(
@@ -111,7 +114,7 @@ def install_prometheus_endpoint(app) -> bool:
         return False
 
     from fastapi import Request
-    from fastapi.responses import Response
+    from fastapi.responses import Response  # noqa: F401  (used as string annotation below)
 
     registry = CollectorRegistry()
     request_count = Counter(
@@ -137,8 +140,12 @@ def install_prometheus_endpoint(app) -> bool:
         request_latency.labels(request.method, request.url.path).observe(dur)
         return response
 
-    @app.get("/metrics")
-    def metrics() -> Response:
+    # Use a string return annotation (Pydantic 2.9 in strict mode tries
+    # to resolve the type at OpenAPI build time; the closure-scoped
+    # `Response` symbol isn't visible there). Drop annotation entirely
+    # to avoid the resolver path.
+    @app.get("/metrics", include_in_schema=False)
+    def metrics():  # type: ignore[no-untyped-def]
         return Response(
             generate_latest(registry),
             media_type=CONTENT_TYPE_LATEST,

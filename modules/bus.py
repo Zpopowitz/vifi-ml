@@ -32,7 +32,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterator, Optional, Protocol
 
-
 # ---------------------------------------------------------------------------
 # Topic helpers
 # ---------------------------------------------------------------------------
@@ -274,6 +273,7 @@ class RedisStreamBus:
     def _retry(self, fn, *args, **kwargs):
         """Retry-with-jitter wrapper around redis-py calls. I089."""
         import random
+
         from redis.exceptions import (
             ConnectionError as RedisConnError,
             TimeoutError as RedisTimeout,

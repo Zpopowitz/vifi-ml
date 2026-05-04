@@ -71,8 +71,12 @@ def _evaluate_session(session_dir: Path, model_dir: Path,
                       window_s: float = 10.0,
                       stride_s: float = 5.0) -> SessionResult:
     """Run /predict/capture-equivalent on one session directory."""
-    from api import RealModelBundle, _predict_capture
-    from api import CaptureRequest, CalibrationOptions
+    from api import (
+        CalibrationOptions,
+        CaptureRequest,
+        RealModelBundle,
+        _predict_capture,
+    )
 
     capture_path = session_dir / "capture.txt"
     if not capture_path.exists():

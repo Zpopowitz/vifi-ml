@@ -16,7 +16,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.esp32_csi_collector import (  # noqa: E402
-    Packet, RingBuffer, parse_csi_line, resample_to_grid,
+    Packet,
+    RingBuffer,
+    parse_csi_line,
+    resample_to_grid,
 )
 
 

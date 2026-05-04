@@ -104,7 +104,10 @@ def _resolve_calibration(capture_path: Path,
                          posture: str | None,
                          auto_identify: bool):
     from calibration import (  # noqa: E402
-        compute_fingerprint, identify, load_all_calibrations, load_subject_file,
+        compute_fingerprint,
+        identify,
+        load_all_calibrations,
+        load_subject_file,
     )
     if auto_identify:
         amps, ts = parse_capture_file(capture_path)
@@ -196,8 +199,9 @@ def run_report(
 
     csi_unix_ts = align_csi_to_unix(csi_boot_ts, hr_unix, start_offset_s)
 
-    from preprocess import extract_features, FEATURE_SET_VERSION  # noqa: E402
-    from xgboost import XGBRegressor       # noqa: E402
+    from xgboost import XGBRegressor  # noqa: E402
+
+    from preprocess import FEATURE_SET_VERSION, extract_features  # noqa: E402
 
     models_dir = Path(os.environ.get("VIFI_MODEL_DIR", str(ROOT / "models")))
     if not models_dir.is_absolute():
@@ -213,9 +217,9 @@ def run_report(
     if cal_vec is not None:
         print(f"      using calibration: {cal_label}")
     elif calibration_mode == "per_session":
-        print(f"      using per-session calibration from this capture's first 30 sec")
+        print("      using per-session calibration from this capture's first 30 sec")
     else:
-        print(f"      no calibration applied")
+        print("      no calibration applied")
 
     hr_model = XGBRegressor()
     hr_model.load_model(models_dir / "hr_model.json")
@@ -231,7 +235,7 @@ def run_report(
             q_low_model.load_model(q_low_path)
             q_high_model = XGBRegressor()
             q_high_model.load_model(q_high_path)
-            print(f"      loaded quantile models for confidence intervals")
+            print("      loaded quantile models for confidence intervals")
         else:
             print(f"      WARNING: --emit-intervals requested but q_low/q_high models "
                   f"not in {models_dir}; running without intervals")
@@ -267,7 +271,8 @@ def run_report(
 
     # Rolling fingerprint tracker (initialized lazily once we have a baseline)
     from calibration import (  # noqa: E402
-        RollingFingerprintTracker, compute_fingerprint,
+        RollingFingerprintTracker,
+        compute_fingerprint,
     )
     tracker = None  # type: ignore[var-annotated]
 
@@ -296,8 +301,10 @@ def run_report(
         feats = extract_features(envelope, fs=fs_resample).reshape(1, -1)
 
         if calibration_mode == "per_session" and cal_vec is None:
-            from calibration import (apply_calibration,  # noqa: E402
-                                     compute_calibration_vector)
+            from calibration import (  # noqa: E402
+                apply_calibration,
+                compute_calibration_vector,
+            )
             if (t - t0) < PER_SESSION_CAL_DURATION:
                 per_session_cal_pool.append(feats[0])
                 per_session_amps_pool.append(win_amps)
@@ -317,7 +324,7 @@ def run_report(
                     tracker = RollingFingerprintTracker(
                         compute_fingerprint(baseline_amps)
                     )
-                    print(f"      rolling fingerprint tracker initialized")
+                    print("      rolling fingerprint tracker initialized")
                 per_session_cal_built = True
 
         if cal_vec is not None:

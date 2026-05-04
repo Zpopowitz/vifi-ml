@@ -14,7 +14,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quality import (  # noqa: E402
-    DEFAULT_REGULARIZATION, DEFAULT_TAIL_PROBABILITY, MahalanobisDetector,
+    DEFAULT_REGULARIZATION,
+    DEFAULT_TAIL_PROBABILITY,
+    MahalanobisDetector,
 )
 
 

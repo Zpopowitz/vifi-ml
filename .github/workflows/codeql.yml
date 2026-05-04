@@ -14,6 +14,10 @@ jobs:
   analyze:
     name: Analyze (Python)
     runs-on: ubuntu-latest
+    # Don't block the workflow if Code Scanning isn't enabled at the
+    # repo level (Settings → Code security and analysis). Once enabled,
+    # change to false.
+    continue-on-error: true
     permissions:
       actions: read
       contents: read
@@ -27,3 +31,5 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:python"
+          # Don't fail this step on upload errors when scanning is disabled.
+          upload: failure-only

@@ -19,7 +19,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.run_paired_session import (  # noqa: E402
-    PROTOCOL_VERSION, build_session_metadata, run_session, session_dir_name,
+    PROTOCOL_VERSION,
+    build_session_metadata,
+    run_session,
+    session_dir_name,
 )
 
 

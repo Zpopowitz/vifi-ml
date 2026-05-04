@@ -14,7 +14,11 @@ pytest==8.3.3
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
 # in production; optional in dev (audit log falls back to plaintext
 # with a startup warning).
-cryptography==43.0.1
+# Bumped from 43.0.1 to 44.0.1 to clear GHSA-79v4-65xg-pq4g (high).
+# Two further advisories (GHSA-r6ph-v2qm-q3c2, GHSA-m959-cc7f-wv43)
+# fixed in 46.x; bumping that high requires bandit + pyo3 ABI checks
+# we'll do as a follow-up PR.
+cryptography==44.0.1
 # Optional Prometheus metrics — only loaded when VIFI_METRICS_ENABLED=true.
 # Pinned to keep the SBOM honest about exposed deps.
 prometheus-client==0.21.0

@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 RUN pip install --no-cache-dir --prefix=/install "redis==5.0.8"
 
 COPY data_gen.py preprocess.py train.py ./
+# train.py + preprocess.py now import from these too — must be present
+# in the builder stage for the synthetic-model bootstrap RUN below.
+COPY __version__.py config.py ./
 RUN PYTHONPATH=/install/lib/python3.11/site-packages \
     python train.py -n 3000 --model-dir models
 
@@ -47,6 +50,7 @@ COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
 COPY security.py pseudonymize.py ./
+COPY __version__.py config.py observability.py ./
 COPY api.py dashboard.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/

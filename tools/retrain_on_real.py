@@ -31,15 +31,21 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import FEATURE_NAMES, FEATURE_SET_VERSION, extract_features  # noqa: E402
+from calibration import (  # noqa: E402
+    apply_calibration,
+    compute_calibration_vector,
+)
+from preprocess import (  # noqa: E402
+    FEATURE_NAMES,
+    FEATURE_SET_VERSION,
+    extract_features,
+)
 from tools.first_capture_report import (  # noqa: E402
-    align_csi_to_unix, interpolate_hr, load_hr_log,
+    align_csi_to_unix,
+    interpolate_hr,
+    load_hr_log,
 )
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
-
-from calibration import (  # noqa: E402
-    apply_calibration, compute_calibration_vector,
-)
 
 
 def _frozen_seed(default: int = 42) -> int:
@@ -195,9 +201,9 @@ def main() -> None:
     }, indent=2))
     print(f"[+] saved {args.model_dir / 'hr_model.json'}")
     if args.calibration_mode == "per_session":
-        print(f"[!] calibration_mode=per_session - at inference time, also pass "
-              f"--calibration-mode per_session to first_capture_report.py "
-              f"(or use --calibration-subject / --auto-identify for stored calibrations)")
+        print("[!] calibration_mode=per_session - at inference time, also pass "
+              "--calibration-mode per_session to first_capture_report.py "
+              "(or use --calibration-subject / --auto-identify for stored calibrations)")
 
 
 if __name__ == "__main__":

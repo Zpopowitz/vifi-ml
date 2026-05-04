@@ -10,6 +10,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -19,7 +20,6 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-import asyncio
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,12 +34,14 @@ from security import (
     redacted_exception_handler,
     validate_config_or_raise,
 )
+
 try:
     from __version__ import __version__ as VIFI_VERSION
 except ImportError:
     VIFI_VERSION = "unknown"
 
 from observability import configure_logging, install_prometheus_endpoint
+
 # Configure logging before any module-level loggers are used. Honors
 # VIFI_LOG_FORMAT=json + VIFI_LOG_LEVEL.
 configure_logging()
@@ -50,8 +52,8 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import extract_features, FEATURE_SET_VERSION
 from data_gen import generate_sample
+from preprocess import FEATURE_SET_VERSION, extract_features
 
 MODEL_DIR = Path("models")
 REAL_MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
@@ -442,7 +444,10 @@ def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
         return None, "per_session (built at inference time)", None
 
     from calibration import (  # noqa: E402
-        compute_fingerprint, identify, load_all_calibrations, load_subject_file,
+        compute_fingerprint,
+        identify,
+        load_all_calibrations,
+        load_subject_file,
     )
 
     if opts.auto_identify:
@@ -508,11 +513,13 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
 
     use_intervals = req.emit_intervals and bundle.has_quantiles()
 
+    from audit import AuditLogWriter, hash_capture  # noqa: E402
     from calibration import (  # noqa: E402
-        RollingFingerprintTracker, apply_calibration, compute_calibration_vector,
+        RollingFingerprintTracker,
+        apply_calibration,
+        compute_calibration_vector,
         compute_fingerprint,
     )
-    from audit import AuditLogWriter, hash_capture  # noqa: E402
 
     PER_SESSION_S = 30.0
     per_session_pool: list[np.ndarray] = []
@@ -701,7 +708,9 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
 
 def _identify_only(bundle: RealModelBundle, req: IdentifyRequest) -> SubjectMatch:
     from calibration import (  # noqa: E402
-        compute_fingerprint, identify, load_all_calibrations,
+        compute_fingerprint,
+        identify,
+        load_all_calibrations,
     )
     amps, csi_ts = _parse_capture_text(req.capture_text, packet_rate_hz=None)
     t0 = csi_ts[0]

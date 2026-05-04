@@ -17,8 +17,8 @@ if str(ROOT) not in sys.path:
 
 from modules.bus import (  # noqa: E402
     EARLIEST,
-    InMemoryBus,
     LATEST,
+    InMemoryBus,
     Message,
     _id_gt,
     _parse_id,
@@ -29,7 +29,6 @@ from modules.bus import (  # noqa: E402
     hr_reference,
     subscribe,
 )
-
 
 # ---------------------------------------------------------------------------
 # Topic helpers

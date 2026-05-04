@@ -25,9 +25,9 @@ import json
 
 import security  # noqa: E402
 from security import (  # noqa: E402
+    PUBLIC_PATHS,
     AuthMiddleware,
     AuthMode,
-    PUBLIC_PATHS,
     RateLimitMiddleware,
     RequestIdMiddleware,
     _key_is_valid,
@@ -40,7 +40,6 @@ from security import (  # noqa: E402
     require_api_key,
     validate_config_or_raise,
 )
-
 
 # ---------------------------------------------------------------------------
 # Config
@@ -331,8 +330,9 @@ def test_xff_honored_only_for_trusted_proxy(monkeypatch):
     """X-Forwarded-For honored only when the immediate peer is in
     VIFI_TRUSTED_PROXIES (I059). Walks right-to-left through XFF and
     returns the first untrusted hop."""
-    from security import _client_ip
     from starlette.requests import Request
+
+    from security import _client_ip
     # Trust both the loopback and the 198.51.100.0/24 hop so we get
     # the original client at the leftmost position.
     monkeypatch.setenv("VIFI_TRUSTED_PROXIES",
@@ -363,6 +363,7 @@ def test_xff_honored_only_for_trusted_proxy(monkeypatch):
 def test_security_headers_attached(monkeypatch):
     """SecurityHeadersMiddleware adds defense-in-depth headers (I056)."""
     from fastapi import FastAPI
+
     from security import SecurityHeadersMiddleware
     monkeypatch.setenv("VIFI_AUTH_MODE", "none")
     app = FastAPI()

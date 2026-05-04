@@ -15,7 +15,7 @@ A subject can have multiple stored calibrations across different rooms and postu
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional

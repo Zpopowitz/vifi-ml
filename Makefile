@@ -73,8 +73,12 @@ security-scan:
 
 sbom:
 	mkdir -p sbom
-	cyclonedx-py requirements -i requirements.txt --of JSON \
-	    -o sbom/python-deps.json
+	# cyclonedx-bom 4.x ships a `cyclonedx-py` CLI; the args differ
+	# slightly between major versions. This is the 4.x form.
+	cyclonedx-py -r -i requirements.txt --format json \
+	    -o sbom/python-deps.json || \
+	    cyclonedx-py requirements -i requirements.txt --of JSON \
+	        -o sbom/python-deps.json
 	@echo "SBOM: sbom/python-deps.json"
 	@echo "For container SBOM, run: docker sbom vifi-ml-api > sbom/container.json"
 
