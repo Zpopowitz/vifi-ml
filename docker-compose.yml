@@ -117,7 +117,14 @@ services:
     <<: *app-base
     container_name: vifi-audit
     volumes:
-      - ./data/audit:/app/data/audit
+      # Named volume managed by Docker -- avoids UID/GID mismatch
+      # between the container's `vifi` user and whoever owns the host
+      # directory. Inspect audit logs with:
+      #   docker compose exec audit_subscriber ls /app/data/audit
+      #   docker compose cp audit_subscriber:/app/data/audit/. ./audit_logs/
+      # In production, replace this with a real persistent backend
+      # (encrypted EBS, S3 via fluentbit, etc.) per HIPAA at-rest reqs.
+      - audit_data:/app/data/audit
     environment:
       <<: *app-env
       VIFI_AUDIT_DIR: /app/data/audit
@@ -197,3 +204,7 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  # Audit JSONL persistence. Survives `docker compose down`; wiped by
+  # `docker compose down -v`. For production, swap this for a real
+  # persistent backend (encrypted EBS, S3, etc.).
+  audit_data:

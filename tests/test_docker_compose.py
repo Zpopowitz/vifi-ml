@@ -125,12 +125,21 @@ def test_dashboard_points_at_internal_api_url(compose):
     )
 
 
-def test_audit_log_volume_persists_to_host(compose):
-    """audit_subscriber must persist JSONL to a host-mounted dir."""
+def test_audit_log_volume_persists_across_restarts(compose):
+    """audit_subscriber must mount a volume at /app/data/audit so JSONL
+    survives `docker compose down`. Named volume avoids UID/GID
+    mismatches that bind mounts cause when the container's non-root
+    user can't write to a host directory owned by root."""
     audit = compose["services"]["audit_subscriber"]
     volumes = audit.get("volumes", [])
-    assert any("data/audit" in v for v in volumes), (
-        f"audit_subscriber must mount ./data/audit; got {volumes}"
+    assert any(":/app/data/audit" in v for v in volumes), (
+        f"audit_subscriber must mount /app/data/audit; got {volumes}"
+    )
+    # And it must be a named volume, not a host bind mount, to avoid
+    # the UID-mismatch trap.
+    top_volumes = compose.get("volumes", {})
+    assert "audit_data" in top_volumes, (
+        "named volume `audit_data` must be declared at the top level"
     )
 
 
