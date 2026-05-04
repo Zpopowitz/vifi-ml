@@ -1,39 +1,40 @@
-# ViFi live software stack (containerized).
+# ViFi live software stack — fully containerized.
 #
-# Brings up the parts of ViFi that don't touch hardware: Redis (the
-# message bus), the FastAPI service, the inference worker, and the
-# universal audit subscriber.
+# Bring up everything (Redis + API + inference + audit + dashboard):
 #
-# Hardware loggers stay on the host because they need direct access to
-# Bluetooth (Polar H10 / Vernier GDX-RB) or USB serial (ESP32-S3):
+#     docker compose up -d
 #
-#     # On the host (Windows PowerShell or Linux):
+# Open the dashboard at http://localhost:8501  (Live tab,
+# patient_id=default).
+#
+# To test the pipeline end-to-end without hardware, also start the
+# simulator (a synthetic CSI publisher):
+#
+#     docker compose --profile dev up -d
+#
+# Hardware loggers stay on the host because they need direct BLE / USB
+# serial access:
+#
+#     # On the host:
 #     export VIFI_BUS_URL=redis://localhost:6379/0
-#
-#     # CSI ingest (one of):
+#     python hr_logger.py  --address AA:BB:... --bus --patient-id alice ...
+#     python rr_logger.py  --bus --patient-id alice ...
 #     python tools/csi_capture.py --port COM6 --bus --patient-id alice ...
-#     python tools/esp32_csi_collector.py --bus-only --patient-id alice ...
 #
-#     # HR reference:
-#     python hr_logger.py --address AA:BB:... --bus --patient-id alice ...
-#
-#     # RR reference (Vernier GDX-RB):
-#     python rr_logger.py --bus --patient-id alice ...
-#
-# Then bring everything else up with one command:
-#
-#     docker compose up
-#
-# The dashboard can run in a container too (uncomment the dashboard
-# service below) or natively on the host (`streamlit run dashboard.py`).
-#
-# Patient id is fixed to ${VIFI_PATIENT_ID:-default} for the worker
-# and audit subscriber. To run multiple patients, scale via:
-#
-#     docker compose up --scale inference_worker=N
-#
-# (and tweak the worker command to take patient id from an env var per
-# replica) -- this is a v1 single-patient compose.
+# Patient id defaults to ${VIFI_PATIENT_ID:-default}; export
+# VIFI_PATIENT_ID before `docker compose up` to scope every service
+# (worker, audit, simulator) to a different patient.
+
+x-app-base: &app-base
+  build: .
+  environment: &app-env
+    VIFI_BUS_URL: redis://redis:6379/0
+    VIFI_PATIENT_ID: ${VIFI_PATIENT_ID:-default}
+    LOG_LEVEL: INFO
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
 
 services:
   redis:
@@ -46,74 +47,101 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   api:
-    build: .
+    <<: *app-base
     container_name: vifi-api
-    environment:
-      VIFI_BUS_URL: redis://redis:6379/0
-      LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
     ports:
       - "8000:8000"
     command: uvicorn api:app --host 0.0.0.0 --port 8000
-    restart: unless-stopped
+    healthcheck:
+      # The API serves a real /health endpoint; curl is in the runtime image.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   inference_worker:
-    build: .
+    <<: *app-base
     container_name: vifi-inference
-    environment:
-      VIFI_BUS_URL: redis://redis:6379/0
-      VIFI_PATIENT_ID: ${VIFI_PATIENT_ID:-default}
-      LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
     command: >
       python -m tools.inference_worker
       --patient-id ${VIFI_PATIENT_ID:-default}
       --window 10 --stride 2 --fs-resample 100
-    restart: unless-stopped
+    healthcheck:
+      # Worker has no HTTP surface, so liveness is "can still talk to the
+      # bus." If Redis becomes unreachable the worker's stuck anyway.
+      test: ["CMD", "python", "-c",
+             "import os, redis; redis.from_url(os.environ['VIFI_BUS_URL']).ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   audit_subscriber:
-    build: .
+    <<: *app-base
     container_name: vifi-audit
-    environment:
-      VIFI_BUS_URL: redis://redis:6379/0
-      VIFI_AUDIT_DIR: /app/data/audit
-    depends_on:
-      redis:
-        condition: service_healthy
     volumes:
-      # Persist audit logs on the host so they survive container restarts
-      # and can be inspected without docker exec.
+      # Persist audit JSONL on the host so it survives container restarts
+      # and can be inspected without `docker exec`.
       - ./data/audit:/app/data/audit
+    environment:
+      <<: *app-env
+      VIFI_AUDIT_DIR: /app/data/audit
     command: >
       python -m tools.audit_subscriber
       --patient-id ${VIFI_PATIENT_ID:-default}
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import os, redis; redis.from_url(os.environ['VIFI_BUS_URL']).ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-  # Optional: run the Streamlit dashboard in a container too. Comment
-  # out if you'd rather run it natively (`streamlit run dashboard.py`).
-  # dashboard:
-  #   build: .
-  #   container_name: vifi-dashboard
-  #   environment:
-  #     VIFI_BUS_URL: redis://redis:6379/0
-  #     VIFI_API: http://api:8000
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #     api:
-  #       condition: service_started
-  #   ports:
-  #     - "8501:8501"
-  #   command: >
-  #     streamlit run dashboard.py
-  #     --server.address 0.0.0.0 --server.port 8501
+  dashboard:
+    <<: *app-base
+    container_name: vifi-dashboard
+    environment:
+      <<: *app-env
+      VIFI_API: http://api:8000
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    command: >
+      streamlit run dashboard.py
+      --server.address 0.0.0.0 --server.port 8501
+      --server.headless true
+      --browser.gatherUsageStats false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # Synthetic CSI publisher for end-to-end testing without hardware.
+  # Behind the `dev` profile so it doesn't start in production-style runs.
+  #
+  #     docker compose --profile dev up -d        # bring up sim too
+  #     docker compose stop simulator              # stop just the sim
+  simulator:
+    <<: *app-base
+    container_name: vifi-simulator
+    profiles: ["dev"]
+    command: >
+      python tools/esp32_csi_collector.py
+      --simulate --bus --bus-only
+      --patient-id ${VIFI_PATIENT_ID:-default}
+    # No healthcheck: it's a one-shot generator, not a service. If it
+    # crashes the dashboard simply stops getting new windows.
 
 volumes:
   # Reserved for future Redis persistence (RDB/AOF). Today the bus is
