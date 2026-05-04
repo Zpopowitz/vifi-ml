@@ -66,6 +66,35 @@ python tools/first_capture_report.py `
     --capture "$dir\capture.txt" --hr-log "$dir\hr_log.csv"
 ```
 
+### Live dashboard (predicted HR vs Polar reference, real-time)
+
+The Live tab in `dashboard.py` plots model predictions against the
+Polar H10 chest strap as both streams arrive. Components communicate
+over a Redis Streams message bus, so each piece (logger, inference,
+audit, dashboard) can be restarted, replaced, or run on a different
+host without changing call sites elsewhere.
+
+```bash
+# 1. Start Redis (one-time).
+docker run -d --name vifi-redis -p 6379:6379 redis:7-alpine
+# Or in WSL/Linux native: sudo apt install redis-server && sudo service redis-server start
+
+# 2. Point everything at the same bus.
+export VIFI_BUS_URL=redis://localhost:6379/0
+
+# 3. Run a paired capture in bus mode -- spawns CSI capture + H10
+#    logger + inference worker + audit subscriber as one orchestrated
+#    session. Patient id is the --subject-id.
+python tools/run_paired_session.py \
+    --subject-id founder --room-id quiet --posture seated \
+    --csi-port COM6 --h10-address AA:BB:CC:DD:EE:FF \
+    --duration 180 --bus
+
+# 4. In a second terminal, open the dashboard.
+streamlit run dashboard.py
+# -> "Live" tab, set patient_id to "founder"
+```
+
 ### Reproduce the headline result
 
 ```bash
@@ -118,6 +147,51 @@ DSP pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz bandpas
 
 The signal-processing approach is from peer-reviewed academic work (PhaseBeat, FullBreathe, ResBeat). ViFi's contribution is productizing it on $10 ESP32-S3 hardware instead of $500 Intel 5300 cards, plus the platform extensions (presence, falls, multi-patient).
 
+### Live mode: pub/sub architecture
+
+For the live dashboard the components above are decoupled via a
+Redis Streams message bus. Producers publish to per-patient topics;
+consumers subscribe. Each piece can be restarted, swapped, or moved
+to a different host without touching the others.
+
+```
+                              csi.raw.<patient>
+   ┌──────────────────┐    ┌─────────────────────┐    ┌────────────────────┐
+   │ csi_capture.py   │───►│                     │───►│ inference_worker   │
+   │ (serial + bus)   │    │                     │    │ (subscribes csi,   │
+   └──────────────────┘    │                     │    │  publishes hr.pred)│
+                           │                     │    └─────────┬──────────┘
+                           │                     │              │
+                           │   Redis Streams     │   hr.predicted.<patient>
+   hr.reference.<patient>  │   (the bus)         │              │
+   ┌──────────────────┐    │                     │◄─────────────┘
+   │ hr_logger.py     │───►│                     │
+   │ (BLE + bus)      │    │                     │       ┌────────────────────┐
+   └──────────────────┘    │                     │──────►│ dashboard.py       │
+                           │                     │       │ (Live tab)         │
+                           │                     │       └────────────────────┘
+                           │                     │       ┌────────────────────┐
+                           │                     │──────►│ audit_subscriber   │
+                           │                     │       │ (writes JSONL)     │
+                           └─────────────────────┘       └────────────────────┘
+```
+
+Topic naming: `<stream>.<role>.<patient_id>` (e.g.
+`hr.predicted.alice`). Multi-patient is one topic per patient; the bus
+backend handles the fanout. The bus implementation lives in
+`modules/bus.py` and ships with two backends: Redis Streams for
+production and in-memory for tests + single-process dev.
+
+| Component | Role | Topic |
+|---|---|---|
+| `tools/csi_capture.py --bus` | producer | `csi.raw.<p>` |
+| `tools/esp32_csi_collector.py --bus-only` | producer | `csi.raw.<p>` |
+| `hr_logger.py --bus` | producer | `hr.reference.<p>` |
+| `tools/inference_worker.py` | consumer + producer | reads `csi.raw.<p>`, writes `hr.predicted.<p>` |
+| `dashboard.py` (Live tab) | consumer | reads `hr.predicted.<p>`, `hr.reference.<p>` |
+| `tools/audit_subscriber.py` | consumer | reads every topic, writes JSONL |
+| `api.py` `/api/v1/stream` (WebSocket) | consumer | reads `hr.predicted.<p>`, `hr.reference.<p>`; pushes to client |
+
 ---
 
 ## Hardware BOM (~$144 first kit)
@@ -149,6 +223,8 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | Presence / occupancy | Shipped, variance-threshold detection | `modules/presence.py` |
 | Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
+| Live message bus (Redis Streams) | Shipped — pub/sub, replay, audit-as-subscriber | `modules/bus.py` |
+| Live HR dashboard (predicted vs Polar reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
 | Apnea detection | Planned, returns HTTP 501 | `modules/apnea.py` |
 | Gait / walking-speed | Planned, returns HTTP 501 | `modules/gait.py` |
 | Fall detection | Planned, returns HTTP 501 | `modules/falls.py` |
@@ -181,7 +257,8 @@ vifi-ml/
 ├── Dockerfile                 # multi-stage build, non-root runtime
 ├── deploy.sh                  # one-shot build + run + health check
 │
-├── modules/                   # roadmap capabilities
+├── modules/                   # roadmap capabilities + bus
+│   ├── bus.py                 # SHIPPED -- Redis Streams + in-memory pub/sub
 │   ├── presence.py            # SHIPPED
 │   ├── apnea.py               # planned (501)
 │   ├── gait.py                # planned (WiGait, 501)
@@ -190,15 +267,17 @@ vifi-ml/
 │   └── four_node_sync.py      # planned (multi-patient array, 501)
 │
 ├── tools/
-│   ├── csi_capture.py              # timed serial reader, writes metadata sidecar
+│   ├── csi_capture.py              # timed serial reader (+ optional --bus)
 │   ├── parse_csi_capture.py        # parses ESP-IDF / ESP32-CSI-Tool format
-│   ├── esp32_csi_collector.py      # live UDP bridge for streaming captures
+│   ├── esp32_csi_collector.py      # live UDP bridge (+ optional --bus / --bus-only)
+│   ├── inference_worker.py         # SHIPPED -- bus subscriber: csi.raw -> hr.predicted
+│   ├── audit_subscriber.py         # SHIPPED -- universal bus subscriber -> JSONL
 │   ├── first_capture_report.py     # paired CSI + HR -> MAE report (with audit log)
 │   ├── retrain_on_real.py          # retrain XGBoost + Mahalanobis on real captures
 │   ├── train_quantile_models.py    # confidence-interval quantile regressors
 │   ├── calibrate_subject.py        # capture and store per-subject calibration
 │   ├── identify_subject.py         # fingerprint-match a capture to a subject
-│   ├── run_paired_session.py       # orchestrator: 3 loggers + session.json one command
+│   ├── run_paired_session.py       # orchestrator: loggers + workers + session.json (--bus)
 │   ├── multi_subject_test.py       # validate the walk-in detector against labeled events
 │   ├── validate_session_metadata.py# session.json schema validator
 │   └── cross_subject_eval.py       # frozen leave-one-subject-out evaluator
