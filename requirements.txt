@@ -11,6 +11,9 @@ streamlit==1.39.0
 pandas==2.2.3
 joblib==1.4.2
 pytest==8.3.3
+# Live message bus (Redis Streams). Optional: in-memory backend works
+# without it, but production deployments and the Live dashboard need Redis.
+redis==5.0.8        ; extra == "bus"
 # Hardware loggers (optional; only needed when capturing real data)
 bleak==0.22.3       ; extra == "capture"
 godirect==1.1.4     ; extra == "capture"
