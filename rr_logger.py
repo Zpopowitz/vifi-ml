@@ -5,6 +5,10 @@ and writes a timestamped breaths-per-minute log to CSV. Used as ground-truth
 RR reference alongside real ESP32-S3 CSI captures during paired data
 collection (parallel to hr_logger.py for the Polar H10).
 
+Optional `--bus` mode also publishes each reading to the ViFi message
+bus (`rr.reference.<patient_id>` topic) so the live dashboard can plot
+the belt stream alongside the model's RR predictions in real time.
+
 The GDX-RB exposes two sensors:
     - "Force"            : belt strap force in Newtons (~0.5-3.0 N range)
     - "Respiration Rate" : derived breaths/min from the device's onboard DSP
@@ -42,14 +46,27 @@ import time
 from pathlib import Path
 from typing import Optional
 
-try:
-    from godirect import GoDirect
-except ImportError:
-    print("ERROR: godirect not installed. Run: pip install godirect",
-          file=sys.stderr)
-    print("Note: godirect requires bleak on Win/Mac and dbus on Linux.",
-          file=sys.stderr)
-    sys.exit(1)
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _require_godirect():
+    """Lazy-import godirect so the module is importable without it.
+
+    Letting tests import _BusPublisher etc. without needing the hardware
+    SDK installed; the actual capture path (log() / _scan_print()) calls
+    this and fails with a clear message if the package is missing.
+    """
+    try:
+        from godirect import GoDirect
+        return GoDirect
+    except ImportError:
+        print("ERROR: godirect not installed. Run: pip install godirect",
+              file=sys.stderr)
+        print("Note: godirect requires bleak on Win/Mac and dbus on Linux.",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 SENSOR_RESP_RATE = "Respiration Rate"
@@ -57,8 +74,49 @@ SENSOR_FORCE = "Force"
 DEFAULT_PERIOD_MS = 1000  # GDX-RB updates respiration rate ~1 Hz
 
 
+class _BusPublisher:
+    """Publishes RR readings to `rr.reference.<patient_id>`.
+
+    Built lazily so non-bus mode doesn't import redis. Bus failures
+    are counted + suppressed so a flaky bus never aborts a recording.
+    """
+
+    def __init__(self, patient_id: str) -> None:
+        from modules.bus import bus_from_env, rr_reference
+        self.bus = bus_from_env()
+        self.topic = rr_reference(patient_id)
+        self.patient_id = patient_id
+        self._error_count = 0
+
+    def publish(self, ts_unix: float, rr_bpm: float,
+                force_n: Optional[float] = None) -> None:
+        try:
+            payload = {
+                "ts_unix": ts_unix,
+                "rr_bpm": float(rr_bpm),
+                "source": "vernier_gdx_rb",
+                "patient_id": self.patient_id,
+            }
+            if force_n is not None:
+                payload["force_n"] = float(force_n)
+            self.bus.publish(self.topic, payload, ts_ms=int(ts_unix * 1000))
+        except Exception as exc:
+            self._error_count += 1
+            if self._error_count <= 3:
+                print(f"  [bus publish failed: {exc}]", file=sys.stderr)
+            elif self._error_count == 4:
+                print("  [bus publish suppressed]", file=sys.stderr)
+
+    def close(self) -> None:
+        try:
+            self.bus.close()
+        except Exception:
+            pass
+
+
 def _scan_print() -> None:
     """List nearby Go Direct devices and exit."""
+    GoDirect = _require_godirect()
     print("Scanning for Go Direct devices over BLE for 5 seconds...")
     gd = GoDirect(use_ble=True, use_usb=False)
     try:
@@ -99,12 +157,18 @@ def _find_resp_sensors(device, want_force: bool):
 def log(duration_s: float, out_path: Path,
         period_ms: int = DEFAULT_PERIOD_MS,
         log_force: bool = False,
-        device_name_filter: Optional[str] = None) -> int:
+        device_name_filter: Optional[str] = None,
+        bus_publisher: Optional[_BusPublisher] = None) -> int:
     """Connect to the first available GDX-RB and log to CSV for duration_s.
 
     The CSV always has columns [timestamp_unix, rr_bpm]. With log_force=True
     a third column [force_n] is added.
+
+    If `bus_publisher` is provided, each reading is also published to the
+    live message bus. CSV writing is the on-disk source of truth; bus
+    failures don't abort the recording.
     """
+    GoDirect = _require_godirect()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     gd = GoDirect(use_ble=True, use_usb=False)
     device = None
@@ -167,6 +231,8 @@ def log(duration_s: float, out_path: Path,
                                if force_value is not None else "")
                 writer.writerow(row)
                 f.flush()
+                if bus_publisher is not None:
+                    bus_publisher.publish(t, rr_value, force_value)
                 total += 1
                 if total % 10 == 0:
                     remaining = max(0.0, deadline - time.time())
@@ -201,19 +267,33 @@ def main() -> None:
     p.add_argument("--name-contains",
                    help="require device name to contain this string "
                         "(safety check when multiple Go Direct devices nearby)")
+    p.add_argument("--bus", action="store_true",
+                   help=("also publish each reading to rr.reference.<patient_id> "
+                         "on the ViFi message bus (set VIFI_BUS_URL=redis://...)"))
+    p.add_argument("--patient-id", default="default",
+                   help="patient id for bus topic namespacing")
     args = p.parse_args()
 
     if args.scan:
         _scan_print()
         return
 
-    log(
-        duration_s=args.duration,
-        out_path=args.out,
-        period_ms=args.period_ms,
-        log_force=args.log_force,
-        device_name_filter=args.name_contains,
-    )
+    publisher: Optional[_BusPublisher] = None
+    if args.bus:
+        publisher = _BusPublisher(args.patient_id)
+        print(f"Publishing to bus topic: {publisher.topic}")
+    try:
+        log(
+            duration_s=args.duration,
+            out_path=args.out,
+            period_ms=args.period_ms,
+            log_force=args.log_force,
+            device_name_filter=args.name_contains,
+            bus_publisher=publisher,
+        )
+    finally:
+        if publisher is not None:
+            publisher.close()
 
 
 if __name__ == "__main__":

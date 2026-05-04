@@ -3,11 +3,16 @@
 Run:   streamlit run dashboard.py
 Talks to the FastAPI service at $VIFI_API (default http://localhost:8000).
 
-Two tabs:
-  - Synthetic   : generate a synthetic IQ window and call /predict
+Three tabs:
+  - Live        : live predicted-vs-reference HR timeline. Subscribes to
+                  hr.predicted.<patient> and hr.reference.<patient> on the
+                  ViFi message bus (set VIFI_BUS_URL=redis://...).
+                  Run alongside: hr_logger.py --bus, esp32_csi_collector
+                  --bus-only, and tools/inference_worker.py.
   - Real capture: upload an ESP32-S3 capture.txt + optional H10 hr_log.csv
                   and call /predict/capture for an HR timeline with confidence
                   intervals
+  - Synthetic   : generate a synthetic IQ window and call /predict
 """
 from __future__ import annotations
 
@@ -22,8 +27,17 @@ import pandas as pd
 import streamlit as st
 
 from data_gen import generate_sample
+from modules.bus import (
+    LATEST,
+    bus_from_env,
+    hr_predicted,
+    hr_reference,
+    rr_predicted,
+    rr_reference,
+)
 
 API_URL = os.environ.get("VIFI_API", "http://localhost:8000")
+BUS_URL = os.environ.get("VIFI_BUS_URL", "")
 
 st.set_page_config(page_title="ViFi", layout="wide")
 st.title("ViFi: Contactless HR / RR")
@@ -48,7 +62,187 @@ try:
 except Exception:
     st.caption("Model status: API unreachable")
 
-tab_real, tab_synth = st.tabs(["Real capture", "Synthetic"])
+tab_live, tab_real, tab_synth = st.tabs(["Live", "Real capture", "Synthetic"])
+
+
+# ---------------------------------------------------------------------------
+# Live tab: bus-backed predicted-vs-reference timeline
+# ---------------------------------------------------------------------------
+
+@st.cache_resource
+def _get_live_bus():
+    """One bus instance per Streamlit session (cached across reruns).
+
+    Note: when VIFI_BUS_URL is unset we get an InMemoryBus, which is
+    *process-local*. In single-process dev that means the dashboard
+    only sees messages it publishes itself -- not useful. Live mode
+    needs Redis (or another shared backend).
+    """
+    return bus_from_env()
+
+
+def _live_topics(patient_id: str) -> list[str]:
+    return [
+        hr_predicted(patient_id),
+        hr_reference(patient_id),
+        rr_predicted(patient_id),
+        rr_reference(patient_id),
+    ]
+
+
+def _drain_into_state(patient_id: str) -> int:
+    """Read new bus messages into st.session_state.live_rows.
+
+    Each row carries one vital reading (HR or RR) tagged by stream and
+    role. Empty payloads are dropped quietly. Returns the number of
+    messages appended this call.
+    """
+    bus = _get_live_bus()
+    cursors = st.session_state.live_cursors
+    msgs = bus.read(cursors, block_ms=0, count=200)
+    appended = 0
+    for m in msgs:
+        cursors[m.topic] = m.msg_id
+        payload = m.payload or {}
+        # Topic format: "<stream>.<role>.<patient>"
+        parts = m.topic.split(".")
+        if len(parts) < 2:
+            continue
+        stream_kind, role = parts[0], parts[1]
+        value_key = "hr_bpm" if stream_kind == "hr" else "rr_bpm"
+        value = payload.get(value_key)
+        if value is None:
+            continue
+        st.session_state.live_rows.append({
+            "ts_ms": m.ts_ms,
+            "ts_unix": payload.get("ts_unix", m.ts_ms / 1000.0),
+            "stream": stream_kind,
+            "role": role,
+            "value_bpm": float(value),
+            "confidence": payload.get(f"{stream_kind}_confidence"),
+        })
+        appended += 1
+    return appended
+
+
+def _trim_to_window(history_s: float) -> None:
+    if not st.session_state.live_rows:
+        return
+    latest_ms = st.session_state.live_rows[-1]["ts_ms"]
+    cutoff_ms = latest_ms - int(history_s * 1000)
+    st.session_state.live_rows = [
+        r for r in st.session_state.live_rows if r["ts_ms"] >= cutoff_ms
+    ]
+
+
+with tab_live:
+    st.subheader("Live: predicted HR vs Polar H10 reference")
+
+    if not BUS_URL.startswith("redis://"):
+        st.warning(
+            "VIFI_BUS_URL is not set to a Redis URL. The Live tab will "
+            "use a process-local in-memory bus, which only sees messages "
+            "this Streamlit process publishes itself (so nothing). "
+            "Set `VIFI_BUS_URL=redis://localhost:6379/0` and restart "
+            "Streamlit, then run the H10 logger / ESP32 collector / "
+            "inference worker against the same bus."
+        )
+    else:
+        st.caption(f"Bus: `{BUS_URL}`")
+
+    live_left, live_right = st.columns([3, 1])
+    with live_right:
+        live_patient = st.text_input("patient_id", value="default",
+                                     key="live_patient_id")
+        history_s = st.slider("History (s)", 30, 600, 120, step=30,
+                              key="live_history_s")
+        refresh_s = st.slider("Refresh (s)", 1, 10, 2, step=1,
+                              key="live_refresh_s")
+        paused = st.toggle("Pause", value=False, key="live_paused")
+        if st.button("Reset", key="live_reset"):
+            st.session_state.live_rows = []
+            st.session_state.live_cursors = {
+                t: LATEST for t in _live_topics(live_patient)
+            }
+
+    # First-load initialisation.
+    if "live_rows" not in st.session_state:
+        st.session_state.live_rows = []
+    if "live_cursors" not in st.session_state \
+            or set(st.session_state.live_cursors) != set(_live_topics(live_patient)):
+        st.session_state.live_cursors = {
+            t: LATEST for t in _live_topics(live_patient)
+        }
+
+    def _vital_section(df: pd.DataFrame, stream_kind: str,
+                       label: str, units: str = "bpm") -> None:
+        """Render one vital sign (HR or RR) -- metrics + line chart +
+        rolling MAE over the visible window."""
+        sub = df[df["stream"] == stream_kind]
+        if sub.empty:
+            st.info(f"No {label} messages yet.")
+            return
+        latest_pred = sub[sub["role"] == "predicted"].tail(1)
+        latest_ref = sub[sub["role"] == "reference"].tail(1)
+
+        cols = st.columns(3)
+        if not latest_pred.empty and not latest_ref.empty:
+            p = float(latest_pred["value_bpm"].iloc[0])
+            r = float(latest_ref["value_bpm"].iloc[0])
+            cols[0].metric(f"Predicted {label}", f"{p:.1f} {units}")
+            cols[1].metric(f"Reference {label}", f"{r:.1f} {units}")
+            cols[2].metric("Error", f"{p - r:+.1f} {units}")
+        elif not latest_pred.empty:
+            p = float(latest_pred["value_bpm"].iloc[0])
+            cols[0].metric(f"Predicted {label}", f"{p:.1f} {units}")
+            cols[1].info("No reference yet")
+        elif not latest_ref.empty:
+            r = float(latest_ref["value_bpm"].iloc[0])
+            cols[0].info("No prediction yet")
+            cols[1].metric(f"Reference {label}", f"{r:.1f} {units}")
+
+        sub_df = sub.copy()
+        sub_df["t_rel_s"] = (sub_df["ts_ms"] - sub_df["ts_ms"].min()) / 1000.0
+        pivot = (sub_df.pivot_table(index="t_rel_s", columns="role",
+                                    values="value_bpm", aggfunc="last")
+                       .sort_index()
+                       .ffill())
+        st.line_chart(pivot)
+
+        if "predicted" in pivot.columns and "reference" in pivot.columns:
+            paired = pivot.dropna()
+            if len(paired) >= 2:
+                mae = float((paired["predicted"] - paired["reference"]).abs().mean())
+                st.caption(
+                    f"Rolling MAE over last {history_s}s: **{mae:.2f} {units}** "
+                    f"({len(paired)} matched samples)"
+                )
+
+    @st.fragment(run_every=None if paused else f"{refresh_s}s")
+    def _live_panel() -> None:
+        if not paused:
+            _drain_into_state(live_patient)
+            _trim_to_window(history_s)
+
+        rows = st.session_state.live_rows
+        if not rows:
+            st.info("Waiting for messages on the bus...")
+            return
+
+        df = pd.DataFrame(rows)
+
+        st.markdown("### Heart rate")
+        _vital_section(df, "hr", "HR")
+
+        st.markdown("### Respiratory rate")
+        _vital_section(df, "rr", "RR")
+
+        with st.expander("Recent messages"):
+            st.dataframe(df.tail(30)[["ts_unix", "stream", "role",
+                                      "value_bpm", "confidence"]])
+
+    with live_left:
+        _live_panel()
 
 
 # ---------------------------------------------------------------------------

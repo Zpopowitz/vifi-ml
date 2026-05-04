@@ -39,10 +39,15 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Deque, Optional
 
 import httpx
 import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 log = logging.getLogger("vifi.esp32")
 
@@ -120,7 +125,49 @@ def resample_to_grid(packets: list[Packet], fs: float,
     return out
 
 
-def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event) -> None:
+class _BusPublisher:
+    """Publishes raw CSI packets to `csi.raw.<patient_id>`.
+
+    Built lazily so non-bus mode doesn't import redis. Errors are caught
+    + logged with a counter so a flaky bus doesn't drop UDP packets --
+    the ring buffer + local inference path still work.
+    """
+
+    def __init__(self, patient_id: str) -> None:
+        from modules.bus import bus_from_env, csi_raw
+        self.bus = bus_from_env()
+        self.topic = csi_raw(patient_id)
+        self.patient_id = patient_id
+        self._error_count = 0
+
+    def publish(self, ts_unix: float, amps: np.ndarray) -> None:
+        try:
+            self.bus.publish(
+                self.topic,
+                {
+                    "ts_unix": ts_unix,
+                    "amps": amps.astype(float).tolist(),
+                    "n_subcarriers": int(amps.shape[0]),
+                    "patient_id": self.patient_id,
+                },
+                ts_ms=int(ts_unix * 1000),
+            )
+        except Exception as exc:
+            self._error_count += 1
+            if self._error_count <= 3:
+                log.error("bus publish failed: %s", exc)
+            elif self._error_count == 4:
+                log.error("bus publish suppressed; further errors silenced")
+
+    def close(self) -> None:
+        try:
+            self.bus.close()
+        except Exception:
+            pass
+
+
+def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
+                 bus_publisher: Optional[_BusPublisher] = None) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", int(port)))
@@ -139,6 +186,8 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event) -> Non
             pkt = parse_csi_line(line)
             if pkt is not None:
                 buf.push(pkt)
+                if bus_publisher is not None:
+                    bus_publisher.publish(time.time(), pkt.amps)
                 recv_count += 1
                 if recv_count % 200 == 0:
                     log.info("received %d CSI packets", recv_count)
@@ -146,11 +195,10 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event) -> Non
 
 
 def simulator(buf: RingBuffer, stop: threading.Event,
-              fs: float = 100.0, n_sub: int = 52) -> None:
+              fs: float = 100.0, n_sub: int = 52,
+              bus_publisher: Optional[_BusPublisher] = None) -> None:
     """Generate fake ESP32 packets so you can demo without hardware."""
     try:
-        # Import lazily so the collector still runs without the repo on path.
-        sys.path.insert(0, str((__import__('pathlib').Path(__file__)).resolve().parent.parent))
         from data_gen import generate_sample
     except Exception as exc:
         log.error("simulator needs the repo on sys.path: %s", exc); return
@@ -167,6 +215,8 @@ def simulator(buf: RingBuffer, stop: threading.Event,
         for i, sample in enumerate(env):
             amps = (sample * gains).astype(np.float32)
             buf.push(Packet(timestamp=time.monotonic(), amps=amps))
+            if bus_publisher is not None:
+                bus_publisher.publish(time.time(), amps)
             time.sleep(dt)
             if stop.is_set():
                 return
@@ -207,6 +257,17 @@ def main() -> None:
     p.add_argument("--stride", type=float, default=2.0, help="predict every N s")
     p.add_argument("--simulate", action="store_true",
                    help="generate fake packets instead of listening on UDP")
+    p.add_argument("--bus", action="store_true",
+                   help=("publish each packet to csi.raw.<patient_id> on the "
+                         "ViFi message bus (set VIFI_BUS_URL=redis://...). "
+                         "Use --bus-only to skip the local /predict/csi loop "
+                         "and let an inference worker handle predictions."))
+    p.add_argument("--bus-only", action="store_true",
+                   help=("with --bus, skip the local /predict/csi loop. "
+                         "Inference is expected to come from a worker "
+                         "subscribed to csi.raw."))
+    p.add_argument("--patient-id", default="default",
+                   help="patient id for bus topic namespacing")
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
@@ -215,20 +276,35 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    if args.bus_only and not args.bus:
+        p.error("--bus-only requires --bus")
+
+    bus_publisher: Optional[_BusPublisher] = None
+    if args.bus:
+        bus_publisher = _BusPublisher(args.patient_id)
+        log.info("publishing CSI packets to bus topic: %s", bus_publisher.topic)
+
     buf = RingBuffer(duration_s=args.window * 1.5)
     stop = threading.Event()
-    threads = []
+    threads: list[threading.Thread] = []
     if args.simulate:
-        threads.append(threading.Thread(target=simulator, args=(buf, stop, args.fs),
-                                        daemon=True))
+        threads.append(threading.Thread(
+            target=simulator, args=(buf, stop, args.fs, 52, bus_publisher),
+            daemon=True,
+        ))
     else:
-        threads.append(threading.Thread(target=udp_listener,
-                                        args=(args.port, buf, stop), daemon=True))
-    threads.append(threading.Thread(
-        target=predict_loop,
-        args=(buf, args.api.rstrip("/"), args.fs, args.window, args.stride, stop),
-        daemon=True,
-    ))
+        threads.append(threading.Thread(
+            target=udp_listener,
+            args=(args.port, buf, stop, bus_publisher),
+            daemon=True,
+        ))
+    if not args.bus_only:
+        threads.append(threading.Thread(
+            target=predict_loop,
+            args=(buf, args.api.rstrip("/"), args.fs, args.window,
+                  args.stride, stop),
+            daemon=True,
+        ))
     for t in threads: t.start()
     try:
         while True: time.sleep(1.0)
@@ -236,6 +312,9 @@ def main() -> None:
         log.info("shutting down")
         stop.set()
         for t in threads: t.join(timeout=2.0)
+    finally:
+        if bus_publisher is not None:
+            bus_publisher.close()
 
 
 if __name__ == "__main__":

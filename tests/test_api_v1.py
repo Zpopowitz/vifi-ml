@@ -1,4 +1,9 @@
-"""Tests for the /api/v1 namespace and the /api/v1/stream WebSocket stub."""
+"""Tests for the /api/v1 namespace and the /api/v1/stream WebSocket fan-out.
+
+The WebSocket no longer returns a not_implemented stub; it fans out
+hr.predicted + hr.reference messages from the bus to the client. See
+tests/test_api_stream.py for behavioural coverage.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,11 +57,15 @@ def test_v1_transients_returns_501(client):
     assert r.status_code == 501
 
 
-def test_v1_stream_websocket_announces_not_implemented(client):
-    """The reserved /api/v1/stream endpoint should send a not-implemented payload."""
+def test_v1_stream_websocket_sends_hello_with_model_version(client):
+    """/api/v1/stream now fans out bus messages; the first frame is a
+    hello envelope identifying the patient + topics + model version."""
     with client.websocket_connect("/api/v1/stream") as ws:
         msg = ws.receive_json()
-    assert msg["status"] == "not_implemented"
+    assert msg["type"] == "hello"
+    assert msg["patient_id"] == "default"
+    # Four topics per patient: hr + rr, predicted + reference.
+    assert "topics" in msg and len(msg["topics"]) == 4
     assert "model_version" in msg
 
 

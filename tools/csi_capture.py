@@ -23,23 +23,42 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 try:
     import serial
 except ImportError:
-    print("ERROR: pyserial not installed. Run: pip install pyserial",
-          file=sys.stderr)
-    sys.exit(1)
+    # Lazy fallback: tests can import this module without pyserial
+    # (hardware extra). Anything that opens a serial port calls
+    # _require_serial() and gets a clear error if it's missing.
+    serial = None  # type: ignore[assignment]
+
+
+def _require_serial() -> None:
+    if serial is None:
+        print("ERROR: pyserial not installed. Run: pip install pyserial",
+              file=sys.stderr)
+        sys.exit(1)
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def capture(port: str, baud: int, duration_s: float, out_path: Path,
-            quiet: bool = False) -> int:
+            quiet: bool = False,
+            bus_publisher: Optional["_BusPublisher"] = None) -> int:
     """Read serial output for `duration_s` seconds, write to out_path.
 
     Also writes a sidecar `<out_path>.meta.json` with the actual packet
     rate measured during capture. Downstream tools use this to avoid
     misinterpreting the FFT frequency axis when ESP-IDF doesn't emit
     per-packet timestamps.
+
+    If `bus_publisher` is provided, every newline-terminated line that
+    parses as CSI_DATA is also published to the live message bus. The
+    binary file remains the on-disk source of truth; bus failures don't
+    abort the capture.
 
     Returns the number of bytes written.
     """
@@ -51,6 +70,7 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
     csi_count = 0
     last_status = time.time()
 
+    _require_serial()
     print(f"Opening {port} at {baud} baud, capturing for {duration_s:.0f}s...")
     try:
         ser = serial.Serial(port, baudrate=baud, timeout=0.5)
@@ -59,8 +79,8 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
         return 0
 
     # Use binary mode so we don't trip on the encoding crash that idf.py hit.
+    line_buf = bytearray()
     with ser, open(out_path, "wb") as f:
-        buf = bytearray()
         while time.time() < deadline:
             chunk = ser.read(4096)
             if not chunk:
@@ -68,11 +88,22 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
             f.write(chunk)
             f.flush()
             bytes_written += len(chunk)
-            buf.extend(chunk)
 
             # Count newlines and CSI_DATA occurrences in the new chunk.
             line_count += chunk.count(b"\n")
             csi_count += chunk.count(b"CSI_DATA,")
+
+            # Optional bus publish: split chunk into lines and publish
+            # each parseable CSI_DATA row.
+            if bus_publisher is not None:
+                line_buf.extend(chunk)
+                while True:
+                    nl = line_buf.find(b"\n")
+                    if nl < 0:
+                        break
+                    line = bytes(line_buf[:nl]).decode(errors="ignore")
+                    del line_buf[:nl + 1]
+                    bus_publisher.publish_line(line)
 
             # Status line every 10 seconds.
             now = time.time()
@@ -109,6 +140,54 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
     return bytes_written
 
 
+class _BusPublisher:
+    """Parses CSI_DATA serial lines and publishes them to the bus.
+
+    Built lazily so non-bus mode doesn't import redis. Errors are
+    counted + suppressed so a flaky bus never aborts a capture.
+    """
+
+    def __init__(self, patient_id: str) -> None:
+        from modules.bus import bus_from_env, csi_raw
+        from tools.esp32_csi_collector import parse_csi_line
+        self.bus = bus_from_env()
+        self.topic = csi_raw(patient_id)
+        self.patient_id = patient_id
+        self._parse = parse_csi_line
+        self._error_count = 0
+        self._published = 0
+
+    def publish_line(self, line: str) -> None:
+        pkt = self._parse(line)
+        if pkt is None:
+            return
+        try:
+            ts = time.time()
+            self.bus.publish(
+                self.topic,
+                {
+                    "ts_unix": ts,
+                    "amps": pkt.amps.astype(float).tolist(),
+                    "n_subcarriers": int(pkt.amps.shape[0]),
+                    "patient_id": self.patient_id,
+                },
+                ts_ms=int(ts * 1000),
+            )
+            self._published += 1
+        except Exception as exc:
+            self._error_count += 1
+            if self._error_count <= 3:
+                print(f"  [bus publish failed: {exc}]", file=sys.stderr)
+            elif self._error_count == 4:
+                print("  [bus publish suppressed]", file=sys.stderr)
+
+    def close(self) -> None:
+        try:
+            self.bus.close()
+        except Exception:
+            pass
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Timed serial CSI capture")
     p.add_argument("--port", required=True, help="serial port (e.g. COM6)")
@@ -117,9 +196,26 @@ def main() -> None:
                    help="capture duration in seconds")
     p.add_argument("--out", type=Path, default=Path("capture.txt"))
     p.add_argument("--quiet", action="store_true", help="suppress status lines")
+    p.add_argument("--bus", action="store_true",
+                   help=("also publish each parsed CSI_DATA line to "
+                         "csi.raw.<patient_id> on the ViFi message bus "
+                         "(set VIFI_BUS_URL=redis://...)"))
+    p.add_argument("--patient-id", default="default",
+                   help="patient id for bus topic namespacing")
     args = p.parse_args()
 
-    n = capture(args.port, args.baud, args.duration, args.out, args.quiet)
+    publisher: Optional[_BusPublisher] = None
+    if args.bus:
+        publisher = _BusPublisher(args.patient_id)
+        print(f"Publishing CSI to bus topic: {publisher.topic}")
+
+    try:
+        n = capture(args.port, args.baud, args.duration, args.out,
+                    args.quiet, bus_publisher=publisher)
+    finally:
+        if publisher is not None:
+            print(f"Published {publisher._published} CSI rows to bus")
+            publisher.close()
     if n == 0:
         sys.exit(1)
 

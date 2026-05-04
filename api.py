@@ -19,8 +19,9 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+import asyncio
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from xgboost import XGBRegressor
@@ -927,22 +928,80 @@ def create_app(model_dir: Path = MODEL_DIR,
         )
 
     # ------------------------------------------------------------------
-    # /api/v1/stream -- placeholder for live HR/RR streaming.
+    # /api/v1/stream -- live HR/RR fan-out from the message bus.
     # ------------------------------------------------------------------
-    # Reserves the URL for the future live dashboard. Currently echoes a
-    # not-implemented message so clients can detect and handle gracefully.
+    # Subscribes to hr.predicted.<patient_id> and hr.reference.<patient_id>
+    # and forwards each message to the WebSocket client as JSON. The
+    # inference worker (tools/inference_worker.py) feeds the predicted
+    # stream; the H10 sidecar (hr_logger.py --bus) feeds the reference
+    # stream. Run both, plus this server, plus the dashboard, and you
+    # have a live predicted-vs-reference view.
     @app.websocket("/api/v1/stream")
     async def stream(websocket: WebSocket):
+        from modules.bus import (  # noqa: E402
+            LATEST,
+            bus_from_env,
+            hr_predicted,
+            hr_reference,
+            rr_predicted,
+            rr_reference,
+        )
+        patient_id = websocket.query_params.get("patient_id", "default")
         await websocket.accept()
+        bus = bus_from_env()
+        # Subscribe to every (HR and RR, predicted and reference) topic
+        # for the patient. Adding new vital streams later is just one
+        # more entry here -- no protocol change.
+        topics = [
+            hr_predicted(patient_id),
+            hr_reference(patient_id),
+            rr_predicted(patient_id),
+            rr_reference(patient_id),
+        ]
+        cursors: dict[str, str] = {t: LATEST for t in topics}
         await websocket.send_json({
-            "status": "not_implemented",
-            "message": (
-                "Live streaming endpoint reserved for v2. "
-                "Use /api/v1/predict/csi for per-window predictions."
-            ),
+            "type": "hello",
+            "patient_id": patient_id,
+            "topics": topics,
             "model_version": MODEL_VERSION,
         })
-        await websocket.close()
+        try:
+            while True:
+                # bus.read blocks; run it on a worker thread so the
+                # event loop stays free for client disconnect handling.
+                msgs = await asyncio.to_thread(
+                    bus.read, dict(cursors), 1000, 100,
+                )
+                for m in msgs:
+                    cursors[m.topic] = m.msg_id
+                    # Topic format: "<stream>.<role>.<patient>" e.g.
+                    # "hr.predicted.alice" or "rr.reference.alice".
+                    parts = m.topic.split(".")
+                    stream_kind = parts[0] if len(parts) >= 2 else "unknown"
+                    role = parts[1] if len(parts) >= 2 else "unknown"
+                    await websocket.send_json({
+                        "type": f"{stream_kind}.{role}",
+                        "stream": stream_kind,
+                        "role": role,
+                        "topic": m.topic,
+                        "msg_id": m.msg_id,
+                        "ts_ms": m.ts_ms,
+                        "payload": m.payload,
+                    })
+        except WebSocketDisconnect:
+            log.info("/api/v1/stream client disconnected (patient=%s)",
+                     patient_id)
+        except Exception as exc:
+            log.error("/api/v1/stream error: %s", exc)
+            try:
+                await websocket.close(code=1011)
+            except Exception:
+                pass
+        finally:
+            try:
+                bus.close()
+            except Exception:
+                pass
 
     return app
 

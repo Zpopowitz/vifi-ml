@@ -4,8 +4,16 @@ Reads the Polar H10 chest strap over Bluetooth Low Energy (BLE) and
 writes a timestamped HR log to CSV. Used as ground-truth reference
 alongside real ESP32-S3 CSI captures during paired data collection.
 
+Optional `--bus` mode also publishes each reading to the ViFi message
+bus (`hr.reference.<patient_id>` topic) so a live dashboard can plot
+the H10 stream alongside the model's predictions in real time. CSV
+writing stays on by default — the bus is for live consumers, the CSV
+is the on-disk record.
+
 Install once:
     pip install bleak
+    # for --bus mode:
+    pip install redis
 
 First-time setup:
     1. Put on the H10 (wet the electrode strips first)
@@ -15,9 +23,15 @@ First-time setup:
     4. Run:    python hr_logger.py --address AA:BB:CC:DD:EE:FF
        to record
 
-Typical usage during a paired capture:
+Typical usage during a paired capture (offline, CSV only):
     python hr_logger.py --address AA:BB:CC:DD:EE:FF --duration 120 \
                         --out hr_log_session1.csv
+
+Live mode (CSV + bus, for the live dashboard):
+    VIFI_BUS_URL=redis://localhost:6379/0 \
+    python hr_logger.py --address AA:BB:CC:DD:EE:FF --duration 120 \
+                        --out hr_log_session1.csv \
+                        --bus --patient-id alice
 """
 from __future__ import annotations
 
@@ -27,12 +41,30 @@ import csv
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 try:
     from bleak import BleakClient, BleakScanner
 except ImportError:
-    print("ERROR: bleak not installed. Run: pip install bleak", file=sys.stderr)
-    sys.exit(1)
+    # Lazy fallback: tests can import this module without bleak (hardware
+    # extra). Anything that actually needs BleakClient/BleakScanner calls
+    # _require_bleak() and gets a clear error.
+    BleakClient = None  # type: ignore[assignment]
+    BleakScanner = None  # type: ignore[assignment]
+
+
+def _require_bleak() -> None:
+    if BleakClient is None or BleakScanner is None:
+        print("ERROR: bleak not installed. Run: pip install bleak",
+              file=sys.stderr)
+        sys.exit(1)
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+# Imported lazily inside log() so --scan doesn't pull in redis.
+# from modules.bus import MessageBus, bus_from_env, hr_reference
 
 
 # Standard BLE Heart Rate Measurement characteristic UUID.
@@ -54,6 +86,7 @@ def _parse_hr(data: bytes) -> int:
 
 async def scan() -> None:
     """Scan and print nearby BLE devices; highlight Polar devices."""
+    _require_bleak()
     print("Scanning for 10 seconds...")
     devices = await BleakScanner.discover(timeout=10.0)
     for d in devices:
@@ -62,14 +95,30 @@ async def scan() -> None:
 
 
 async def log(address: str, duration_s: float, out_path: Path,
+              bus_publisher: Optional["_BusPublisher"] = None,
               reconnect_max: int = 20, reconnect_wait_s: float = 1.5) -> int:
     """Connect to the H10 and log HR readings to CSV for `duration_s` of
     wall-clock time. If Windows BLE drops the connection mid-stream
     (very common with bleak on Win11), reconnect and keep going until
-    the full duration has elapsed.
+    the full duration has elapsed."""
+    _require_bleak()
+    return await _log_impl(address, duration_s, out_path,
+                           bus_publisher, reconnect_max, reconnect_wait_s)
+
+
+async def _log_impl(address: str, duration_s: float, out_path: Path,
+                    bus_publisher: Optional["_BusPublisher"],
+                    reconnect_max: int,
+                    reconnect_wait_s: float) -> int:
+    """Body of log(); pulled out so _require_bleak runs before any
+    closures capture the (possibly None) Bleak symbols.
 
     The CSV is opened once and stays open for the whole run, so all
     reconnect chunks land in the same file with continuous timestamps.
+
+    If `bus_publisher` is provided, each reading is also published to
+    the live message bus. CSV writing remains the source of truth on
+    disk; bus publish failures are logged but don't stop the recording.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     start_wall = time.time()
@@ -88,6 +137,8 @@ async def log(address: str, duration_s: float, out_path: Path,
             writer.writerow([f"{t:.3f}", hr])
             f.flush()
             total_count += 1
+            if bus_publisher is not None:
+                bus_publisher.publish(t, hr)
             if total_count % 10 == 0:
                 remaining = max(0.0, deadline - time.time())
                 print(f"  {total_count:4d} readings, last HR={hr} bpm, "
@@ -131,6 +182,49 @@ async def log(address: str, duration_s: float, out_path: Path,
     return total_count
 
 
+class _BusPublisher:
+    """Thin wrapper that publishes HR readings to the live bus.
+
+    Built lazily so `python hr_logger.py --scan` (or non-bus mode)
+    doesn't import redis. Publish errors are caught + logged so a
+    transient bus outage never aborts a recording -- the CSV is still
+    written.
+    """
+
+    def __init__(self, patient_id: str) -> None:
+        from modules.bus import bus_from_env, hr_reference
+        self.bus = bus_from_env()
+        self.topic = hr_reference(patient_id)
+        self.patient_id = patient_id
+        self._error_count = 0
+
+    def publish(self, ts_unix: float, hr_bpm: int) -> None:
+        try:
+            self.bus.publish(
+                self.topic,
+                {
+                    "ts_unix": ts_unix,
+                    "hr_bpm": int(hr_bpm),
+                    "source": "polar_h10",
+                    "patient_id": self.patient_id,
+                },
+                ts_ms=int(ts_unix * 1000),
+            )
+        except Exception as exc:
+            self._error_count += 1
+            if self._error_count <= 3:
+                print(f"  [bus publish failed: {exc}]", file=sys.stderr)
+            elif self._error_count == 4:
+                print("  [bus publish suppressed; further errors silenced]",
+                      file=sys.stderr)
+
+    def close(self) -> None:
+        try:
+            self.bus.close()
+        except Exception:
+            pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polar H10 HR logger")
     parser.add_argument("--scan", action="store_true",
@@ -140,6 +234,13 @@ def main() -> None:
                         help="recording duration in seconds")
     parser.add_argument("--out", type=Path, default=Path("hr_log.csv"),
                         help="output CSV path")
+    parser.add_argument("--bus", action="store_true",
+                        help=("also publish each reading to the ViFi bus "
+                              "(set VIFI_BUS_URL=redis://...; in-memory "
+                              "is process-local and won't reach other "
+                              "processes)"))
+    parser.add_argument("--patient-id", default="default",
+                        help="patient id for bus topic namespacing")
     args = parser.parse_args()
 
     if args.scan:
@@ -149,7 +250,16 @@ def main() -> None:
     if not args.address:
         parser.error("--address required (or use --scan to find it)")
 
-    asyncio.run(log(args.address, args.duration, args.out))
+    publisher: Optional[_BusPublisher] = None
+    if args.bus:
+        publisher = _BusPublisher(args.patient_id)
+        print(f"Publishing to bus topic: {publisher.topic}")
+    try:
+        asyncio.run(log(args.address, args.duration, args.out,
+                        bus_publisher=publisher))
+    finally:
+        if publisher is not None:
+            publisher.close()
 
 
 if __name__ == "__main__":
