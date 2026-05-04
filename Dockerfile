@@ -44,6 +44,13 @@ COPY api.py dashboard.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/
 
+# Pre-create the audit log directory with vifi ownership BEFORE
+# `USER vifi`. Docker copies the directory's contents (and ownership)
+# into the named volume on first mount, so the audit_subscriber's
+# vifi user can write to it without manual chown.
+RUN mkdir -p /app/data/audit \
+    && chown -R vifi:vifi /app/data
+
 USER vifi
 
 EXPOSE 8000
