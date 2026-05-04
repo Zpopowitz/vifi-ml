@@ -8,10 +8,10 @@ fastapi==0.115.4
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 httpx==0.27.2
-# Bumped 1.39.0 → 1.40.0 (clears GHSA-7p48-42j8-8846 — XSS via st.write).
-# Holding at 1.40 rather than latest 1.54 to avoid a 14-version UI
-# jump; Dependabot is proposing 1.54 in a separate PR for review.
-streamlit==1.40.0
+# Bumped 1.39.0 → 1.54.0 (clears GHSA-7p48-42j8-8846 XSS — fix landed
+# in 1.54). 14 versions of jump; smoke-test the dashboard before
+# merging to main: `make compose-up-dev` then visit localhost:8501.
+streamlit==1.54.0
 pandas==2.2.3
 joblib==1.4.2
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
