@@ -2,7 +2,7 @@
 # the digest pins us to a specific OS + libssl + libpython snapshot.
 # To update: `docker pull python:3.11-slim` then `docker images
 # --digests` for the new digest.
-FROM python:3.11-slim@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2 AS builder
+FROM python:3.14-slim@sha256:5b3879b6f3cb77e712644d50262d05a7c146b7312d784a18eff7ff5462e77033 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -29,7 +29,7 @@ RUN PYTHONPATH=/install/lib/python3.11/site-packages \
     python train.py -n 3000 --model-dir models
 
 # ---- runtime ----
-FROM python:3.11-slim@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2
+FROM python:3.14-slim@sha256:5b3879b6f3cb77e712644d50262d05a7c146b7312d784a18eff7ff5462e77033
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
