@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import collections
 import logging
+import os
 import sys
 import threading
 import time
@@ -237,47 +238,92 @@ def run_once(window: _Window, fs_resample: float, window_s: float,
     return out
 
 
+CONSUMER_GROUP = "inference"
+
+
+def _consumer_name() -> str:
+    """Stable consumer name per replica.
+
+    Two replicas with the same name will fight over messages, so each
+    container should set VIFI_CONSUMER_NAME or have a unique HOSTNAME.
+    Compose's container_name (`vifi-inference`) is fine for single-
+    replica deployments; scale-out needs distinct env-driven names.
+    """
+    name = os.environ.get("VIFI_CONSUMER_NAME")
+    if name:
+        return name
+    import socket
+    return f"inference-{socket.gethostname()}"
+
+
 def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
          fs_resample: float, bundle: _ModelBundle,
          from_id: str = LATEST,
          max_iterations: Optional[int] = None,
-         stop: Optional["threading.Event"] = None) -> None:
-    """Subscribe -> buffer -> predict -> publish.
+         stop: Optional["threading.Event"] = None,
+         consumer_name: Optional[str] = None) -> None:
+    """Subscribe -> buffer -> predict -> publish, with at-least-once
+    consumer-group semantics (I083).
+
+    Durability model:
+      * The worker reads CSI packets via `read_group` and accumulates
+        them into a rolling window. Messages stay in the consumer's
+        Pending Entries List until ACKed.
+      * ACKs happen at stride boundaries: after a prediction is
+        successfully published, ALL pending msgs get ACKed.
+      * On a crash before the next prediction publishes, the unACKed
+        packets are re-delivered on restart and the window is rebuilt.
+        Worst case: one stride window of duplicate work.
 
     Publishes HR predictions to hr.predicted.<patient> always; RR
     predictions to rr.predicted.<patient> only when the bundle has an
     RR model (synthetic does, real currently doesn't until the first
     Vernier paired captures land).
 
-    Runs forever (until KeyboardInterrupt) unless `max_iterations` is set
-    (used by tests to bound the loop deterministically).
+    Runs forever (until KeyboardInterrupt or stop event) unless
+    `max_iterations` is set (used by tests to bound the loop
+    deterministically). `from_id` only matters on first group creation:
+    LATEST skips backlog, EARLIEST replays everything.
     """
     in_topic = csi_raw(patient_id)
     hr_topic = hr_predicted(patient_id)
     rr_topic = rr_predicted(patient_id)
-    cursors = {in_topic: from_id}
+    consumer = consumer_name or _consumer_name()
+
+    # Idempotent group creation.
+    bus.create_group(in_topic, CONSUMER_GROUP, start_id=from_id)
+
     window = _Window(duration_s=window_s * 1.5)
+    pending_acks: list[str] = []   # msg_ids fed into the current window
     last_predict = 0.0
     iterations = 0
     log.info(
-        "worker for patient_id=%r: subscribing to %s, publishing to %s%s",
-        patient_id, in_topic, hr_topic,
+        "worker for patient_id=%r (group=%r consumer=%r): "
+        "subscribing to %s, publishing to %s%s",
+        patient_id, CONSUMER_GROUP, consumer, in_topic, hr_topic,
         f" + {rr_topic}" if bundle.has_rr else " (RR disabled, no rr_model)",
     )
 
     while (max_iterations is None or iterations < max_iterations) \
             and (stop is None or not stop.is_set()):
         iterations += 1
-        msgs = bus.read(cursors, block_ms=int(stride_s * 1000), count=1000)
+        msgs = bus.read_group(
+            CONSUMER_GROUP, consumer, [in_topic],
+            block_ms=int(stride_s * 1000), count=1000,
+        )
         for m in msgs:
-            cursors[m.topic] = m.msg_id
             try:
                 window.push(_Packet(
                     ts_unix=float(m.payload["ts_unix"]),
                     amps=np.asarray(m.payload["amps"], dtype=np.float32),
                 ))
+                pending_acks.append(m.msg_id)
             except (KeyError, TypeError, ValueError) as exc:
                 log.warning("dropping malformed CSI msg %s: %s", m.msg_id, exc)
+                # ACK malformed messages immediately so they don't
+                # clog the PEL forever. They land in the DLQ if
+                # I086 is enabled (separate path).
+                bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
 
         now = time.time()
         if now - last_predict < stride_s:
@@ -311,6 +357,12 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                 "n_packets": pred["n_packets"],
                 "n_subcarriers": pred["n_subcarriers"],
             }, ts_ms=int(ts_unix * 1000))
+
+        # Prediction is durably published — drain the pending ACKs.
+        # A crash before this point re-delivers the messages on restart.
+        for msg_id in pending_acks:
+            bus.ack(CONSUMER_GROUP, in_topic, msg_id)
+        pending_acks.clear()
 
 
 def main() -> None:

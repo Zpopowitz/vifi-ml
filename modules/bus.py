@@ -103,22 +103,28 @@ def _id_gt(a: str, b: str) -> bool:
 # ---------------------------------------------------------------------------
 
 class MessageBus(Protocol):
-    """Common interface for Redis-backed and in-memory buses."""
+    """Common interface for Redis-backed and in-memory buses.
+
+    Two read APIs:
+      * `read(cursors, ...)` — cursor-tracking, at-most-once. The
+        consumer advances cursors after a successful process. If the
+        consumer crashes between read and process, that batch is
+        replayed on restart only if the cursor never advanced — which
+        is fragile. Kept for tools that don't care about durability
+        (the dashboard's UI poll is the only caller today).
+      * `read_group(group, consumer, ...)` + `ack(...)` — Redis-style
+        consumer groups (I083). At-least-once delivery: the bus tracks
+        pending messages per consumer; restart picks them up via the
+        Pending Entries List. ACK once the message is durably handled.
+        This is the API the inference + audit subscribers use.
+    """
 
     def publish(self, topic: str, payload: dict[str, Any],
                 ts_ms: Optional[int] = None) -> str: ...
 
     def read(self, cursors: dict[str, str], block_ms: int = 1000,
              count: int = 100) -> list[Message]:
-        """Read up to `count` messages newer than each topic's cursor.
-
-        `cursors` maps topic -> last-seen msg_id (use `EARLIEST` to start
-        from the beginning, `LATEST` for new-only). Blocks up to `block_ms`
-        when nothing new is available; returns [] on timeout.
-
-        Caller is responsible for advancing cursors (`cursors[m.topic] =
-        m.msg_id`) based on returned messages.
-        """
+        """Cursor-tracking read. See class docstring."""
         ...
 
     def history(self, topic: str, since_ms: Optional[int] = None,
@@ -126,6 +132,48 @@ class MessageBus(Protocol):
                 count: int = 1000) -> list[Message]: ...
 
     def close(self) -> None: ...
+
+    # ---- Consumer-group API (I083) ----
+
+    def create_group(self, topic: str, group: str,
+                     start_id: str = LATEST) -> None:
+        """Create a consumer group on `topic` starting at `start_id`.
+
+        Idempotent: an existing group with the same name is a no-op.
+        Must be called before any read_group on the (topic, group)
+        pair. Pre-creating with `start_id=LATEST` skips the existing
+        backlog; `EARLIEST` replays everything from the beginning.
+        """
+        ...
+
+    def read_group(self, group: str, consumer: str, topics: list[str],
+                   block_ms: int = 1000, count: int = 100,
+                   include_pending: bool = True) -> list[Message]:
+        """Read up to `count` undelivered messages for (group, consumer).
+
+        First call after a restart with `include_pending=True` returns
+        the consumer's own un-ACKed messages (Pending Entries List)
+        before any new ones — this is how at-least-once delivery
+        survives a worker crash.
+
+        `consumer` is a stable name per replica (host name, container
+        name, or env-driven). Two replicas with the same consumer name
+        will fight; use distinct names per replica.
+
+        `block_ms` is the wait when no messages are available.
+        """
+        ...
+
+    def ack(self, group: str, topic: str, msg_id: str) -> None:
+        """Acknowledge `msg_id` for (group, topic). After ACK the bus
+        removes it from the Pending Entries List; it won't be re-
+        delivered on restart."""
+        ...
+
+    def pending_count(self, group: str, topic: str) -> int:
+        """How many messages on `topic` have been delivered but not yet
+        ACKed for `group`. Used by /readyz + dashboards."""
+        ...
 
 
 def subscribe(bus: MessageBus, topics: list[str], from_id: str = LATEST,
@@ -154,6 +202,12 @@ class InMemoryBus:
     `max_messages_per_topic` (default 100k) caps each topic so a long-
     running test can't OOM. When exceeded, oldest messages are
     discarded (FIFO). I084.
+
+    Consumer-group state is in-memory: per (group, topic) we track the
+    last-delivered cursor and per (group, topic, consumer) the pending
+    list. On restart the tracker is empty (no XGROUP-equivalent
+    persistence) — this is fine for tests + single-process dev; the
+    Redis backend is the real durability story.
     """
 
     def __init__(self, max_messages_per_topic: int = 100_000) -> None:
@@ -162,6 +216,11 @@ class InMemoryBus:
         self._cond = threading.Condition(self._lock)
         self._seq_within_ms: dict[int, int] = {}
         self._max_per_topic = int(max_messages_per_topic)
+        # Consumer-group state.
+        # _groups[(topic, group)] = last_delivered_id
+        self._groups: dict[tuple[str, str], str] = {}
+        # _pending[(topic, group, consumer)] = list[Message] (delivered, un-ACKed)
+        self._pending: dict[tuple[str, str, str], list[Message]] = {}
 
     def publish(self, topic: str, payload: dict[str, Any],
                 ts_ms: Optional[int] = None) -> str:
@@ -225,7 +284,93 @@ class InMemoryBus:
         with self._cond:
             self._topics.clear()
             self._seq_within_ms.clear()
+            self._groups.clear()
+            self._pending.clear()
             self._cond.notify_all()
+
+    # ---- Consumer-group API (I083) ----
+
+    def create_group(self, topic: str, group: str,
+                     start_id: str = LATEST) -> None:
+        with self._lock:
+            key = (topic, group)
+            if key in self._groups:
+                return  # idempotent
+            if start_id == LATEST:
+                # Skip existing backlog.
+                msgs = self._topics.get(topic, [])
+                self._groups[key] = msgs[-1].msg_id if msgs else "0-0"
+            elif start_id == EARLIEST:
+                self._groups[key] = "0-0"
+            else:
+                self._groups[key] = start_id
+
+    def read_group(self, group: str, consumer: str, topics: list[str],
+                   block_ms: int = 1000, count: int = 100,
+                   include_pending: bool = True) -> list[Message]:
+        deadline = time.monotonic() + block_ms / 1000.0
+        with self._cond:
+            # Auto-create group on first read (matches Redis MKSTREAM semantics).
+            for t in topics:
+                if (t, group) not in self._groups:
+                    self.create_group(t, group, start_id=LATEST)
+
+            while True:
+                out: list[Message] = []
+
+                # 1. Replay this consumer's pending messages first.
+                if include_pending:
+                    for t in topics:
+                        pkey = (t, group, consumer)
+                        for m in self._pending.get(pkey, []):
+                            out.append(m)
+                            if len(out) >= count:
+                                break
+                        if len(out) >= count:
+                            break
+                    if out:
+                        return out
+
+                # 2. New deliveries.
+                for t in topics:
+                    last = self._groups[(t, group)]
+                    for m in self._topics.get(t, []):
+                        if _id_gt(m.msg_id, last):
+                            out.append(m)
+                            self._groups[(t, group)] = m.msg_id
+                            self._pending.setdefault(
+                                (t, group, consumer), [],
+                            ).append(m)
+                            if len(out) >= count:
+                                break
+                    if len(out) >= count:
+                        break
+
+                if out:
+                    out.sort(key=lambda m: _parse_id(m.msg_id))
+                    return out[:count]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return []
+                self._cond.wait(timeout=remaining)
+
+    def ack(self, group: str, topic: str, msg_id: str) -> None:
+        with self._lock:
+            # ACK removes from every consumer's pending list (consumer
+            # name doesn't matter for ACK in Redis Streams either).
+            for pkey in list(self._pending.keys()):
+                t, g, _ = pkey
+                if t == topic and g == group:
+                    self._pending[pkey] = [
+                        m for m in self._pending[pkey] if m.msg_id != msg_id
+                    ]
+
+    def pending_count(self, group: str, topic: str) -> int:
+        with self._lock:
+            return sum(
+                len(msgs) for pkey, msgs in self._pending.items()
+                if pkey[0] == topic and pkey[1] == group
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +489,76 @@ class RedisStreamBus:
 
     def close(self) -> None:
         self._client.close()
+
+    # ---- Consumer-group API (I083) ----
+
+    def create_group(self, topic: str, group: str,
+                     start_id: str = LATEST) -> None:
+        # Map our sentinels to Redis's: LATEST → "$" (skip backlog),
+        # EARLIEST → "0".
+        redis_id = "$" if start_id == LATEST else (
+            "0" if start_id == EARLIEST else start_id
+        )
+        try:
+            # mkstream=True so we don't error on a stream that hasn't
+            # been written to yet.
+            self._retry(
+                self._client.xgroup_create, topic, group, id=redis_id,
+                mkstream=True,
+            )
+        except Exception as exc:
+            # Redis raises ResponseError "BUSYGROUP" if the group
+            # already exists — that's idempotent for us.
+            if "BUSYGROUP" in str(exc):
+                return
+            raise
+
+    def read_group(self, group: str, consumer: str, topics: list[str],
+                   block_ms: int = 1000, count: int = 100,
+                   include_pending: bool = True) -> list[Message]:
+        if include_pending:
+            # First pass: read any messages already delivered to THIS
+            # consumer that haven't been ACKed yet (Redis ID "0").
+            streams = {t: "0" for t in topics}
+            pending = self._read_group_call(group, consumer, streams,
+                                             block_ms=0, count=count)
+            if pending:
+                return pending
+        # Then: new messages (Redis ID ">").
+        streams = {t: ">" for t in topics}
+        return self._read_group_call(group, consumer, streams,
+                                      block_ms=block_ms, count=count)
+
+    def _read_group_call(self, group: str, consumer: str,
+                         streams: dict[str, str],
+                         block_ms: int, count: int) -> list[Message]:
+        result = self._retry(
+            self._client.xreadgroup, group, consumer, streams,
+            count=count, block=block_ms,
+        )
+        out: list[Message] = []
+        if not result:
+            return out
+        for topic, entries in result:
+            for msg_id, fields in entries:
+                ts_ms, _, _ = str(msg_id).partition("-")
+                payload = json.loads(fields.get("json", "{}"))
+                out.append(Message(
+                    topic=str(topic), msg_id=str(msg_id),
+                    ts_ms=int(ts_ms), payload=payload,
+                ))
+        return out
+
+    def ack(self, group: str, topic: str, msg_id: str) -> None:
+        self._retry(self._client.xack, topic, group, msg_id)
+
+    def pending_count(self, group: str, topic: str) -> int:
+        try:
+            info = self._retry(self._client.xpending, topic, group)
+            # XPENDING returns dict-like with "pending" count.
+            return int(info.get("pending", 0)) if info else 0
+        except Exception:
+            return 0
 
 
 # ---------------------------------------------------------------------------

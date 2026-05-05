@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -48,12 +49,34 @@ from modules.bus import (  # noqa: E402
 log = logging.getLogger("vifi.audit_subscriber")
 
 
+CONSUMER_GROUP = "audit"
+
+
+def _consumer_name() -> str:
+    """Stable consumer name per replica; same convention as the
+    inference worker (env override > hostname)."""
+    name = os.environ.get("VIFI_CONSUMER_NAME")
+    if name:
+        return name
+    import socket
+    return f"audit-{socket.gethostname()}"
+
+
 def run(bus: MessageBus, patient_ids: Iterable[str],
         audit_dir: Optional[Path] = None,
         from_id: str = LATEST,
         stop: Optional[threading.Event] = None,
-        block_ms: int = 1000) -> AuditLogWriter:
+        block_ms: int = 1000,
+        consumer_name: Optional[str] = None) -> AuditLogWriter:
     """Subscribe to every topic for each patient; write each msg to JSONL.
+
+    Uses consumer-group semantics (I083): writes happen at-least-once.
+    A crash between `writer.write` and the subsequent ACK results in
+    the message being re-delivered on restart, which means a duplicate
+    audit record. The chain still verifies (each chain digest is
+    recomputed from previous + record bytes) — duplicates are
+    *correct* records of the same logical event, just present twice.
+    Operators dedupe by `msg_id` at query time.
 
     Returns the writer so callers can inspect `current_path` (used by
     tests). Loops until `stop` is set; for one-shot draining, use
@@ -63,17 +86,34 @@ def run(bus: MessageBus, patient_ids: Iterable[str],
     topics: list[str] = []
     for pid in patient_ids:
         topics.extend(all_topics(pid))
-    log.info("subscribing to %d topics: %s", len(topics), topics)
+    consumer = consumer_name or _consumer_name()
+
+    # Idempotent group creation per topic.
+    for t in topics:
+        bus.create_group(t, CONSUMER_GROUP, start_id=from_id)
+
+    log.info(
+        "subscribing to %d topics (group=%r consumer=%r): %s",
+        len(topics), CONSUMER_GROUP, consumer, topics,
+    )
 
     try:
-        for msg in subscribe(bus, topics, from_id=from_id,
-                             block_ms=block_ms, stop=stop):
-            writer.write({
-                "topic": msg.topic,
-                "msg_id": msg.msg_id,
-                "ts_ms": msg.ts_ms,
-                "payload": msg.payload,
-            })
+        while stop is None or not stop.is_set():
+            msgs = bus.read_group(
+                CONSUMER_GROUP, consumer, topics,
+                block_ms=block_ms, count=100,
+            )
+            for m in msgs:
+                writer.write({
+                    "topic": m.topic,
+                    "msg_id": m.msg_id,
+                    "ts_ms": m.ts_ms,
+                    "payload": m.payload,
+                })
+                # ACK after the write (and its fsync, if enabled) is
+                # durably persisted. A crash before ACK re-delivers
+                # the msg → duplicate audit record on restart.
+                bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
     finally:
         # Don't close the writer on a stop signal: the run() function
         # is meant to be long-lived. Tests close it explicitly.
