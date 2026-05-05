@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ViFi live vital-sign monitor.">
+  <title>ViFi — Live Monitor</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2300C39A' d='M16 28L4 16l4-4 8 8 8-8 4 4-12 12z'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">ViFi</span>
+      <span class="brand-divider" aria-hidden="true"></span>
+      <span class="brand-context">Live Monitor</span>
+    </div>
+    <nav class="topbar-controls">
+      <label class="patient-picker">
+        <span>Patient</span>
+        <input type="text"
+               id="patient-id"
+               value="default"
+               autocomplete="off"
+               spellcheck="false"
+               aria-label="Patient ID">
+      </label>
+      <span id="connection-status" class="status status-idle" role="status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-text">Connecting</span>
+      </span>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <!-- Heart rate card -->
+    <section class="vital-card" data-vital="hr" aria-labelledby="hr-title">
+      <header class="vital-head">
+        <h2 id="hr-title">Heart rate</h2>
+        <span class="vital-units">bpm</span>
+      </header>
+      <div class="vital-figures">
+        <div class="vital-primary">
+          <span class="vital-label">Predicted</span>
+          <span class="vital-value" data-field="predicted">—</span>
+          <span class="vital-meta" data-field="confidence">—</span>
+        </div>
+        <div class="vital-secondary">
+          <span class="vital-label">Reference</span>
+          <span class="vital-value" data-field="reference">—</span>
+          <span class="vital-meta" data-field="source">Polar H10</span>
+        </div>
+        <div class="vital-tertiary">
+          <span class="vital-label">Error</span>
+          <span class="vital-value vital-error" data-field="error">—</span>
+          <span class="vital-meta" data-field="mae">MAE 2 min: —</span>
+        </div>
+      </div>
+      <figure class="vital-chart">
+        <canvas id="hr-canvas" width="800" height="160"></canvas>
+        <figcaption class="vital-chart-legend">
+          <span class="legend-dot legend-predicted"></span>Predicted
+          <span class="legend-dot legend-reference"></span>Reference
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- Respiratory rate card -->
+    <section class="vital-card" data-vital="rr" aria-labelledby="rr-title">
+      <header class="vital-head">
+        <h2 id="rr-title">Respiratory rate</h2>
+        <span class="vital-units">brpm</span>
+      </header>
+      <div class="vital-figures">
+        <div class="vital-primary">
+          <span class="vital-label">Predicted</span>
+          <span class="vital-value" data-field="predicted">—</span>
+          <span class="vital-meta" data-field="confidence">—</span>
+        </div>
+        <div class="vital-secondary">
+          <span class="vital-label">Reference</span>
+          <span class="vital-value" data-field="reference">—</span>
+          <span class="vital-meta" data-field="source">Vernier GDX-RB</span>
+        </div>
+        <div class="vital-tertiary">
+          <span class="vital-label">Error</span>
+          <span class="vital-value vital-error" data-field="error">—</span>
+          <span class="vital-meta" data-field="mae">MAE 2 min: —</span>
+        </div>
+      </div>
+      <figure class="vital-chart">
+        <canvas id="rr-canvas" width="800" height="160"></canvas>
+        <figcaption class="vital-chart-legend">
+          <span class="legend-dot legend-predicted"></span>Predicted
+          <span class="legend-dot legend-reference"></span>Reference
+        </figcaption>
+      </figure>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span id="api-status">API: —</span>
+    <span class="footer-divider">·</span>
+    <a href="/docs" class="footer-link">API docs</a>
+    <span class="footer-divider">·</span>
+    <a href="/health" class="footer-link">Health</a>
+    <span class="footer-divider">·</span>
+    <span id="build-version">—</span>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

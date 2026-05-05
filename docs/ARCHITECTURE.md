@@ -56,7 +56,7 @@ as first-class artifacts.
 | `audit_subscriber` | container | `tools/audit_subscriber.py` | consumes every topic, writes JSONL |
 | `api.py` | container | repo root | FastAPI: /predict, /predict/csi, /predict/capture, /api/v1/stream |
 | Caddy | container | (image) | TLS terminator, security headers |
-| `dashboard.py` | container | repo root | Streamlit UI; subscribes to predicted + reference |
+| `dashboard/` (static SPA) | served by `api` container | `dashboard/{index.html,styles.css,app.js}` | Single-page UI; subscribes via `/api/v1/stream` to predicted + reference |
 
 ## Process boundaries (security & failure)
 

@@ -39,7 +39,8 @@ Continuous, contactless monitoring on commodity hardware — at $20/bed instead 
 pip install -r requirements.txt
 python train.py                  # trains synthetic baseline → ./models/
 uvicorn api:app --port 8000
-streamlit run dashboard.py
+# Dashboard is now a static SPA served by the api container —
+# no separate `streamlit run` needed. Just open http://localhost:8501
 ```
 
 ### With ESP32-S3 hardware (Windows / PowerShell)
@@ -231,7 +232,7 @@ production and in-memory for tests + single-process dev.
 | `hr_logger.py --bus` | producer | `hr.reference.<p>` |
 | `rr_logger.py --bus` | producer | `rr.reference.<p>` |
 | `tools/inference_worker.py` | consumer + producer | reads `csi.raw.<p>`, writes `hr.predicted.<p>` (+ `rr.predicted.<p>` when an RR model is loaded) |
-| `dashboard.py` (Live tab) | consumer | reads HR + RR predicted + reference |
+| `dashboard/` SPA (served by `api`) | consumer | reads HR + RR predicted + reference via `/api/v1/stream` |
 | `tools/audit_subscriber.py` | consumer | reads every topic, writes JSONL |
 | `api.py` `/api/v1/stream` (WebSocket) | consumer | reads HR + RR predicted + reference; pushes to client |
 
@@ -271,7 +272,7 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
 | Live message bus (Redis Streams) | Shipped — pub/sub, replay, audit-as-subscriber | `modules/bus.py` |
-| Live HR + RR dashboard (predicted vs reference, real time) | Shipped — `--bus` mode end-to-end | `dashboard.py` (Live tab), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
+| Live HR + RR dashboard (predicted vs reference, real time) | Shipped — static SPA, served by api container | `dashboard/` (HTML/CSS/JS), `tools/inference_worker.py`, `tools/audit_subscriber.py`, `api.py :: /api/v1/stream` |
 | Containerized live stack (Redis + API + workers + dashboard + TLS) | Shipped — dev + prod profiles | `docker-compose.yml`, `Dockerfile`, `Caddyfile` |
 | API authentication, CORS allowlist, rate limiting, error redaction | Shipped | `security.py` |
 | HIPAA-aligned subject id pseudonymization + optional audit log encryption | Shipped | `pseudonymize.py`, `audit.py` |

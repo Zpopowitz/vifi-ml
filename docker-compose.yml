@@ -105,7 +105,11 @@ services:
     <<: *app-base
     container_name: vifi-api
     ports:
+      # 8000 = primary API port. 8501 is kept for backwards-compat with
+      # bookmarks / scripts that hit the old Streamlit dashboard URL —
+      # both ports now serve the same SPA + API.
       - "${VIFI_API_PORT:-8000}:8000"
+      - "${VIFI_DASHBOARD_PORT:-8501}:8000"
     command: uvicorn api:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
@@ -155,31 +159,6 @@ services:
       retries: 3
       start_period: 10s
 
-  dashboard:
-    <<: *app-base
-    container_name: vifi-dashboard
-    environment:
-      <<: *app-env
-      VIFI_API: http://api:8000
-    depends_on:
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    ports:
-      - "${VIFI_DASHBOARD_PORT:-8501}:8501"
-    command: >
-      streamlit run dashboard.py
-      --server.address 0.0.0.0 --server.port 8501
-      --server.headless true
-      --browser.gatherUsageStats false
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
-      interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
-
   # Synthetic CSI publisher for end-to-end testing without hardware.
   # Behind the `dev` profile so it doesn't run in production deployments.
   simulator:
@@ -211,8 +190,6 @@ services:
       VIFI_DOMAIN: ${VIFI_DOMAIN:-localhost}
     depends_on:
       api:
-        condition: service_healthy
-      dashboard:
         condition: service_healthy
     restart: unless-stopped
 

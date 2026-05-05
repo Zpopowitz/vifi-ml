@@ -45,17 +45,27 @@ def test_dockerfile_copies_every_runtime_module():
 def test_requirements_pins_core_libs():
     req = (ROOT / "requirements.txt").read_text().lower()
     for pkg in ("numpy", "scipy", "scikit-learn", "xgboost",
-                "fastapi", "uvicorn", "pydantic", "streamlit",
+                "fastapi", "uvicorn", "pydantic", "pandas",
                 "cryptography"):
         assert pkg in req, f"missing {pkg} in requirements.txt"
 
 
-def test_dashboard_parses_and_imports_api_host():
-    src = (ROOT / "dashboard.py").read_text()
-    tree = ast.parse(src)  # raises on syntax error
-    assert tree is not None
-    assert "VIFI_API" in src
-    assert "/predict" in src
+def test_dashboard_spa_files_exist():
+    """Static SPA dashboard (HTML/CSS/JS) replaces the legacy
+    Streamlit dashboard.py. Just sanity-check the required files
+    are present and non-empty so a missing file in CI is loud.
+
+    Schema-level checks are out of scope for unit tests; the SPA
+    smoke-test at compose-up time covers the WebSocket integration."""
+    d = ROOT / "dashboard"
+    assert d.is_dir(), "dashboard/ directory missing"
+    for name in ("index.html", "styles.css", "app.js"):
+        path = d / name
+        assert path.exists(), f"dashboard/{name} missing"
+        assert path.stat().st_size > 0, f"dashboard/{name} is empty"
+    # The JS must reference /api/v1/stream so it stays in sync with the
+    # FastAPI WebSocket route.
+    assert "/api/v1/stream" in (d / "app.js").read_text()
 
 
 def test_dockerignore_excludes_heavy_dirs():
