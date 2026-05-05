@@ -3,7 +3,7 @@
 numpy==1.26.4
 scipy==1.13.1
 scikit-learn==1.5.2
-xgboost==2.1.2
+xgboost==3.2.0
 fastapi==0.115.4
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
