@@ -9,11 +9,15 @@ what's needed to do it.
 
 | Status | Count |
 |---|---|
-| Done in this PR | ~170 |
+| Done in the optimization pass | ~170 |
+| Done in M1 bus-hardening PR (I083, I086, I193) | 3 |
 | Deferred — needs decision | 18 |
-| Deferred — XL effort, separate planned PR | 12 |
+| Deferred — XL effort, separate planned PR | 9 |
 | Deferred — needs external infrastructure | 8 |
 | Deferred — niche / low priority | 15 |
+
+See `IMPLEMENTATION_PLAN.md` for the milestone-aligned roadmap and
+decision matrix for the remaining deferred items.
 
 ## Items needing your decision
 
@@ -51,14 +55,14 @@ and PR. None are blocking the current shippable posture.
 |---|---|---|
 | I034 | Realistic synthetic generator (multipath + motion artifacts) | L |
 | I066 | OAuth/OIDC | XL |
-| I083 | Redis Streams consumer groups + XACK | L |
-| I086 | Dead-letter queue per topic | M |
+| ~~I083~~ | ~~Redis Streams consumer groups + XACK~~ ✅ landed M1 | — |
+| ~~I086~~ | ~~Dead-letter queue per topic~~ ✅ landed M1 | — |
 | I131 | OpenTelemetry instrumentation across services | L |
 | I166 | CodeQL — wired in CI in this PR; tuning ignore lists is follow-up | S follow-up |
 | I171 | Model registry (MLflow integration) | L |
 | I177 | Model A/B / canary | XL |
 | I178 | Feature store | XL |
-| I193 | Chaos testing with toxiproxy | M |
+| ~~I193~~ | ~~Chaos testing~~ ✅ mock-based version landed M1; toxiproxy variant is a follow-up | — |
 | I197 | ESP32 OTA | L |
 | I201 | 4-receiver array sync | XL |
 
