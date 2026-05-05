@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — pilot-prep tooling (M2 of `docs/IMPLEMENTATION_PLAN.md`, non-disruptive subset)
+
+These are operator tools and documentation that make a real clinical
+deployment achievable. Each is purely additive — none change the
+existing dashboard / API / bus behaviour.
+
+- **`docs/HIPAA_PILOT_CHECKLIST.md`**: single-page mapping of every
+  ViFi component to its HIPAA technical safeguard, with status
+  (code-shipped vs organizational gap). Includes a quick-reference
+  cheat sheet for clinical-compliance-officer conversations and the
+  pre-pilot checklist that must be ticked before a real patient is
+  monitored.
+- **`docs/DEPLOYMENT.md`**: three deployment shapes (single-host,
+  edge+central, edge+cloud) with hardware shopping lists, network
+  topology options, step-by-step provisioning for both the central
+  server and edge boxes, and a deployment-failure-mode table.
+  Recommends Pi-as-edge + Intel N100 mini PC as central for the
+  $470 10-room pilot configuration.
+- **`tools/setup_keys.sh`**: idempotent first-time secret generator.
+  Writes `.env` (chmod 600) with API key, pseudonymization salt,
+  Fernet audit key, audit chain HMAC key, Redis password, all
+  derived URLs. Refuses to overwrite an existing `.env` without
+  `--force`. Supports `--rotate <KEY>` for single-key rotation
+  with rotation-impact warnings printed to operator. `--print`
+  flag previews without writing.
+- **`tools/audit_query.py`**: read-only query CLI for the JSONL
+  audit log. Filters by date range (`--since`, `--until`,
+  `--since-hours`), pseudonymous subject (`--subject`), topic
+  prefix (`--topic-prefix`), or event (`--event`). Decrypts
+  Fernet-encrypted records on demand (`--decrypt`). Three output
+  formats: JSONL (default), CSV (analysis), human-readable table
+  (operator console). Used for postmarket surveillance, incident
+  response, FDA / clinical-study queries, and operator debugging.
+
+39 new tests; 305 total (was 280 after dashboard overhaul).
+
 ### Changed — dashboard rebuilt as a static SPA (no more Streamlit)
 - The Streamlit dashboard (`dashboard.py`) is gone. Replaced with a
   static single-page app under `dashboard/` (HTML + CSS + vanilla JS,
