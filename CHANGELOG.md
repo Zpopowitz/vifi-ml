@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — dashboard rebuilt as a static SPA (no more Streamlit)
+- The Streamlit dashboard (`dashboard.py`) is gone. Replaced with a
+  static single-page app under `dashboard/` (HTML + CSS + vanilla JS,
+  no build step) served by FastAPI itself via `StaticFiles` mount.
+- Same WebSocket source of truth (`/api/v1/stream`); same bus topics;
+  same security middleware. Just a clean clinical-grade UI: large
+  predicted/reference HR + RR readouts, rolling MAE, custom Canvas
+  line chart with predicted (mint) overlaid on reference (blue),
+  connection-status pill, dark-mode-aware via `prefers-color-scheme`.
+- One fewer container in the compose stack — the dashboard service
+  was removed; the api container exposes both port 8000 (API) and
+  8501 (dashboard URL alias for backwards compat).
+- `streamlit==1.54.0` dropped from `requirements.txt`. Net build is
+  ~120 MB smaller and clears one transitive CVE surface.
+- Static SPA is offline-safe (no CDN dependency) — works in
+  network-isolated clinic environments.
+
 ### Added — bus durability (M1 of `docs/IMPLEMENTATION_PLAN.md`)
 - **I083**: Redis Streams consumer groups for at-least-once delivery.
   New `MessageBus.create_group / read_group / ack / pending_count /

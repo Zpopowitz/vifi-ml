@@ -26,15 +26,26 @@ def compose() -> dict:
     return yaml.safe_load(text)
 
 
-CORE_SERVICES = ("redis", "api", "inference_worker", "audit_subscriber",
-                 "dashboard")
-APP_SERVICES = ("api", "inference_worker", "audit_subscriber", "dashboard")
+# The dashboard moved from a separate Streamlit container to a static
+# SPA served by the `api` service. Port 8501 is now an alias on the
+# `api` container so existing bookmarks still work.
+CORE_SERVICES = ("redis", "api", "inference_worker", "audit_subscriber")
+APP_SERVICES = ("api", "inference_worker", "audit_subscriber")
 
 
-def test_compose_has_full_stack_including_dashboard(compose):
+def test_compose_has_full_stack(compose):
     services = compose.get("services", {})
     for required in CORE_SERVICES:
         assert required in services, f"missing service: {required}"
+
+
+def test_dashboard_service_removed(compose):
+    """The legacy Streamlit dashboard container is gone — dashboard is
+    now static files served by the api service."""
+    assert "dashboard" not in compose.get("services", {}), (
+        "Streamlit dashboard service should be removed; the SPA is "
+        "served by the api container at port 8000 (and 8501 alias)."
+    )
 
 
 def test_simulator_is_dev_profile_only(compose):
@@ -55,17 +66,16 @@ def test_redis_exposes_6379(compose):
     )
 
 
-def test_dashboard_exposes_8501(compose):
-    dashboard = compose["services"]["dashboard"]
-    assert any(":8501" in p for p in dashboard["ports"]), (
-        f"dashboard must expose 8501; got {dashboard['ports']}"
-    )
-
-
-def test_api_exposes_8000(compose):
+def test_api_exposes_8000_and_8501(compose):
+    """Port 8000 is the canonical API port. 8501 is a backwards-compat
+    alias for the old Streamlit dashboard URL — same container now."""
     api = compose["services"]["api"]
-    assert any(":8000" in p for p in api["ports"]), (
-        f"api must expose 8000; got {api['ports']}"
+    ports = api["ports"]
+    assert any("8000" in p for p in ports), (
+        f"api must expose 8000; got {ports}"
+    )
+    assert any("8501" in p for p in ports), (
+        f"api must alias 8501 → 8000 for dashboard URL compat; got {ports}"
     )
 
 
@@ -107,22 +117,10 @@ def test_app_services_depend_on_redis(compose):
         assert "redis" in deps, f"{name} doesn't depend_on redis"
 
 
-def test_dashboard_depends_on_api(compose):
-    """Dashboard talks to the API for /health, /predict/capture, etc.
-    It must wait for the API to be healthy before starting."""
-    dashboard = compose["services"]["dashboard"]
-    deps = dashboard.get("depends_on", {})
-    assert "api" in deps, "dashboard must depend_on api"
-
-
-def test_dashboard_points_at_internal_api_url(compose):
-    """Inside the compose network the API is reachable at
-    http://api:8000, not localhost."""
-    dashboard = compose["services"]["dashboard"]
-    env = dashboard.get("environment", {})
-    assert env.get("VIFI_API") == "http://api:8000", (
-        f"dashboard VIFI_API should be http://api:8000; got {env.get('VIFI_API')}"
-    )
+# The legacy `test_dashboard_depends_on_api` and
+# `test_dashboard_points_at_internal_api_url` tests were removed when
+# the dashboard moved from Streamlit to a static SPA served by the
+# api container. Same-origin SPA + WebSocket = no separate URL needed.
 
 
 def test_audit_log_volume_persists_across_restarts(compose):

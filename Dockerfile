@@ -51,9 +51,11 @@ COPY --from=builder /build/models /app/models
 COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
 COPY security.py pseudonymize.py ./
 COPY __version__.py config.py observability.py ./
-COPY api.py dashboard.py ./
+COPY api.py ./
 COPY modules/ ./modules/
 COPY tools/ ./tools/
+# Static SPA dashboard (replaces the Streamlit one).
+COPY dashboard/ ./dashboard/
 
 # Pre-create the audit log directory with vifi ownership BEFORE
 # `USER vifi`. Docker copies the directory's contents (and ownership)

@@ -1108,6 +1108,22 @@ def create_app(model_dir: Path = MODEL_DIR,
     if install_prometheus_endpoint(app):
         log.info("Prometheus /metrics enabled")
 
+    # Mount the static dashboard SPA (replaces the legacy Streamlit
+    # dashboard). Served at the API origin so the WebSocket and the UI
+    # share `Origin` — no CORS gymnastics, no separate container.
+    # html=True makes `/` resolve to `index.html`.
+    from fastapi.staticfiles import StaticFiles  # noqa: PLC0415
+    dashboard_dir = ROOT / "dashboard"
+    if dashboard_dir.is_dir():
+        # Mount LAST so explicit API routes (/health, /predict, etc.)
+        # take precedence; the SPA handles everything else.
+        app.mount("/", StaticFiles(directory=dashboard_dir, html=True),
+                  name="dashboard")
+        log.info("dashboard SPA mounted at / from %s", dashboard_dir)
+    else:
+        log.warning("dashboard directory %s not found; UI disabled",
+                    dashboard_dir)
+
     # Warm-up: load models on startup if available so first user doesn't
     # pay the cold-load latency (I175).
     @app.on_event("startup")

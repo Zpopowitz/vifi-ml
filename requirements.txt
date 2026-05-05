@@ -8,10 +8,9 @@ fastapi==0.115.4
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 httpx==0.27.2
-# Bumped 1.39.0 → 1.54.0 (clears GHSA-7p48-42j8-8846 XSS — fix landed
-# in 1.54). 14 versions of jump; smoke-test the dashboard before
-# merging to main: `make compose-up-dev` then visit localhost:8501.
-streamlit==1.54.0
+# pandas remains for some tools (eval_harness etc.); streamlit was
+# removed when the dashboard moved from Streamlit to a static SPA
+# (served by FastAPI). One fewer dep, no streamlit XSS advisory.
 pandas==2.2.3
 joblib==1.4.2
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required

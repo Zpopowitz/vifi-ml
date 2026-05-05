@@ -1,0 +1,399 @@
+/* ViFi live monitor — single-purpose vital-sign dashboard.
+ *
+ * Design language:
+ *   - Calm: white background, one accent (mint #00C39A), one warning (amber).
+ *   - Hierarchy: HR/RR primary numbers dominate; reference + error
+ *     are secondary.
+ *   - System fonts only — no web font flash on a clinical workstation.
+ *   - Works at 1280x720 minimum (clinic monitor) and on a phone.
+ *   - All state changes are CSS transitions; no flashing/jank.
+ */
+
+:root {
+    --bg:           #fafafa;
+    --surface:      #ffffff;
+    --border:       #e6e7eb;
+    --ink:          #1a1d1f;
+    --ink-soft:     #6c7378;
+    --ink-faint:    #a3a8ae;
+    --accent:       #00c39a;
+    --accent-soft:  #e6faf4;
+    --reference:    #4b6bff;
+    --reference-soft: #ecefff;
+    --warning:      #d97706;
+    --danger:       #dc2626;
+    --ok:           #16a34a;
+    --idle:         #a3a8ae;
+
+    --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.04),
+                   0 4px 12px rgba(20, 24, 27, 0.04);
+    --radius-card:  14px;
+    --radius-pill:  999px;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+                 Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    /* Dark-mode palette — same hierarchy, dimmer.
+     * Clinics often dim ambient lighting; the OS preference is the
+     * right signal. No toggle in the UI.
+     */
+    :root {
+        --bg:           #0e1014;
+        --surface:      #161a1f;
+        --border:       #232830;
+        --ink:          #e9ebee;
+        --ink-soft:     #a3a8ae;
+        --ink-faint:    #6c7378;
+        --accent-soft:  #053027;
+        --reference-soft: #0f1530;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4),
+                       0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- Top bar ----------------------------------------------------- */
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 32px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 17px;
+    color: var(--ink);
+}
+
+.brand-mark {
+    width: 22px;
+    height: 22px;
+    background: var(--accent);
+    border-radius: 6px;
+    position: relative;
+}
+
+.brand-mark::before,
+.brand-mark::after {
+    content: "";
+    position: absolute;
+    background: var(--surface);
+}
+
+.brand-mark::before {
+    top: 50%;
+    left: 4px;
+    right: 4px;
+    height: 2px;
+    transform: translateY(-50%);
+}
+
+.brand-mark::after {
+    top: 4px;
+    bottom: 4px;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+}
+
+.brand-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.brand-context {
+    color: var(--ink-soft);
+    font-weight: 500;
+}
+
+.topbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.patient-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--ink-soft);
+}
+
+.patient-picker input {
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    width: 140px;
+    transition: border-color 0.15s ease;
+}
+
+.patient-picker input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Connection-status pill */
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--ink-soft);
+    transition: all 0.2s ease;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--idle);
+    transition: background 0.2s ease;
+}
+
+.status-idle    .status-dot { background: var(--idle); }
+.status-live    .status-dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(0, 195, 154, 0.4);
+    animation: pulse 2s infinite;
+}
+.status-error   .status-dot { background: var(--danger); }
+.status-stale   .status-dot { background: var(--warning); }
+
+.status-live  { color: var(--ok); border-color: var(--accent-soft); background: var(--accent-soft); }
+.status-error { color: var(--danger); }
+.status-stale { color: var(--warning); }
+
+@keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0, 195, 154, 0.5); }
+    70%  { box-shadow: 0 0 0 8px rgba(0, 195, 154, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 195, 154, 0); }
+}
+
+/* ---- Main layout ------------------------------------------------- */
+
+.layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 32px;
+    max-width: 1280px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+@media (min-width: 1080px) {
+    .layout {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* ---- Vital card -------------------------------------------------- */
+
+.vital-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 24px 28px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.vital-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.vital-head h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+}
+
+.vital-units {
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+}
+
+.vital-figures {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr;
+    gap: 24px;
+    align-items: end;
+}
+
+.vital-primary, .vital-secondary, .vital-tertiary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vital-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+}
+
+.vital-value {
+    font-feature-settings: "tnum"; /* tabular numerals */
+    font-family: var(--font-sans);
+    font-weight: 600;
+    color: var(--ink);
+    transition: color 0.2s ease;
+    line-height: 1;
+}
+
+.vital-primary .vital-value {
+    font-size: 64px;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+}
+
+.vital-secondary .vital-value {
+    font-size: 32px;
+    color: var(--reference);
+    letter-spacing: -0.01em;
+}
+
+.vital-tertiary .vital-value {
+    font-size: 28px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+}
+
+.vital-error.error-good      { color: var(--ok); }
+.vital-error.error-warn      { color: var(--warning); }
+.vital-error.error-bad       { color: var(--danger); }
+
+.vital-meta {
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    min-height: 16px;
+}
+
+/* When data is stale (no message in 30s), dim the value. */
+.vital-value.stale {
+    color: var(--ink-faint) !important;
+}
+
+/* ---- Chart ------------------------------------------------------- */
+
+.vital-chart {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    /* Fixed canvas height; CSS controls responsive width via stretch. */
+}
+
+.vital-chart canvas {
+    width: 100%;
+    height: 160px;
+    display: block;
+    background: transparent;
+}
+
+.vital-chart-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 6px;
+    display: inline-block;
+}
+
+.legend-predicted { background: var(--accent); }
+.legend-reference { background: var(--reference); }
+
+/* ---- Footer ------------------------------------------------------ */
+
+.footer {
+    text-align: center;
+    padding: 16px 32px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.footer-divider { margin: 0 8px; opacity: 0.5; }
+
+.footer-link {
+    color: var(--ink-soft);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.footer-link:hover { color: var(--accent); }
+
+/* ---- Mobile ------------------------------------------------------ */
+
+@media (max-width: 720px) {
+    .topbar { flex-direction: column; gap: 12px; align-items: flex-start; padding: 16px; }
+    .layout { padding: 16px; gap: 16px; }
+    .vital-card { padding: 16px 20px; }
+    .vital-figures { grid-template-columns: 1fr 1fr; }
+    .vital-tertiary { grid-column: 1 / -1; }
+    .vital-primary .vital-value { font-size: 48px; }
+}
