@@ -56,8 +56,24 @@ def rr_predicted(patient_id: str) -> str:
     return f"rr.predicted.{patient_id}"
 
 
+def dlq(topic: str) -> str:
+    """Dead-letter topic for `topic` (I086).
+
+    Format: `<original-topic>.dlq` — keeps the patient suffix so DLQ
+    messages remain queryable per-patient. Examples:
+      csi.raw.alice           -> csi.raw.alice.dlq
+      hr.reference.alice      -> hr.reference.alice.dlq
+
+    Idempotent: passing an already-dlq'd topic returns it unchanged
+    so a poisoned DLQ message can't loop back into a deeper DLQ.
+    """
+    if topic.endswith(".dlq"):
+        return topic
+    return f"{topic}.dlq"
+
+
 def all_topics(patient_id: str) -> list[str]:
-    """Every published topic for a single patient."""
+    """Every published topic for a single patient (excludes DLQs)."""
     return [
         csi_raw(patient_id),
         hr_reference(patient_id),
@@ -175,6 +191,54 @@ class MessageBus(Protocol):
         ACKed for `group`. Used by /readyz + dashboards."""
         ...
 
+    def delivery_count(self, group: str, topic: str, msg_id: str) -> int:
+        """How many times `msg_id` has been delivered to `group`. Used
+        for I086 DLQ routing — after N deliveries without ACK, the
+        consumer routes the message to <topic>.dlq and ACKs the
+        original."""
+        ...
+
+
+def route_to_dlq(bus: MessageBus, group: str, msg: Message,
+                 reason: str, max_deliveries: int = 5) -> bool:
+    """Route a poison-pill message to its DLQ topic and ACK the original.
+
+    Caller pattern (in inference_worker / audit_subscriber):
+
+        msgs = bus.read_group(...)
+        for m in msgs:
+            try:
+                process(m)
+                bus.ack(group, m.topic, m.msg_id)
+            except Exception as exc:
+                deliveries = bus.delivery_count(group, m.topic, m.msg_id)
+                if deliveries >= max_deliveries:
+                    route_to_dlq(bus, group, m, str(exc))
+                # else: don't ACK, get redelivered next read
+
+    Returns True if the message was routed (delivery count exceeded
+    threshold), False if the caller should retry.
+
+    The DLQ message preserves the original payload + adds metadata
+    so an operator can:
+        bus.history("csi.raw.alice.dlq", count=100)
+    and triage what's gone wrong.
+    """
+    deliveries = bus.delivery_count(group, msg.topic, msg.msg_id)
+    if deliveries < max_deliveries:
+        return False
+    dlq_payload = {
+        "original_topic": msg.topic,
+        "original_msg_id": msg.msg_id,
+        "original_payload": msg.payload,
+        "group": group,
+        "reason": reason,
+        "delivery_count": deliveries,
+    }
+    bus.publish(dlq(msg.topic), dlq_payload, ts_ms=msg.ts_ms)
+    bus.ack(group, msg.topic, msg.msg_id)
+    return True
+
 
 def subscribe(bus: MessageBus, topics: list[str], from_id: str = LATEST,
               block_ms: int = 1000,
@@ -221,6 +285,9 @@ class InMemoryBus:
         self._groups: dict[tuple[str, str], str] = {}
         # _pending[(topic, group, consumer)] = list[Message] (delivered, un-ACKed)
         self._pending: dict[tuple[str, str, str], list[Message]] = {}
+        # _delivery[(topic, group, msg_id)] = times_delivered (mirrors
+        # Redis XPENDING `times_delivered`; reset on ACK).
+        self._delivery: dict[tuple[str, str, str], int] = {}
 
     def publish(self, topic: str, payload: dict[str, Any],
                 ts_ms: Optional[int] = None) -> str:
@@ -286,6 +353,7 @@ class InMemoryBus:
             self._seq_within_ms.clear()
             self._groups.clear()
             self._pending.clear()
+            self._delivery.clear()
             self._cond.notify_all()
 
     # ---- Consumer-group API (I083) ----
@@ -324,6 +392,11 @@ class InMemoryBus:
                         pkey = (t, group, consumer)
                         for m in self._pending.get(pkey, []):
                             out.append(m)
+                            # Replay = another delivery; bump counter.
+                            dkey = (t, group, m.msg_id)
+                            self._delivery[dkey] = (
+                                self._delivery.get(dkey, 1) + 1
+                            )
                             if len(out) >= count:
                                 break
                         if len(out) >= count:
@@ -341,6 +414,11 @@ class InMemoryBus:
                             self._pending.setdefault(
                                 (t, group, consumer), [],
                             ).append(m)
+                            # First delivery of this msg_id to (group).
+                            dkey = (t, group, m.msg_id)
+                            self._delivery[dkey] = (
+                                self._delivery.get(dkey, 0) + 1
+                            )
                             if len(out) >= count:
                                 break
                     if len(out) >= count:
@@ -364,6 +442,9 @@ class InMemoryBus:
                     self._pending[pkey] = [
                         m for m in self._pending[pkey] if m.msg_id != msg_id
                     ]
+            # Reset delivery counter on ACK (matches Redis XACK
+            # semantics — XPENDING no longer reports the message).
+            self._delivery.pop((topic, group, msg_id), None)
 
     def pending_count(self, group: str, topic: str) -> int:
         with self._lock:
@@ -371,6 +452,16 @@ class InMemoryBus:
                 len(msgs) for pkey, msgs in self._pending.items()
                 if pkey[0] == topic and pkey[1] == group
             )
+
+    def delivery_count(self, group: str, topic: str, msg_id: str) -> int:
+        """Number of times `msg_id` has been delivered to `group`.
+
+        Mirrors Redis XPENDING `times_delivered`: incremented every
+        time read_group returns the message (first delivery + each
+        replay), reset on ACK.
+        """
+        with self._lock:
+            return self._delivery.get((topic, group, msg_id), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -559,6 +650,45 @@ class RedisStreamBus:
             return int(info.get("pending", 0)) if info else 0
         except Exception:
             return 0
+
+    def delivery_count(self, group: str, topic: str, msg_id: str) -> int:
+        """Per-message delivery count from XPENDING. Returns 0 if the
+        message isn't in the PEL (already ACK'd or never delivered)."""
+        try:
+            # XPENDING <stream> <group> [IDLE ...] <start> <end> <count>
+            # returns a list of (id, consumer, idle_ms, deliveries).
+            entries = self._retry(
+                self._client.xpending_range,
+                topic, group, min=msg_id, max=msg_id, count=1,
+            )
+            if not entries:
+                return 0
+            return int(entries[0]["times_delivered"])
+        except Exception:
+            return 0
+
+    def claim(self, group: str, topic: str, consumer: str,
+              msg_id: str, min_idle_ms: int = 0) -> Optional[Message]:
+        """Claim ownership of a pending message via XCLAIM.
+
+        Used by DLQ routing: if a message has been delivered too many
+        times, claim it (so the original consumer doesn't re-receive
+        it next read), then publish to the DLQ + ACK.
+        """
+        try:
+            entries = self._retry(
+                self._client.xclaim, topic, group, consumer, min_idle_ms,
+                [msg_id],
+            )
+            if not entries:
+                return None
+            ret_id, fields = entries[0]
+            ts_ms_str, _, _ = str(ret_id).partition("-")
+            payload = json.loads(fields.get("json", "{}"))
+            return Message(topic=topic, msg_id=str(ret_id),
+                           ts_ms=int(ts_ms_str), payload=payload)
+        except Exception:
+            return None
 
 
 # ---------------------------------------------------------------------------

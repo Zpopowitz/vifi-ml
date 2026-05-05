@@ -319,10 +319,21 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                 ))
                 pending_acks.append(m.msg_id)
             except (KeyError, TypeError, ValueError) as exc:
-                log.warning("dropping malformed CSI msg %s: %s", m.msg_id, exc)
-                # ACK malformed messages immediately so they don't
-                # clog the PEL forever. They land in the DLQ if
-                # I086 is enabled (separate path).
+                # Malformed CSI is a poison pill: re-delivering won't
+                # help. Route directly to DLQ (I086) and ACK so it
+                # doesn't clog the PEL. An operator can then inspect
+                # the DLQ to see why the producer is sending bad data.
+                log.warning("malformed CSI msg %s -> DLQ: %s",
+                            m.msg_id, exc)
+                from modules.bus import dlq as _dlq_topic
+                bus.publish(_dlq_topic(m.topic), {
+                    "original_topic": m.topic,
+                    "original_msg_id": m.msg_id,
+                    "original_payload": m.payload,
+                    "group": CONSUMER_GROUP,
+                    "reason": f"malformed: {type(exc).__name__}: {exc}",
+                    "delivery_count": 1,
+                }, ts_ms=m.ts_ms)
                 bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
 
         now = time.time()

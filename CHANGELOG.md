@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+### Added — bus durability (M1 of `docs/IMPLEMENTATION_PLAN.md`)
+- **I083**: Redis Streams consumer groups for at-least-once delivery.
+  New `MessageBus.create_group / read_group / ack / pending_count /
+  delivery_count` methods on both backends (`InMemoryBus`,
+  `RedisStreamBus`). `inference_worker` ACKs at stride boundaries
+  (after a prediction is durably published); `audit_subscriber` ACKs
+  after each write. A crash before ACK re-delivers the message on
+  restart — no audit gaps. Stable consumer name from
+  `VIFI_CONSUMER_NAME` env or hostname.
+- **I086**: Dead-letter queue per topic. Helper `dlq(topic) ->
+  "<topic>.dlq"` (idempotent — DLQs can't recurse) and
+  `route_to_dlq(bus, group, msg, reason, max_deliveries=5)`.
+  Inference worker routes malformed CSI directly to DLQ on first
+  sight (poison-pill protection); future M2 work will extend this
+  to retry-then-DLQ for transient errors.
+- **I193**: Chaos tests for retry-with-jitter. `tests/test_chaos.py`
+  uses a flaky `redis` mock to verify `publish / read / read_group /
+  ack / create_group` survive transient `ConnectionError` /
+  `TimeoutError` within `max_retries`, and surface the error after
+  the budget is exhausted. No live-Redis or toxiproxy dependency,
+  so it runs in CI as part of the standard `make test`.
+- 24 new tests across `test_bus_consumer_groups.py` (11),
+  `test_consumer_group_durability.py` (3), `test_dlq.py` (6),
+  `test_chaos.py` (6). Total now 280 (was 254).
+
+### Added — earlier optimization pass
 - Single-source `__version__` in `__version__.py`; surfaced in `/health`
   and audit log records.
 - Comprehensive optimization pass (PR `feat/big-optimization-pass`)
