@@ -24,7 +24,14 @@ def tmp_env_dir(tmp_path):
 
 
 def _run(args, cwd, expect_rc=0):
-    env = os.environ.copy()
+    # Scrub pytest-cov / coverage env vars so the python3 -c
+    # subprocesses launched by setup_keys.sh don't auto-start
+    # coverage. Without this, the subprocesses write
+    # `.coverage.<pid>` files in non-branch mode that conflict with
+    # pytest-cov's own branch-mode data file at session-end combine.
+    # (root cause of the pytest exit-3 INTERNALERROR in CI)
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("COV_CORE_", "COVERAGE_"))}
     proc = subprocess.run(
         ["bash", str(SCRIPT), *args],
         cwd=str(cwd), env=env,
