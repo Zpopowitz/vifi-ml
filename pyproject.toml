@@ -128,6 +128,14 @@ omit = [
     "build/*",
 ]
 branch = true
+# Single-process coverage; pytest doesn't fork by default. With
+# parallel=true (the default in some pytest-cov releases), stale
+# `.coverage.<pid>` files from prior runs get auto-combined with the
+# current run's data — which fails noisily when branch settings
+# differ between the two. Locking parallel=false eliminates that
+# whole class of CI flake.
+parallel = false
+data_file = ".coverage"
 
 [tool.coverage.report]
 # Floor below current baseline (~41%) so a regression triggers but we
