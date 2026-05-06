@@ -315,13 +315,15 @@ def log(duration_s: float, out_path: Path,
                 if bus_publisher is not None:
                     bus_publisher.publish(t, rr_out, force_value)
                 total += 1
-                if total % 10 == 0:
-                    remaining = max(0.0, deadline - time.time())
-                    extra = (f", force={force_value:.2f} N"
-                             if force_value is not None else "")
-                    print(f"  {total:4d} readings, last RR={rr_out:.1f} "
-                          f"bpm ({rr_source}){extra}, "
-                          f"{remaining:.0f}s left")
+                # GDX-RB emits a fresh RR roughly every 10 s, so print
+                # every reading rather than every 10th — otherwise long
+                # captures look frozen even when data is flowing.
+                remaining = max(0.0, deadline - time.time())
+                extra = (f", force={force_value:.2f} N"
+                         if force_value is not None else "")
+                print(f"  {total:4d} readings, last RR={rr_out:.1f} "
+                      f"bpm ({rr_source}){extra}, "
+                      f"{remaining:.0f}s left")
         print(f"Done. Logged {total} readings to {out_path}")
         return total
     finally:
