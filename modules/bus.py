@@ -147,6 +147,26 @@ class MessageBus(Protocol):
                 until_ms: Optional[int] = None,
                 count: int = 1000) -> list[Message]: ...
 
+    def list_topics(self, prefix: Optional[str] = None) -> list[str]:
+        """All topics that have received at least one message.
+
+        Optional `prefix` filter (e.g., "csi.raw."). Used by
+        `/api/v1/rooms` to discover which patient_ids exist on this
+        bus instance. RedisStreamBus uses SCAN; InMemoryBus walks its
+        in-memory index. Both are bounded — for an SPA refresh polling
+        every 10s this is fine.
+        """
+        ...
+
+    def last_msg_id(self, topic: str) -> Optional[str]:
+        """msg_id of the latest message on `topic`, or None when empty.
+
+        Cheap: uses XINFO STREAM `last-generated-id` on Redis,
+        list[-1].msg_id on InMemoryBus. Used to compute "last activity"
+        timestamps for the rooms endpoint.
+        """
+        ...
+
     def close(self) -> None: ...
 
     # ---- Consumer-group API (I083) ----
@@ -346,6 +366,18 @@ class InMemoryBus:
         if until_ms is not None:
             msgs = [m for m in msgs if m.ts_ms <= until_ms]
         return msgs[:count]
+
+    def list_topics(self, prefix: Optional[str] = None) -> list[str]:
+        with self._lock:
+            names = sorted(t for t in self._topics if self._topics[t])
+        if prefix:
+            return [t for t in names if t.startswith(prefix)]
+        return names
+
+    def last_msg_id(self, topic: str) -> Optional[str]:
+        with self._lock:
+            msgs = self._topics.get(topic)
+            return msgs[-1].msg_id if msgs else None
 
     def close(self) -> None:
         with self._cond:
@@ -577,6 +609,31 @@ class RedisStreamBus:
                 ts_ms=int(ts_ms), payload=payload,
             ))
         return out
+
+    def list_topics(self, prefix: Optional[str] = None) -> list[str]:
+        # SCAN is non-blocking (unlike KEYS) — safe to call against a
+        # production Redis. We pattern-match on the prefix; Redis
+        # streams share the keyspace with regular keys, so we further
+        # filter to entries that respond to TYPE = "stream".
+        pattern = f"{prefix}*" if prefix else "*"
+        out: list[str] = []
+        try:
+            for key in self._retry(self._client.scan_iter, match=pattern,
+                                    _type="stream", count=200):
+                out.append(str(key))
+        except Exception:
+            return []
+        return sorted(out)
+
+    def last_msg_id(self, topic: str) -> Optional[str]:
+        try:
+            info = self._retry(self._client.xinfo_stream, topic)
+        except Exception:
+            return None
+        if not info:
+            return None
+        last = info.get("last-generated-id")
+        return str(last) if last else None
 
     def close(self) -> None:
         self._client.close()

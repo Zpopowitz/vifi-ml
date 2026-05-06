@@ -9,6 +9,47 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2300C39A' d='M16 28L4 16l4-4 8 8 8-8 4 4-12 12z'/%3E%3C/svg%3E">
 </head>
 <body>
+  <!-- Login overlay. Shown when no API key is stored, or after a 401.
+       Hides itself once a key is verified against /health. -->
+  <div id="login-overlay" class="login-overlay" hidden>
+    <div class="login-card" role="dialog" aria-labelledby="login-title">
+      <div class="brand login-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">ViFi</span>
+      </div>
+      <h1 id="login-title" class="login-title">Sign in</h1>
+      <p class="login-help">
+        Paste the API key issued for your clinic. ViFi stores it on
+        this device only.
+      </p>
+      <form id="login-form" class="login-form" autocomplete="off">
+        <label class="login-field">
+          <span>API key</span>
+          <input type="password"
+                 id="login-key"
+                 name="key"
+                 inputmode="text"
+                 placeholder="vifi_…"
+                 autocomplete="off"
+                 spellcheck="false"
+                 required>
+          <button type="button"
+                  id="login-show"
+                  class="login-show"
+                  aria-label="Show / hide key">show</button>
+        </label>
+        <button type="submit" id="login-submit" class="login-submit">
+          Verify and continue
+        </button>
+        <p id="login-error" class="login-error" hidden></p>
+      </form>
+      <p class="login-footer">
+        Don't have a key? Ask the system operator. ViFi never sends
+        keys to external services.
+      </p>
+    </div>
+  </div>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
@@ -18,18 +59,29 @@
     </div>
     <nav class="topbar-controls">
       <label class="patient-picker">
-        <span>Patient</span>
-        <input type="text"
-               id="patient-id"
-               value="default"
-               autocomplete="off"
-               spellcheck="false"
-               aria-label="Patient ID">
+        <span>Room</span>
+        <select id="patient-id"
+                aria-label="Active room"
+                class="patient-select">
+          <option value="default">default</option>
+        </select>
+        <button type="button"
+                id="patient-refresh"
+                class="patient-refresh"
+                aria-label="Refresh room list"
+                title="Refresh room list">⟳</button>
       </label>
       <span id="connection-status" class="status status-idle" role="status">
         <span class="status-dot" aria-hidden="true"></span>
         <span class="status-text">Connecting</span>
       </span>
+      <button type="button"
+              id="logout-button"
+              class="logout-button"
+              hidden
+              aria-label="Sign out">
+        Sign out
+      </button>
     </nav>
   </header>
 

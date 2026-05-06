@@ -152,6 +152,7 @@ body {
     color: var(--ink-soft);
 }
 
+.patient-picker select,
 .patient-picker input {
     padding: 7px 12px;
     border: 1px solid var(--border);
@@ -160,13 +161,218 @@ body {
     color: var(--ink);
     font-family: var(--font-mono);
     font-size: 14px;
-    width: 140px;
+    width: 180px;
     transition: border-color 0.15s ease;
+    cursor: pointer;
 }
 
+.patient-picker select:focus,
 .patient-picker input:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+.patient-refresh {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--ink-soft);
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-left: -2px;
+}
+
+.patient-refresh:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.patient-refresh.spinning {
+    animation: spin 0.6s linear;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Sign-out button — only visible after login */
+.logout-button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--ink-soft);
+    padding: 7px 14px;
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.logout-button:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+/* ---- Login overlay ---------------------------------------------- */
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    /* Soft fade-in so the overlay doesn't snap into view on slow nets. */
+    animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 36px 40px;
+    box-shadow: var(--shadow-card);
+    max-width: 420px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+}
+
+.login-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+}
+
+.login-help {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.login-field {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.login-field > span {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+}
+
+.login-field input {
+    padding: 12px 14px;
+    padding-right: 64px;        /* room for the show/hide button */
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    transition: border-color 0.15s ease;
+    width: 100%;
+}
+
+.login-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.login-show {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+}
+
+.login-show:hover {
+    color: var(--accent);
+    border-color: var(--border);
+}
+
+.login-submit {
+    padding: 12px 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.login-submit:hover { background: #00a880; }
+.login-submit:disabled { opacity: 0.6; cursor: wait; }
+
+.login-error {
+    margin: 0;
+    padding: 10px 12px;
+    background: #fdecec;
+    border: 1px solid #f5b3b3;
+    color: var(--danger);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+    .login-error {
+        background: #3a1414;
+        border-color: #5a1f1f;
+        color: #ff8888;
+    }
+}
+
+.login-footer {
+    margin: 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--ink-faint);
+    line-height: 1.5;
 }
 
 /* Connection-status pill */
