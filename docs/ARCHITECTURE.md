@@ -33,11 +33,11 @@ as first-class artifacts.
                                 │         │                            │
                   ┌──────────────┼─────────┼─────────────┬──────────┐    │
                   ▼              ▼         ▼             ▼          ▼    │
-        ┌────────────────┐  ┌─────────┐  ┌──────────┐  ┌─────┐  ┌────────┐
-        │ inference_     │  │ audit_  │  │ api      │  │ Caddy │  │ dashboard│
-        │ worker         │  │ subscr. │  │ /api/v1/ │  │ TLS   │  │ (Streamlit)│
-        │ (XGBoost)      │  │ (JSONL) │  │ stream   │  │       │  │          │
-        └────────────────┘  └─────────┘  └──────────┘  └───────┘  └──────────┘
+        ┌────────────────┐  ┌─────────┐  ┌──────────┐  ┌───────┐  ┌─────────────┐
+        │ inference_     │  │ audit_  │  │ api      │  │ Caddy │  │ dashboard/  │
+        │ worker         │  │ subscr. │  │ /api/v1/ │  │ TLS   │  │ (static SPA │
+        │ (XGBoost)      │  │ (JSONL) │  │ stream   │  │       │  │  via api.py)│
+        └────────────────┘  └─────────┘  └──────────┘  └───────┘  └─────────────┘
 ```
 
 ## Components

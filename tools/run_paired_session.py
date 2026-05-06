@@ -283,10 +283,9 @@ def run_session(args: argparse.Namespace) -> int:
                   flush=True)
             if args.bus:
                 print(f"[orchestrator] bus mode active (patient_id="
-                      f"{args.subject_id}). Open the dashboard "
-                      f"(streamlit run dashboard.py) and switch to "
-                      f"the Live tab to watch predicted vs reference "
-                      f"in real time.",
+                      f"{args.subject_id}). Open the dashboard at "
+                      f"http://localhost:8501 to watch predicted vs "
+                      f"reference in real time.",
                       flush=True)
 
             # Loggers (CSI/HR/RR) are bounded by --duration. Workers

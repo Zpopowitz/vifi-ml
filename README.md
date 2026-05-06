@@ -69,11 +69,15 @@ python tools/first_capture_report.py `
 
 ### Live dashboard (predicted HR + RR vs reference, real-time)
 
-The Live tab in `dashboard.py` plots model predictions against ground
+The static SPA under `dashboard/` (served by FastAPI at
+<http://localhost:8501>) plots model predictions against ground
 truth (Polar H10 for HR, Vernier GDX-RB for RR) as both streams
-arrive. Components communicate over a Redis Streams message bus, so
-each piece (logger, inference, audit, dashboard) can be restarted,
-replaced, or run on a different host without changing call sites.
+arrive over `/api/v1/stream` WebSocket. Components communicate over
+a Redis Streams message bus, so each piece (logger, inference, audit,
+dashboard) can be restarted, replaced, or run on a different host
+without changing call sites.
+
+Daily reference-data reproduction flow lives in `docs/QUICKSTART.md`.
 
 **The whole software stack is one command.** Hardware loggers stay
 on the host because they need direct BLE / USB serial access;
@@ -209,11 +213,12 @@ to a different host without touching the others.
    └──────────────────┘  rr.reference.<p>│         │              │
                                 ─────────┘         ▼              ▼
                                          ┌────────────────┐  ┌────────────────┐
-                                         │ dashboard.py   │  │ audit_         │
-                                         │ (Live tab)     │  │ subscriber     │
+                                         │ dashboard/     │  │ audit_         │
+                                         │ (static SPA)   │  │ subscriber     │
                                          │ HR + RR panels │  │ (-> JSONL)     │
-                                         └────────────────┘  └────────────────┘
-                                         ┌────────────────────────────────────┐
+                                         └────────┬───────┘  └────────────────┘
+                                                  │
+                                         ┌────────▼───────────────────────────┐
                                          │ api.py /api/v1/stream (WebSocket)  │
                                          │ fans out HR + RR to remote clients │
                                          └────────────────────────────────────┘
@@ -303,8 +308,8 @@ vifi-ml/
 ├── calibration.py             # per-subject calibration + RF fingerprinting + RollingFingerprintTracker
 ├── quality.py                 # Mahalanobis OOD detector
 ├── audit.py                   # JSONL audit log writer (postmarket surveillance)
-├── api.py                     # FastAPI service (M4) -- multi-subject + OOD + audit + CORS
-├── dashboard.py               # Streamlit dashboard (M5) with safety telemetry
+├── api.py                     # FastAPI service -- multi-subject + OOD + audit + CORS + SPA mount
+├── dashboard/                 # static SPA (HTML/CSS/JS) served by api.py
 ├── hr_logger.py               # Polar H10 BLE logger
 ├── rr_logger.py               # Vernier Go Direct respiration belt logger
 ├── Dockerfile                 # multi-stage build, non-root runtime

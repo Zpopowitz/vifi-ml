@@ -49,11 +49,17 @@ workstreams.
 Not without your own regulatory + IRB process. The repo is
 research-grade; the operator is responsible for any clinical use.
 
-## Why Streamlit for the dashboard?
+## Why a static SPA for the dashboard (not Streamlit)?
 
-Simplest path to a working multi-tab UI in pure Python. We accept
-Streamlit's accessibility limitations; will revisit if a clinical
-partner requires WCAG AA.
+Streamlit was the original prototype but had three pain points for
+clinical use: (1) no auth gate without a custom shim,
+(2) ~120 MB image and one transitive CVE surface, (3) accessibility
+gaps that won't pass WCAG AA. The replacement is a vanilla
+HTML/CSS/JS SPA under `dashboard/` served by FastAPI's `StaticFiles`
+mount — no build step, offline-safe (no CDN deps), works in
+network-isolated clinic environments. Login overlay gates access
+against `/health` with a Bearer token; WS close 1008 wipes the key
+and bounces back to login.
 
 ## How do you handle multiple subjects in the same room?
 

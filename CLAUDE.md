@@ -8,8 +8,9 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - DSP + features: `preprocess.py`
 - Synthetic generator (sanity-only): `data_gen.py`
 - Training: `train.py` (baseline), `tools/retrain_on_real.py` (real captures), `tools/train_quantile_models.py` (CIs)
-- Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, plus 501 stubs for apnea/gait/falls/transients/multi_patient
-- Dashboard: `dashboard.py` (Streamlit)
+- Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
+- Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+- Daily reproduction: `docs/QUICKSTART.md`
 - Calibration + RF fingerprint + walk-in detector: `calibration.py`
 - Mahalanobis OOD: `quality.py`
 - Audit log (FDA-grade JSONL): `audit.py`

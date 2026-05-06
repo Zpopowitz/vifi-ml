@@ -52,14 +52,14 @@ One small "edge" box per room, one central server for the whole
 clinic. This is how real telemetry systems are built.
 
 ```
-ROOM 1 ─┐ ┌─Pi 4 / Pi Zero 2W (edge)──────────┐
+ROOM 1 ─┐ ┌─Pi 5 (4 GB) (edge)─────────────────┐
         │ │ ESP32 USB → csi_capture.py        │
         │ │ Polar BLE → hr_logger.py          │  bus traffic
         │ │ Vernier BLE → rr_logger.py        │ ─────────►┐
         │ │ All publish to redis://central:6379│           │
         │ └────────────────────────────────────┘           ▼
         │                                          ┌─────────────────┐
-ROOM 2 ─┤ ┌─Pi 4───────────────────────────────┐   │ Central server  │
+ROOM 2 ─┤ ┌─Pi 5───────────────────────────────┐   │ Central server  │
         │ │ Same loggers, patient_id=room-2    │ ─►│ (Intel N100)    │
         │ └────────────────────────────────────┘   │                 │
         │                                          │ Redis +         │
@@ -83,20 +83,20 @@ ROOM N ─┤ (...)                                    │ inference +     │
 | Item | Qty | ~Cost | Notes |
 |---|---|---|---|
 | Beelink S12 Pro N100 mini PC (8 GB / 256 GB SSD) | 1 | $170 | Central server. Runs your existing x86 Docker images unchanged |
-| Raspberry Pi 4 (2 GB) starter kit | 2 | $80 each | Edge boxes; full-size USB for ESP32 |
+| Raspberry Pi 5 (4 GB) starter kit | 2 | $90 each | Edge boxes; USB 3.0 + faster CPU vs Pi 4; current shipping platform |
 | ESP32-S3-DevKitC-1U-N8R8 + antenna | 4 (2 TX + 2 RX) | ~$30 | One TX/RX pair per room |
 | Polar H10 chest strap | 1+ | $90 each | Reference HR; can share between rooms during testing |
 | Vernier GDX-RB respiration belt | 1+ | $200 each | Reference RR (when M1 RR captures begin) |
 | GL.iNet GL-AX1800 travel router (OR use clinic LAN) | 1 | $50 | Dedicated ViFi WiFi |
 | Cat6 Ethernet cable (router → central) | 1 | $10 | Wired beats WiFi for the central uplink |
-| **Total (2-room demo)** | | **~$510** | excludes Vernier belts |
+| **Total (2-room demo)** | | **~$530** | excludes Vernier belts |
 
 ### Hardware shopping list — 10-room clinical pilot
 
 | Item | Qty | Cost | Notes |
 |---|---|---|---|
-| Beelink S12 Pro N100 (central) | 1 | $170 | One per clinic floor |
-| Raspberry Pi 4 (2 GB) edge | 10 | $800 | One per room |
+| Beelink S12 Pro N100 (central) | 1 | $170 | One per clinic floor (≤15 rooms) |
+| Raspberry Pi 5 (4 GB) edge | 10 | $900 | One per room; USB 3 + dual-band 802.11ac for faster CSI offload |
 | ESP32-S3 pairs | 20 | $300 | One pair per room |
 | Polar H10 | 10 | $900 | One per active patient |
 | Vernier GDX-RB (when ready) | 10 | $2000 | Same |
