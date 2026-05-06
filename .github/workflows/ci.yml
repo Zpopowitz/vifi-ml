@@ -89,6 +89,10 @@ jobs:
           cache: pip
       - name: Install
         run: |
+          # Upgrade pip itself first so pip-audit doesn't flag the
+          # runner-bundled pip on its own dependency advisories
+          # (e.g. GHSA-jp4c-xjxw-mgf9 against pip <26.1).
+          python -m pip install --upgrade "pip>=26.1"
           pip install -r requirements.txt
           pip install pip-audit==2.7.3 bandit==1.7.10
       - name: pip-audit
