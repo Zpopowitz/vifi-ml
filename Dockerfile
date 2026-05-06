@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Upgrade pip itself first so the build doesn't ship a vulnerable pip
+# in the runtime image (e.g. GHSA-jp4c-xjxw-mgf9 against pip <26.1).
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.1"
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # The message bus extra (Redis Streams) is optional in requirements.txt;
 # install it explicitly here so the API + workers can talk to Redis.
