@@ -68,6 +68,49 @@ def test_dashboard_spa_files_exist():
     assert "/api/v1/stream" in (d / "app.js").read_text()
 
 
+def test_dashboard_login_overlay_present():
+    """Login overlay is the gate before the live data UI; if removed
+    by accident, every clinic deployment exposes the dashboard
+    unauthenticated. Catch the regression at build time."""
+    html = (ROOT / "dashboard" / "index.html").read_text()
+    js = (ROOT / "dashboard" / "app.js").read_text()
+    css = (ROOT / "dashboard" / "styles.css").read_text()
+    # Markup
+    assert 'id="login-overlay"' in html
+    assert 'id="login-form"' in html
+    assert 'id="login-key"' in html
+    assert 'id="login-submit"' in html
+    # JS gates the app on key verification.
+    assert "verifyKeyAndStart" in js
+    assert "vifiApiKey" in js
+    assert "showLogin" in js
+    # CSS provides at least the overlay container.
+    assert ".login-overlay" in css
+    assert ".login-card" in css
+
+
+def test_dashboard_room_dropdown_replaces_text_input():
+    """Patient-id picker must be a <select>, not a free-text <input>.
+    Free-text was the dev placeholder; clinical UX wants a list."""
+    html = (ROOT / "dashboard" / "index.html").read_text()
+    js = (ROOT / "dashboard" / "app.js").read_text()
+    # Top-bar uses a <select id="patient-id">
+    assert '<select' in html and 'id="patient-id"' in html
+    # JS hits /api/v1/rooms to populate it.
+    assert "/api/v1/rooms" in js
+    # Refresh button + handler exist.
+    assert 'id="patient-refresh"' in html
+    assert "refreshRooms" in js
+
+
+def test_dashboard_logout_button_present():
+    """Operators need a way to clear their session locally."""
+    html = (ROOT / "dashboard" / "index.html").read_text()
+    js = (ROOT / "dashboard" / "app.js").read_text()
+    assert 'id="logout-button"' in html
+    assert "logoutButton" in js
+
+
 def test_dockerignore_excludes_heavy_dirs():
     di = (ROOT / ".dockerignore").read_text()
     for entry in (".git", "__pycache__", "data/"):

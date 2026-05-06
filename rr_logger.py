@@ -41,10 +41,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import sys
 import time
+from collections import deque
 from pathlib import Path
-from typing import Optional
+from typing import Deque, Optional
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -72,6 +74,66 @@ def _require_godirect():
 SENSOR_RESP_RATE = "Respiration Rate"
 SENSOR_FORCE = "Force"
 DEFAULT_PERIOD_MS = 1000  # GDX-RB updates respiration rate ~1 Hz
+
+# Adult resting RR is 6-30 brpm (0.1-0.5 Hz). The GDX-RB's onboard DSP
+# often won't lock on shallow or irregular breaths, so we keep a rolling
+# buffer of the raw Force channel and compute RR ourselves whenever the
+# onboard value is NaN.
+_FORCE_BUFFER_SECONDS = 30.0
+_RR_BAND_HZ = (0.1, 0.5)
+
+
+class _ForceToRR:
+    """Rolling-window FFT estimator: raw belt force -> RR in brpm.
+
+    The GDX-RB samples force at the same period as RR (1 Hz default), so
+    a 30-second buffer is enough to resolve breath cycles down to ~6 brpm
+    via FFT with parabolic peak refinement. Returns NaN until the buffer
+    is at least half full.
+    """
+
+    def __init__(self, period_ms: int) -> None:
+        self.fs = 1000.0 / float(period_ms)
+        self.maxlen = max(8, int(_FORCE_BUFFER_SECONDS * self.fs))
+        self.buf: Deque[float] = deque(maxlen=self.maxlen)
+
+    def update(self, force_n: float) -> float:
+        if force_n is None or math.isnan(force_n):
+            return float("nan")
+        self.buf.append(float(force_n))
+        if len(self.buf) < max(8, self.maxlen // 2):
+            return float("nan")
+        return self._estimate()
+
+    def _estimate(self) -> float:
+        try:
+            import numpy as np
+        except ImportError:
+            return float("nan")
+        x = np.asarray(self.buf, dtype=float)
+        x = x - x.mean()
+        n = len(x)
+        win = np.hanning(n)
+        spec = np.abs(np.fft.rfft(x * win))
+        freqs = np.fft.rfftfreq(n, d=1.0 / self.fs)
+        lo, hi = _RR_BAND_HZ
+        band = (freqs >= lo) & (freqs <= hi)
+        if not band.any() or spec[band].max() <= 0:
+            return float("nan")
+        idxs = np.where(band)[0]
+        peak_local = int(np.argmax(spec[band]))
+        peak = idxs[peak_local]
+        # Parabolic interpolation for sub-bin precision.
+        if 0 < peak < len(spec) - 1:
+            a, b, c = spec[peak - 1], spec[peak], spec[peak + 1]
+            denom = (a - 2 * b + c)
+            shift = 0.5 * (a - c) / denom if denom != 0 else 0.0
+        else:
+            shift = 0.0
+        f_hz = freqs[peak] + shift * (freqs[1] - freqs[0])
+        if f_hz <= 0:
+            return float("nan")
+        return float(f_hz * 60.0)
 
 
 class _BusPublisher:
@@ -194,12 +256,16 @@ def log(duration_s: float, out_path: Path,
         device_name = getattr(device, "_name", "GDX-RB")
         print(f"Connected to {device_name}")
 
-        resp_id, force_id = _find_resp_sensors(device, want_force=log_force)
+        # Always enable Force so we can compute RR client-side when the
+        # onboard DSP returns NaN. log_force only controls whether it's
+        # written to the CSV.
+        resp_id, force_id = _find_resp_sensors(device, want_force=True)
         enabled = [resp_id] + ([force_id] if force_id is not None else [])
         device.enable_sensors(enabled)
         device.start(period=period_ms)
+        rr_estimator = _ForceToRR(period_ms=period_ms)
 
-        header = ["timestamp_unix", "rr_bpm"]
+        header = ["timestamp_unix", "rr_bpm", "rr_source"]
         if log_force:
             header.append("force_n")
 
@@ -222,24 +288,40 @@ def log(duration_s: float, out_path: Path,
                         rr_value = val
                     elif SENSOR_FORCE.lower() in name.lower():
                         force_value = val
-                if rr_value is None:
+                if rr_value is None and force_value is None:
+                    continue
+                # Update the FFT estimator on every force sample so it's
+                # warm by the time we need it.
+                rr_from_force = (rr_estimator.update(force_value)
+                                 if force_value is not None else float("nan"))
+                onboard_ok = (rr_value is not None
+                              and not math.isnan(float(rr_value)))
+                if onboard_ok:
+                    rr_out = float(rr_value)
+                    rr_source = "onboard"
+                elif not math.isnan(rr_from_force):
+                    rr_out = rr_from_force
+                    rr_source = "force_fft"
+                else:
+                    # Don't publish NaN; just keep buffering force.
                     continue
                 t = time.time()
-                row = [f"{t:.3f}", f"{rr_value:.2f}"]
+                row = [f"{t:.3f}", f"{rr_out:.2f}", rr_source]
                 if log_force:
                     row.append(f"{force_value:.4f}"
                                if force_value is not None else "")
                 writer.writerow(row)
                 f.flush()
                 if bus_publisher is not None:
-                    bus_publisher.publish(t, rr_value, force_value)
+                    bus_publisher.publish(t, rr_out, force_value)
                 total += 1
                 if total % 10 == 0:
                     remaining = max(0.0, deadline - time.time())
                     extra = (f", force={force_value:.2f} N"
                              if force_value is not None else "")
-                    print(f"  {total:4d} readings, last RR={rr_value:.1f} "
-                          f"bpm{extra}, {remaining:.0f}s left")
+                    print(f"  {total:4d} readings, last RR={rr_out:.1f} "
+                          f"bpm ({rr_source}){extra}, "
+                          f"{remaining:.0f}s left")
         print(f"Done. Logged {total} readings to {out_path}")
         return total
     finally:

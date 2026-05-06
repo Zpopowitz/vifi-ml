@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — clinical UI: login + room dropdown
+- **`GET /api/v1/rooms`** — discovers patient_ids that have at least
+  one stream on the bus. Returns `[{patient_id, topics_with_data,
+  last_seen_ms}, ...]` sorted by recency. 5-second server-side cache
+  so a 10-second SPA poll costs ~1 SCAN call per minute. Skips `*.dlq`
+  topics so operator-debug data doesn't surface as a fake room.
+- **Bus methods**: `MessageBus.list_topics(prefix=None)` and
+  `last_msg_id(topic)` on both backends. RedisStreamBus uses
+  non-blocking `SCAN _type=stream` and `XINFO STREAM`; failures
+  surface as empty list / None instead of bubbling so a Redis blip
+  doesn't 500 the rooms endpoint.
+- **Login overlay on the SPA** — replaces the
+  `localStorage.vifiApiKey` dev-tools hack. First load shows a
+  password-masked input; the SPA hits `/health` with the key as
+  `Authorization: Bearer …` to verify. Cached key auto-verifies on
+  refresh; 401 anywhere (HTTP or WS close 1008) wipes the key and
+  bounces back to the overlay. "Sign out" button in the top bar.
+- **Room dropdown replaces the patient-id text input.** Populated
+  from `/api/v1/rooms`, refreshed every 10 s, with a manual refresh
+  button. Selection persisted in `localStorage.vifiSelectedRoom`.
+  Falls back to `default` when the bus is empty so single-host dev
+  keeps working.
+- **Force-derived RR fallback** in `rr_logger.py`: when the GDX-RB's
+  onboard "Respiration Rate" channel returns NaN (common for shallow
+  or moderately irregular breathing), a 30 s rolling-FFT estimator
+  on the raw Force channel produces a value instead. CSV gains an
+  `rr_source` column ("onboard" | "force_fft"). Unblocks the first
+  Vernier paired captures.
+- **15 new tests** across `test_api_rooms.py` (5: empty, aggregate,
+  sort order, caching, DLQ-skip), `test_bus_topic_listing.py` (9:
+  in-memory + RedisStreamBus mocked variants), and `test_build.py`
+  (3: login overlay markup, room-dropdown markup, logout button).
+  Total now 295.
+
 ### Added — pilot-prep tooling (M2 of `docs/IMPLEMENTATION_PLAN.md`, non-disruptive subset)
 
 These are operator tools and documentation that make a real clinical
