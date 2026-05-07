@@ -1,5 +1,11 @@
 # ViFi deferred-items implementation plan
 
+> **Status (2026-05-07)**: Largely executed for M1 and partially for M2.
+> Superseded as the active forward-plan by **`docs/AUDIT_PLAN.md`**,
+> which enumerates the current keep / remove / add backlog with the
+> A-F priority sequence and PR-A through PR-L roadmap. This document
+> is preserved as the milestone framework + decision-matrix reference.
+
 ## Context
 
 The 223-item optimization pass merged ~170 items into `main`. The 53
