@@ -31,7 +31,8 @@ landed nine PRs:
 | **G** | Audit-subscriber liveness check | `fc8add1` | ✅ |
 | **H1** | Bundle classes → `api_internals/bundles.py` | `a23d179` | ✅ |
 | **H2** | Middleware + SPA mount → `api_internals/{middleware,spa}.py` | `64f50bb` | ✅ |
-| **H3** | Predict + identify + stub routes → `api_internals/routes_*.py` | TBD | ✅ |
+| **H3** | Predict + identify + stub routes → `api_internals/routes_*.py` | `cca499b` | ✅ |
+| **H4** | /health, /readyz, /api/v1/rooms, WebSocket → `api_internals/{routes_meta,routes_rooms,websocket}.py` | TBD | ✅ |
 | **K** | Prometheus metrics in inference_worker | `c0969ac` | ✅ |
 | **I** | CSI quality gate | `2ca0b0b` | ✅ |
 | **L** | Coverage-ramp commitment (this PR) | TBD | ✅ |
@@ -42,7 +43,6 @@ Pending PRs (gated on either home-data or quiet-stretch):
 
 | PR | What | Gating |
 |---|---|---|
-| H4 | `/health`, `/readyz`, `/api/v1/rooms`, WebSocket `/api/v1/stream` extraction | Quiet stretch — closure deps on `_warmup`, `_rooms_cache`, audit writer; bigger surface area |
 | J | Stratified eval by geometry | Need 5+ sessions w/ geometry metadata |
 | B-format | 86-file ruff format sweep | Quiet stretch (noisy diff) |
 

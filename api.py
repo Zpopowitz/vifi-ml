@@ -10,7 +10,6 @@ Endpoints:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -26,12 +25,9 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Request,
-    WebSocket,
-    WebSocketDisconnect,
 )
 
 from security import (
-    authorize_websocket,
     require_scope,
     validate_config_or_raise,
 )
@@ -688,66 +684,14 @@ def create_app(model_dir: Path = MODEL_DIR,
                  request.method, request.url.path, response.status_code, ms)
         return response
 
-    @app.get("/readyz")
-    def readyz():
-        """Readiness probe (I133): "models loaded + bus reachable"
-        rather than "process is up." Different from /health so an
-        orchestrator can know whether to send traffic vs. wait.
-
-        Currently checks: synthetic OR real model is loaded. Bus
-        check is best-effort (doesn't fail readiness if Redis is
-        slow because the bus path is async-tolerant).
-        """
-        ready = synthetic_bundle.is_loaded or real_bundle.is_loaded
-        return JSONResponse(
-            {"ready": ready,
-             "synthetic_loaded": synthetic_bundle.is_loaded,
-             "real_loaded": real_bundle.is_loaded,
-             "code_version": VIFI_VERSION},
-            status_code=200 if ready else 503,
-        )
-
-    @app.get("/health", response_model=HealthResponse)
-    def health() -> HealthResponse:
-        synth_loaded = False
-        synth_feature_names: list[str] = []
-        synth_hr_tol = 0.0
-        synth_rr_tol = 0.0
-        synth_meta: Optional[dict] = None
-        if synthetic_bundle.is_available():
-            try:
-                synthetic_bundle.load()
-                synth_loaded = True
-                synth_feature_names = synthetic_bundle.feature_names
-                synth_hr_tol = float(synthetic_bundle.metadata.get("hr_tol_bpm", 0.0))
-                synth_rr_tol = float(synthetic_bundle.metadata.get("rr_tol_bpm", 0.0))
-                synth_meta = synthetic_bundle.metadata
-            except HTTPException as exc:
-                synth_meta = {"error": exc.detail}
-
-        real_loaded = False
-        real_meta: Optional[dict] = None
-        try:
-            if (real_model_dir / "hr_model.json").exists():
-                real_bundle.load()
-                real_loaded = True
-                real_meta = real_bundle.metadata
-        except HTTPException as exc:
-            real_meta = {"error": exc.detail}
-
-        return HealthResponse(
-            status="ok",
-            model_version=MODEL_VERSION,
-            hr_tol_bpm=synth_hr_tol,
-            rr_tol_bpm=synth_rr_tol,
-            feature_names=synth_feature_names,
-            synthetic_model_loaded=synth_loaded,
-            synthetic_model_dir=str(model_dir),
-            synthetic_model_metadata=synth_meta,
-            real_model_loaded=real_loaded,
-            real_model_dir=str(real_model_dir),
-            real_model_metadata=real_meta,
-        )
+    # /readyz + /health are in api_internals/routes_meta.py (PR-H4
+    # split). Bundle refs are captured by the factory so the
+    # is_loaded reads stay coherent with the predict path's lazy
+    # load.
+    from api_internals.routes_meta import register_meta_routes  # noqa: PLC0415
+    register_meta_routes(
+        app, synthetic_bundle, real_bundle, model_dir, real_model_dir,
+    )
 
     # /predict, /predict/demo, /predict/csi, /predict/capture,
     # /identify are in api_internals/routes_predict.py (PR-H3 split).
@@ -781,96 +725,10 @@ def create_app(model_dir: Path = MODEL_DIR,
     from api_internals.routes_stubs import register_stub_routes  # noqa: PLC0415
     register_stub_routes(app)
 
-    # --- /api/v1/rooms — patient_id discovery for the SPA dropdown ----
-    # Lists every patient_id that has at least one stream on the bus,
-    # along with metadata the dashboard uses to sort + label rooms.
-    # Cached for 5 s so polling every 10 s costs 1 SCAN per 5 s, and a
-    # SCAN against a single-clinic Redis is sub-millisecond.
-    _rooms_cache: dict = {"ts": 0.0, "value": None}
-
-    def _build_rooms_response() -> dict:
-        from modules.bus import (
-            bus_from_env,
-            csi_raw,
-            hr_predicted,
-            hr_reference,
-            rr_predicted,
-            rr_reference,
-        )
-        topic_builders = {
-            "csi.raw":       csi_raw,
-            "hr.predicted":  hr_predicted,
-            "hr.reference":  hr_reference,
-            "rr.predicted":  rr_predicted,
-            "rr.reference":  rr_reference,
-        }
-        bus = bus_from_env()
-        try:
-            # Aggregate by patient_id across all five known prefixes.
-            by_patient: dict[str, dict] = {}
-            for prefix, _ in topic_builders.items():
-                for topic in bus.list_topics(prefix=f"{prefix}."):
-                    # DLQ topics are <prefix>.<patient>.dlq — skip them
-                    # (operator debug data, not real rooms; see test).
-                    if topic.endswith(".dlq"):
-                        continue
-                    # Topic format: "<prefix>.<patient_id>"
-                    patient_id = topic[len(prefix) + 1:]
-                    if not patient_id or "." in patient_id:
-                        # Defensive: a multi-segment suffix means an
-                        # unknown topic shape we shouldn't surface.
-                        continue
-                    last_id = bus.last_msg_id(topic) or ""
-                    last_ms = 0
-                    if last_id:
-                        try:
-                            last_ms = int(last_id.split("-", 1)[0])
-                        except ValueError:
-                            last_ms = 0
-                    rec = by_patient.setdefault(patient_id, {
-                        "patient_id": patient_id,
-                        "topics_with_data": [],
-                        "last_seen_ms": 0,
-                    })
-                    rec["topics_with_data"].append(prefix)
-                    if last_ms > rec["last_seen_ms"]:
-                        rec["last_seen_ms"] = last_ms
-        finally:
-            try:
-                bus.close()
-            except Exception:
-                pass
-
-        rooms = sorted(
-            by_patient.values(),
-            key=lambda r: r["last_seen_ms"],
-            reverse=True,
-        )
-        for r in rooms:
-            r["topics_with_data"] = sorted(set(r["topics_with_data"]))
-        return {"rooms": rooms}
-
-    @app.get("/api/v1/rooms")
-    def rooms():
-        """Patient_ids that have at least one stream on the bus.
-
-        Returns: `{"rooms": [{"patient_id", "topics_with_data",
-                              "last_seen_ms"}, ...]}`
-        Sorted by `last_seen_ms` descending so the most-recent room is
-        first. Cached for 5 s server-side; the SPA polls every 10 s.
-        """
-        now = time.time()
-        if (_rooms_cache["value"] is not None
-                and now - _rooms_cache["ts"] < 5.0):
-            return _rooms_cache["value"]
-        try:
-            value = _build_rooms_response()
-        except Exception as exc:
-            log.warning("rooms endpoint failed: %s", exc)
-            return {"rooms": [], "error": "bus_unreachable"}
-        _rooms_cache["ts"] = now
-        _rooms_cache["value"] = value
-        return value
+    # /api/v1/rooms is in api_internals/routes_rooms.py (PR-H4 split).
+    # The 5 s response cache is per-app instance.
+    from api_internals.routes_rooms import register_rooms_route  # noqa: PLC0415
+    register_rooms_route(app)
 
     # ------------------------------------------------------------------
     # /api/v1/ namespace
@@ -897,91 +755,10 @@ def create_app(model_dir: Path = MODEL_DIR,
             name=f"v1_{endpoint.__name__}",
         )
 
-    # ------------------------------------------------------------------
-    # /api/v1/stream -- live HR/RR fan-out from the message bus.
-    # ------------------------------------------------------------------
-    # Subscribes to hr.predicted.<patient_id> and hr.reference.<patient_id>
-    # and forwards each message to the WebSocket client as JSON. The
-    # inference worker (tools/inference_worker.py) feeds the predicted
-    # stream; the H10 sidecar (hr_logger.py --bus) feeds the reference
-    # stream. Run both, plus this server, plus the dashboard, and you
-    # have a live predicted-vs-reference view.
-    @app.websocket("/api/v1/stream")
-    async def stream(websocket: WebSocket):
-        from modules.bus import (  # noqa: E402
-            LATEST,
-            bus_from_env,
-            hr_predicted,
-            hr_reference,
-            rr_predicted,
-            rr_reference,
-        )
-        # Accept first so we can return a clean close code on auth
-        # failure (Starlette requires accept() before close()).
-        # Browsers can't set headers on `new WebSocket()`, so we accept
-        # ?api_key=... as well.
-        await websocket.accept()
-        # WS streams HR + RR predictions (and reference) — gate on
-        # read:hr. Keys without granular metadata implicitly own all
-        # scopes, so this doesn't break the existing dev-mode flow.
-        if not await authorize_websocket(websocket,
-                                         required_scope="read:hr"):
-            return
-        patient_id = websocket.query_params.get("patient_id", "default")
-        bus = bus_from_env()
-        # Subscribe to every (HR and RR, predicted and reference) topic
-        # for the patient. Adding new vital streams later is just one
-        # more entry here -- no protocol change.
-        topics = [
-            hr_predicted(patient_id),
-            hr_reference(patient_id),
-            rr_predicted(patient_id),
-            rr_reference(patient_id),
-        ]
-        cursors: dict[str, str] = {t: LATEST for t in topics}
-        await websocket.send_json({
-            "type": "hello",
-            "patient_id": patient_id,
-            "topics": topics,
-            "model_version": MODEL_VERSION,
-        })
-        try:
-            while True:
-                # bus.read blocks; run it on a worker thread so the
-                # event loop stays free for client disconnect handling.
-                msgs = await asyncio.to_thread(
-                    bus.read, dict(cursors), 1000, 100,
-                )
-                for m in msgs:
-                    cursors[m.topic] = m.msg_id
-                    # Topic format: "<stream>.<role>.<patient>" e.g.
-                    # "hr.predicted.alice" or "rr.reference.alice".
-                    parts = m.topic.split(".")
-                    stream_kind = parts[0] if len(parts) >= 2 else "unknown"
-                    role = parts[1] if len(parts) >= 2 else "unknown"
-                    await websocket.send_json({
-                        "type": f"{stream_kind}.{role}",
-                        "stream": stream_kind,
-                        "role": role,
-                        "topic": m.topic,
-                        "msg_id": m.msg_id,
-                        "ts_ms": m.ts_ms,
-                        "payload": m.payload,
-                    })
-        except WebSocketDisconnect:
-            log.info("/api/v1/stream client disconnected (patient=%s)",
-                     patient_id)
-        except Exception as exc:
-            log.error("/api/v1/stream error: %s", exc)
-            try:
-                await websocket.close(code=1011)
-            except Exception:
-                pass
-        finally:
-            try:
-                bus.close()
-            except Exception:
-                pass
+    # /api/v1/stream WebSocket is in api_internals/websocket.py
+    # (PR-H4 split). Live HR/RR fan-out from the message bus.
+    from api_internals.websocket import register_stream_route  # noqa: PLC0415
+    register_stream_route(app)
 
     # Optional Prometheus /metrics. Off by default (I132).
     if install_prometheus_endpoint(app):
@@ -1012,9 +789,6 @@ def create_app(model_dir: Path = MODEL_DIR,
 
     return app
 
-
-# Imports used by /readyz handler at module scope.
-from fastapi.responses import JSONResponse  # noqa: E402
 
 # Module-level app for `uvicorn api:app`. Always succeeds now; endpoints
 # return 503 if the relevant model bundle is missing.
