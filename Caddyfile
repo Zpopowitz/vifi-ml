@@ -25,30 +25,9 @@
     # CSP is feasible. Tune as the UI grows.
     header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:"
 
-    # Streamlit UI at the root.
-    handle / {
-        reverse_proxy dashboard:8501
-    }
-    handle /static/* {
-        reverse_proxy dashboard:8501
-    }
-    handle /_stcore/* {
-        reverse_proxy dashboard:8501
-    }
-
-    # API (HTTP + WebSocket) under /api/.
-    handle /api/* {
-        reverse_proxy api:8000
-    }
-    handle /health {
-        reverse_proxy api:8000
-    }
-    handle /roadmap {
-        reverse_proxy api:8000
-    }
-
-    # Anything else 404s rather than leaking implementation paths.
-    handle {
-        respond 404
-    }
+    # The dashboard SPA + API are now both served by the api
+    # container at port 8000 (Streamlit dashboard service was
+    # removed; the static SPA lives under dashboard/ and is mounted
+    # by api.py via FastAPI StaticFiles). Single backend for both.
+    reverse_proxy api:8000
 }

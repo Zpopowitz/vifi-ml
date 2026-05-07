@@ -104,7 +104,12 @@ def _load_chain_key() -> Optional[bytes]:
 
 
 def _fsync_enabled() -> bool:
-    return os.environ.get("VIFI_AUDIT_FSYNC", "false").lower() == "true"
+    # Default ON. FDA postmarket surveillance expects audit records
+    # to survive a power-loss; the cost is a few ms per record. Set
+    # VIFI_AUDIT_FSYNC=false for unit tests / local dev with high
+    # write rates where the latency hurts more than the durability
+    # gain.
+    return os.environ.get("VIFI_AUDIT_FSYNC", "true").lower() == "true"
 
 
 def utc_now_iso() -> str:

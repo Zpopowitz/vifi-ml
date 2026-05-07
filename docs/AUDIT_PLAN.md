@@ -122,22 +122,23 @@ A4. **Inference-worker integration test** — currently 9 unit tests
 but zero integration test that publishes CSI to the bus and asserts
 a prediction comes out. Wire into the e2e job in A1. ~1 day.
 
-A5. **Audit chain + encryption keys enforced in prod**: runtime
-guard in `api.py` boot — if `VIFI_AUTH_MODE=api_key`, refuse to
-start without `VIFI_AUDIT_CHAIN_KEY` + `VIFI_AUDIT_ENCRYPTION_KEY`.
-Today both are silently optional even in prod profile. Single
-most-asked due-diligence question. ~half day.
+A5. ~~**Audit chain + encryption keys enforced in prod**~~ —
+**landed in PR-C**. `api.py:create_app` now refuses to start when
+`VIFI_AUTH_MODE=api_key` and either `VIFI_AUDIT_CHAIN_KEY` or
+`VIFI_AUDIT_ENCRYPTION_KEY` is missing. Override:
+`VIFI_ALLOW_INSECURE_AUDIT=1`. Tested in
+`tests/test_audit_key_guard.py` (3 cases).
 
-A6. **Audit-fsync default flip**: `audit.py` honors
-`VIFI_AUDIT_FSYNC=true` but defaults off. For pilot, default on
-(or refuse to start in prod without it). Add boot-time check that
-warns/fails if encryption + chain on but fsync off — that combo
-is a contradiction. ~half day.
+A6. ~~**Audit-fsync default flip**~~ — **landed in PR-C**.
+`audit.py:_fsync_enabled` now defaults `true`. Existing tests opt
+out via env when needed.
 
-A7. **Caddyfile in repo**: `docker-compose.yml:186` references it
-in the `prod` profile but the file isn't checked in. Add with
-secure defaults (HSTS, CSP, no MIME sniff, TLS 1.3 only). Without
-this the prod profile silently falls back to no-TLS. ~half day.
+A7. ~~**Caddyfile in repo**~~ — **retracted/landed in PR-C**:
+the file existed but referenced the deleted Streamlit `dashboard`
+service (legacy from before the SPA was folded into the api
+container). Replaced the per-handle proxy block with a single
+`reverse_proxy api:8000`. Secure-defaults headers (HSTS, CSP,
+nosniff, frame-deny) were already correct.
 
 A8. **API key scope enforcement**: `security.py` parses `scopes`
 from `VIFI_API_KEYS_FILE` per-key, but no route checks them.
@@ -145,10 +146,11 @@ Add `@require_scope("read:hr")` style decorator and apply to
 `/predict*`, `/identify`, `/api/v1/stream`. Tests in
 `tests/test_security_scopes.py`. ~1 day.
 
-A9. **Audit retention CLI**: `README.md:304` lists
-`tools/audit_retention.py` but the file does not exist. Add it
-(sweep records older than `VIFI_AUDIT_RETENTION_DAYS`, default
-2190 = 6 years per HIPAA). ~half day.
+A9. ~~**Audit retention CLI**~~ — **retracted**:
+`tools/audit_retention.py` actually exists (140 lines) and matches
+the spec — sweeps records older than `--max-age-days`, writes a
+deletion-record back to the audit log, requires explicit horizon
+to act. The audit-agent finding was wrong. No action needed.
 
 ### B. M2 pilot prep
 

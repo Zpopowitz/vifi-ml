@@ -773,6 +773,25 @@ def create_app(model_dir: Path = MODEL_DIR,
     from config import validate_at_boot as _validate_dsp  # noqa: PLC0415
     _validate_dsp()
 
+    # Production-mode audit guard: if api_key auth is on, require
+    # both the audit chain key and the encryption key. Either one
+    # alone is a footgun (encryption without chain leaves no tamper
+    # detection; chain without encryption leaves PHI in cleartext on
+    # disk). FDA postmarket surveillance expects both. Refuse to
+    # boot rather than silently run insecure.
+    if os.environ.get("VIFI_AUTH_MODE", "none").lower() == "api_key":
+        missing = [k for k in ("VIFI_AUDIT_CHAIN_KEY",
+                               "VIFI_AUDIT_ENCRYPTION_KEY")
+                   if not os.environ.get(k)]
+        if missing and os.environ.get("VIFI_ALLOW_INSECURE_AUDIT") != "1":
+            raise RuntimeError(
+                f"VIFI_AUTH_MODE=api_key but {missing} not set. "
+                "Both keys are required in prod (HIPAA + FDA "
+                "postmarket). Generate with `tools/setup_keys.sh` "
+                "or set VIFI_ALLOW_INSECURE_AUDIT=1 to override "
+                "(not recommended)."
+            )
+
     app = FastAPI(title="ViFi", version=VIFI_VERSION,
                   # Hide /openapi.json + /docs unless explicitly requested
                   # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
