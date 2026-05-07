@@ -196,11 +196,20 @@ to use the new geometry fields. Output: MAE by distance bin, MAE
 on-axis vs off-axis, MAE by posture. With 5+ sessions it tells you
 where the model fails. ~1 day.
 
-B3. **Continuous-monitor mode for `inference_worker`** — currently
-processes one window at a time. For a pilot, we need health
-metrics: windows/sec, suppression rate, OOD rate, model uptime.
-Wire into existing `observability.py` Prometheus endpoint.
-~1 day.
+B3. ~~**Continuous-monitor mode for `inference_worker`**~~ —
+**landed in PR-K**. New `observability.install_worker_metrics()`
+mirrors the existing `install_prometheus_endpoint` pattern but
+uses `start_http_server()` (worker has no FastAPI app) on a
+configurable port (`VIFI_WORKER_METRICS_PORT`, default 8001).
+Six metrics exposed:
+  - `vifi_inference_packets_total{patient_id}` — CSI ingest rate
+  - `vifi_inference_predictions_total{patient_id, kind=hr|rr}`
+  - `vifi_inference_windows_too_short_total{patient_id}` — sparse-window rate
+  - `vifi_inference_dlq_total{patient_id}` — poison-pill rate
+  - `vifi_inference_prediction_duration_seconds` — latency hist
+  - `vifi_inference_window_packets` — packets-per-window hist
+`loop()` gains an optional `metrics=` kwarg; when None, no
+counters increment (back-compat for tests). 6 new tests.
 
 B4. **Coverage ramp plan codified** — `pyproject.toml:140-146`
 mentions a 38→55→70→85 ramp but no milestones. Add to

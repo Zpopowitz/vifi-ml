@@ -47,6 +47,7 @@ from modules.bus import (  # noqa: E402
     hr_predicted,
     rr_predicted,
 )
+from observability import install_worker_metrics  # noqa: E402
 from preprocess import extract_features  # noqa: E402
 
 log = logging.getLogger("vifi.inference_worker")
@@ -261,7 +262,8 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
          from_id: str = LATEST,
          max_iterations: Optional[int] = None,
          stop: Optional["threading.Event"] = None,
-         consumer_name: Optional[str] = None) -> None:
+         consumer_name: Optional[str] = None,
+         metrics: Optional[dict] = None) -> None:
     """Subscribe -> buffer -> predict -> publish, with at-least-once
     consumer-group semantics (I083).
 
@@ -318,6 +320,8 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                     amps=np.asarray(m.payload["amps"], dtype=np.float32),
                 ))
                 pending_acks.append(m.msg_id)
+                if metrics is not None:
+                    metrics["packets_total"].labels(patient_id).inc()
             except (KeyError, TypeError, ValueError) as exc:
                 # Malformed CSI is a poison pill: re-delivering won't
                 # help. Route directly to DLQ (I086) and ACK so it
@@ -335,13 +339,28 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                     "delivery_count": 1,
                 }, ts_ms=m.ts_ms)
                 bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
+                if metrics is not None:
+                    metrics["dlq_total"].labels(patient_id).inc()
 
         now = time.time()
         if now - last_predict < stride_s:
             continue
-        pred = run_once(window, fs_resample, window_s, bundle)
+        if metrics is not None:
+            with metrics["prediction_duration_seconds"].labels(
+                    patient_id).time():
+                pred = run_once(window, fs_resample, window_s, bundle)
+        else:
+            pred = run_once(window, fs_resample, window_s, bundle)
         if pred is None:
+            if metrics is not None:
+                metrics["windows_too_short_total"].labels(patient_id).inc()
             continue
+        if metrics is not None:
+            metrics["window_packets"].labels(patient_id).observe(
+                pred["n_packets"])
+            metrics["predictions_total"].labels(patient_id, "hr").inc()
+            if "rr_bpm" in pred:
+                metrics["predictions_total"].labels(patient_id, "rr").inc()
         last_predict = now
         # ts_unix is the right edge of the prediction window.
         ts_unix = window._buf[-1].ts_unix if len(window) else now
@@ -402,6 +421,10 @@ def main() -> None:
 
     bus = bus_from_env()
     bundle = _load_model(args.model)
+    # Worker-process Prometheus endpoint on a separate port (gated by
+    # VIFI_METRICS_ENABLED). When disabled, returns (None, None) and
+    # the loop's `if metrics is not None` guards skip the calls.
+    _registry, metrics_handles = install_worker_metrics()
 
     # Graceful shutdown (I220): SIGTERM (Docker stop) breaks the loop's
     # next blocking bus read so we exit cleanly. Without this, rolling
@@ -427,6 +450,7 @@ def main() -> None:
             bundle=bundle,
             from_id=EARLIEST if args.from_start else LATEST,
             stop=stop_evt,
+            metrics=metrics_handles,
         )
     except KeyboardInterrupt:
         log.info("shutting down (KeyboardInterrupt)")

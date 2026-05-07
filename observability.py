@@ -154,3 +154,88 @@ def install_prometheus_endpoint(app) -> bool:
         )
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Worker-process metrics (inference_worker, audit_subscriber, ...)
+# ---------------------------------------------------------------------------
+#
+# The API exposes /metrics via FastAPI. Worker processes don't have a web
+# server, so we use prometheus_client's start_http_server() to expose a
+# /metrics endpoint on a separate port (default 8001).
+#
+# Returns the `registry` plus a dict of metric handles ready to .inc() /
+# .observe() on. Caller wires them into hot paths.
+
+def install_worker_metrics(default_port: int = 8001):
+    """Install Prometheus metrics for a worker process.
+
+    Returns (registry, metrics_dict) where metrics_dict is keyed by
+    name. If VIFI_METRICS_ENABLED is false or prometheus_client isn't
+    installed, returns (None, None) — callers must tolerate that
+    (do an `if metrics is not None` guard).
+
+    Port: VIFI_WORKER_METRICS_PORT env, else `default_port`.
+    """
+    if not metrics_enabled():
+        return None, None
+    try:
+        from prometheus_client import (
+            CollectorRegistry,
+            Counter,
+            Histogram,
+            start_http_server,
+        )
+    except ImportError:
+        logging.getLogger("vifi.observability").warning(
+            "VIFI_METRICS_ENABLED=true but prometheus_client not installed; "
+            "skipping worker metrics endpoint.",
+        )
+        return None, None
+
+    log = logging.getLogger("vifi.observability")
+    registry = CollectorRegistry()
+    metrics = {
+        "packets_total": Counter(
+            "vifi_inference_packets_total",
+            "CSI packets ingested by the inference worker",
+            ["patient_id"], registry=registry,
+        ),
+        "predictions_total": Counter(
+            "vifi_inference_predictions_total",
+            "Predictions emitted by the inference worker",
+            ["patient_id", "kind"], registry=registry,
+        ),
+        "windows_too_short_total": Counter(
+            "vifi_inference_windows_too_short_total",
+            "Windows where run_once returned None (insufficient packets)",
+            ["patient_id"], registry=registry,
+        ),
+        "dlq_total": Counter(
+            "vifi_inference_dlq_total",
+            "Malformed CSI messages routed to the DLQ",
+            ["patient_id"], registry=registry,
+        ),
+        "prediction_duration_seconds": Histogram(
+            "vifi_inference_prediction_duration_seconds",
+            "Wall-clock time spent in run_once()",
+            ["patient_id"],
+            buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+            registry=registry,
+        ),
+        "window_packets": Histogram(
+            "vifi_inference_window_packets",
+            "Packets per prediction window (sparse windows = signal "
+            "drop)",
+            ["patient_id"],
+            buckets=(16, 32, 64, 128, 256, 512, 1024, 2048),
+            registry=registry,
+        ),
+    }
+    port = int(os.environ.get("VIFI_WORKER_METRICS_PORT", default_port))
+    try:
+        start_http_server(port, registry=registry)
+        log.info("worker metrics: serving on :%d/metrics", port)
+    except OSError as exc:
+        log.warning("worker metrics port %d already in use: %s", port, exc)
+    return registry, metrics
