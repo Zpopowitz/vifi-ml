@@ -183,13 +183,18 @@ to act. The audit-agent finding was wrong. No action needed.
 
 ### B. M2 pilot prep
 
-B1. **CSI quality gate before training** —
-`tools/csi_quality_gate.py`. Reads a session, computes packet
-rate, missing-subcarrier %, noise floor, and refuses to add to
-training set if below thresholds. The session4 7.23 bpm fold
-would have been caught earlier with this. ~1.5 days. Tied to the
-new geometry metadata so flagging includes "subject_on_axis = false"
-sessions.
+B1. ~~**CSI quality gate before training**~~ — **landed in PR-I**.
+`tools/csi_quality_gate.py` reads `capture.txt.meta.json` +
+`session.json` for one session and returns OK / WARN / FAIL with
+exit codes 0/1/2. Three checks:
+  - `actual_packet_rate_hz` < `--min-packet-rate-hz` (default 50) → FAIL
+  - `actual_seconds` < `--min-duration-s` (default 100) → FAIL
+  - `subject_on_axis = false` → FAIL (geometry mismatch with training)
+  - `--strict-geometry` flag requires session.json with on-axis set
+The session4 fold (66.8 Hz packet rate, 120 s, no session.json) is
+the motivating regression test. Subcarrier-missing % + raw-CSI
+SNR checks deferred — meta-based gate is enough first cut and
+doesn't require parsing the capture file. 12 tests.
 
 B2. **Stratified eval reports** — extend `tools/eval_harness.py`
 to use the new geometry fields. Output: MAE by distance bin, MAE

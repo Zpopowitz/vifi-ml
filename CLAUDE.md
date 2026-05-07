@@ -10,6 +10,7 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - Training: `train.py` (baseline), `tools/retrain_on_real.py` (real captures), `tools/train_quantile_models.py` (CIs)
 - Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
 - Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+- **Operator status + commands:** `docs/STATUS.md` ← read first
 - Daily reproduction: `docs/QUICKSTART.md`
 - Active forward-plan / audit: `docs/AUDIT_PLAN.md`
 - ESP32-S3 firmware flashing: `docs/ESP32_SETUP.md`
