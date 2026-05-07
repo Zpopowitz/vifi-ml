@@ -21,7 +21,14 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 
 from security import (
@@ -32,6 +39,7 @@ from security import (
     authorize_websocket,
     get_cors_origins,
     redacted_exception_handler,
+    require_scope,
     validate_config_or_raise,
 )
 
@@ -912,7 +920,8 @@ def create_app(model_dir: Path = MODEL_DIR,
             n_samples=int(iq.shape[0]),
         )
 
-    @app.post("/predict", response_model=PredictResponse)
+    @app.post("/predict", response_model=PredictResponse,
+              dependencies=[Depends(require_scope("read:hr"))])
     def predict(req: IQRequest) -> PredictResponse:
         try:
             iq = np.asarray(req.iq_real, dtype=np.float32) + 1j * np.asarray(
@@ -922,7 +931,8 @@ def create_app(model_dir: Path = MODEL_DIR,
             raise HTTPException(status_code=400, detail=f"invalid IQ payload: {exc}")
         return _predict_iq(iq, req.fs)
 
-    @app.post("/predict/demo", response_model=PredictResponse)
+    @app.post("/predict/demo", response_model=PredictResponse,
+              dependencies=[Depends(require_scope("read:hr"))])
     def predict_demo(req: DemoRequest = DemoRequest()) -> PredictResponse:
         iq, _meta = generate_sample(
             duration_s=req.duration_s, fs=req.fs,
@@ -931,7 +941,8 @@ def create_app(model_dir: Path = MODEL_DIR,
         )
         return _predict_iq(iq, req.fs)
 
-    @app.post("/predict/csi", response_model=PredictResponse)
+    @app.post("/predict/csi", response_model=PredictResponse,
+              dependencies=[Depends(require_scope("read:hr"))])
     def predict_csi(req: CSIRequest) -> PredictResponse:
         try:
             csi = np.asarray(req.csi_amp, dtype=np.float32)
@@ -946,11 +957,13 @@ def create_app(model_dir: Path = MODEL_DIR,
                 raise HTTPException(status_code=400, detail="mask excluded all subcarriers")
         return _predict_iq(_csi_to_envelope(csi), req.fs)
 
-    @app.post("/predict/capture", response_model=CaptureResponse)
+    @app.post("/predict/capture", response_model=CaptureResponse,
+              dependencies=[Depends(require_scope("read:hr"))])
     def predict_capture(req: CaptureRequest) -> CaptureResponse:
         return _predict_capture(real_bundle, req)
 
-    @app.post("/identify", response_model=SubjectMatch)
+    @app.post("/identify", response_model=SubjectMatch,
+              dependencies=[Depends(require_scope("read:identity"))])
     def identify_subject(req: IdentifyRequest) -> SubjectMatch:
         return _identify_only(real_bundle, req)
 
@@ -981,7 +994,8 @@ def create_app(model_dir: Path = MODEL_DIR,
                     **_ROADMAP[capability]},
         )
 
-    @app.post("/predict/presence")
+    @app.post("/predict/presence",
+              dependencies=[Depends(require_scope("read:presence"))])
     def predict_presence(req: CSIRequest):
         from modules.presence import detect_presence, presence_score
         arr = np.asarray(req.csi_amp, dtype=np.float32)
@@ -1163,7 +1177,11 @@ def create_app(model_dir: Path = MODEL_DIR,
         # Browsers can't set headers on `new WebSocket()`, so we accept
         # ?api_key=... as well.
         await websocket.accept()
-        if not await authorize_websocket(websocket):
+        # WS streams HR + RR predictions (and reference) — gate on
+        # read:hr. Keys without granular metadata implicitly own all
+        # scopes, so this doesn't break the existing dev-mode flow.
+        if not await authorize_websocket(websocket,
+                                         required_scope="read:hr"):
             return
         patient_id = websocket.query_params.get("patient_id", "default")
         bus = bus_from_env()

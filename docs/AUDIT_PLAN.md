@@ -140,11 +140,18 @@ container). Replaced the per-handle proxy block with a single
 `reverse_proxy api:8000`. Secure-defaults headers (HSTS, CSP,
 nosniff, frame-deny) were already correct.
 
-A8. **API key scope enforcement**: `security.py` parses `scopes`
-from `VIFI_API_KEYS_FILE` per-key, but no route checks them.
-Add `@require_scope("read:hr")` style decorator and apply to
-`/predict*`, `/identify`, `/api/v1/stream`. Tests in
-`tests/test_security_scopes.py`. ~1 day.
+A8. ~~**API key scope enforcement**~~ — **landed in PR-D**.
+`security.require_scope(scope)` is now a FastAPI dependency
+factory. Applied to:
+  - `/predict`, `/predict/demo`, `/predict/csi`, `/predict/capture` → `read:hr`
+  - `/identify` → `read:identity`
+  - `/predict/presence` → `read:presence`
+  - `/api/v1/stream` (WebSocket) → `read:hr`
+Keys from `VIFI_API_KEYS` (env-var style, no metadata) implicitly
+own `*` (all scopes) for back-compat. Keys from
+`VIFI_API_KEYS_FILE` carry their declared scopes; missing scope
+on a granular key returns 403 with structured `scope_denied` log.
+Tested in `tests/test_security_scopes.py` (5 cases).
 
 A9. ~~**Audit retention CLI**~~ — **retracted**:
 `tools/audit_retention.py` actually exists (140 lines) and matches
@@ -293,6 +300,67 @@ F21. **Postmarket surveillance dashboard** — auto-generates the
 weekly/monthly metrics CMS expects (window count, OOD rate,
 suppression rate, MAE per active subject). Reuses the audit log;
 consumes `tools/audit_query.py`. ~1 week.
+
+### EMR / clinical integration (gated on first paid customer + BAA)
+
+The difference between "research tool" and "deployable clinical
+product" is whether vital signs flow into the patient's chart.
+Standards landscape:
+
+- **HL7 FHIR R4** — modern API. Vital signs become `Observation`
+  resources POSTed to a hospital's FHIR server. US ONC mandated
+  since 2022; right target for new builds.
+- **HL7 v2** — older, ~80% of EHRs still accept. Vitals as
+  `ORU^R01` over MLLP/TCP. Some sites only support v2.
+- **DICOM (waveforms)** — only relevant if shipping waveforms;
+  skip for now.
+
+Per-EMR onboarding effort (rough order):
+
+| EMR | Path | Realistic effort |
+|---|---|---|
+| Epic | App Orchard / Showroom + FHIR; per-customer enablement | 6-12 mo first contact → live |
+| Cerner / Oracle Health | Cerner Code program; FHIR R4 mature | 3-6 mo |
+| Athenahealth, eClinicalWorks | FHIR R4 + API key + OAuth | 1-3 mo |
+| Smaller / regional EHRs | Often v2 only; manual SFTP or VPN | per-customer project |
+
+Code-side scope (when this lights up):
+
+F-EMR1. **`modules/fhir.py`** — translate a `vifi_prediction`
+event into a FHIR `Observation` resource. Use the `fhir.resources`
+Python lib (Pydantic-based). ~1 week.
+
+F-EMR2. **`tools/fhir_publisher.py`** — bus subscriber consuming
+`hr.predicted.<patient_id>` + `rr.predicted.<patient_id>` and
+POSTing to a configured FHIR endpoint. Mirrors
+`tools/audit_subscriber.py` pattern. ~3 days.
+
+F-EMR3. **OAuth2 / SMART-on-FHIR client** — most FHIR servers
+require it (healthcare-specific OAuth scopes). 4-5 days. Likely
+leverages F7 (Auth0 / Keycloak) once that lands.
+
+F-EMR4. **Patient-record matching** — ViFi `patient_id` ↔ hospital
+MRN. Mapping table loaded at provisioning ("this room → this
+patient → this MRN"). ~2 days code + per-deployment config.
+
+F-EMR5. **Audit destination field** — every prediction sent to an
+EMR also logged with `destination=fhir_<endpoint>` so postmarket
+surveillance can prove what was sent.
+
+The hard parts that are NOT code:
+
+- **BAA per EMR vendor** before any production data flows.
+- **Hospital IT security review** (200-question SIG questionnaires
+  — `SECURITY.md` + `HIPAA_PILOT_CHECKLIST.md` already cover ~70%).
+- **Per-hospital validation** (Epic-customer-A often differs from
+  Epic-customer-B in FHIR profile expectations).
+- **Regulatory framing** — writing predictions back into an EMR
+  may move us from "device" to "clinical decision support," which
+  is a different FDA pathway. Confirm with regulatory consultant.
+
+Recommendation: gate this whole bucket on M3 (first paid customer +
+real BAA). Adding FHIR on top of an unvalidated model is putting
+the cart before the horse.
 
 ### Cloud deployment story (the long-term shipping path)
 

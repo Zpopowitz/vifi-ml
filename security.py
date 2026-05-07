@@ -277,8 +277,15 @@ def require_api_key(request: Request) -> None:
                             "invalid_or_missing_api_key")
 
 
-async def authorize_websocket(websocket: WebSocket) -> bool:
-    """WebSocket-friendly auth check. Closes the socket on failure."""
+async def authorize_websocket(websocket: WebSocket,
+                              *,
+                              required_scope: Optional[str] = None) -> bool:
+    """WebSocket-friendly auth check. Closes the socket on failure.
+
+    If `required_scope` is given, the key must own that scope (or
+    `"*"`). Keys from VIFI_API_KEYS (env var, no metadata) implicitly
+    own all scopes — only file-defined keys carry granular scopes.
+    """
     mode = get_auth_mode()
     if mode == AuthMode.NONE:
         return True
@@ -290,7 +297,65 @@ async def authorize_websocket(websocket: WebSocket) -> bool:
     if not _key_is_valid(key, keys):
         await websocket.close(code=1008, reason="invalid_or_missing_api_key")
         return False
+    if required_scope and not _key_has_scope(key, required_scope):
+        await websocket.close(code=1008, reason=f"missing_scope:{required_scope}")
+        return False
     return True
+
+
+def get_scopes_for_key(key: Optional[str]) -> set[str]:
+    """Return the scopes owned by `key`. Keys defined in
+    VIFI_API_KEYS_FILE carry their declared scopes; keys provided
+    via the simple VIFI_API_KEYS env var implicitly own `"*"` (all
+    scopes), since there's no place to attach metadata to them."""
+    if not key:
+        return set()
+    file_keys = _load_api_keys_file()
+    meta = file_keys.get(key)
+    if meta is None:
+        # Came from VIFI_API_KEYS (or unknown). Implicit all-scopes.
+        return {"*"}
+    scopes = meta.get("scopes")
+    if not isinstance(scopes, list):
+        # No scope list = treat as all-scopes (backwards compat).
+        return {"*"}
+    return set(scopes)
+
+
+def _key_has_scope(key: Optional[str], required: str) -> bool:
+    owned = get_scopes_for_key(key)
+    return "*" in owned or required in owned
+
+
+def require_scope(scope: str):
+    """FastAPI dependency factory.
+
+    `Depends(require_scope("read:hr"))` on a route enforces both:
+      1. AuthMiddleware has already let the request through (valid key)
+      2. The key owns `scope` (or "*").
+
+    In AuthMode.NONE, scopes are not checked — the API is open by
+    design. In AuthMode.API_KEY, missing scope = 403.
+    """
+    async def _dep(request: Request) -> None:
+        if get_auth_mode() == AuthMode.NONE:
+            return
+        key = _extract_key(request.headers, request.query_params)
+        if not _key_has_scope(key, scope):
+            log.warning(
+                "scope_denied",
+                extra={
+                    "event": "scope_denied",
+                    "client_ip": _client_ip(request),
+                    "path": request.url.path,
+                    "method": request.method,
+                    "required_scope": scope,
+                    "attempted_key_prefix": (key[:6] + "...") if key else "(none)",
+                },
+            )
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                f"missing_scope:{scope}")
+    return _dep
 
 
 # ---------------------------------------------------------------------------
