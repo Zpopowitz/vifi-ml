@@ -125,3 +125,25 @@ I163, I170, I203, I207. (Most are XS/S — pick up opportunistically.)
   bus-down banner, exponential backoff in BLE.
 
 Total: 254 tests pass (started at 67), 0 regressions.
+
+---
+
+## Coverage ramp (locked in PR-L)
+
+The `fail_under` floor in `pyproject.toml` is committed to a
+milestone-tied ramp instead of a single TBD number. Each step is
+gated on work that mechanically *should* lift coverage as a side
+effect — we never raise the floor without a corresponding
+test-producing PR landing first.
+
+| Milestone | Floor | Trigger PR(s) | Rationale |
+|---|---|---|---|
+| **M1 (today)** | **40** | PR-L (locks in current ~41% baseline) | Cheap insurance: regressions trip without us blocking on the existing untested infra/orchestrator paths. |
+| M2 (pilot) | 55 | PR-D (scope enforcement) + PR-I (CSI quality gate) + B-bucket M2 tests | Auth + data-quality paths gain real test surface for first patient deploy. |
+| M3 (multi-site) | 70 | F8 (multi-tenancy) + F10 (model registry) | Multi-tenancy refactor requires broader integration tests anyway; floor follows. |
+| M4 (pre-FDA) | 85 | F-bucket compliance work + safety-critical module sweep | FDA submission expects ~80%+ on safety-critical modules. Hardware-mock harnesses for loggers + capture orchestration ship here. |
+
+Owner reviews the floor at each milestone gate and bumps if the
+prior step's PRs landed. Skipping a step (e.g. jumping M2 → M4) is
+not allowed — the intermediate coverage floors are the safety net
+for the bigger refactors.

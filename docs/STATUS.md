@@ -31,7 +31,8 @@ landed nine PRs:
 | **G** | Audit-subscriber liveness check | `fc8add1` | ✅ |
 | **H1** | Bundle classes → `api_internals/` | `a23d179` | ✅ phase 1 |
 | **K** | Prometheus metrics in inference_worker | `c0969ac` | ✅ |
-| **I** | CSI quality gate (this PR) | TBD | ✅ |
+| **I** | CSI quality gate | `2ca0b0b` | ✅ |
+| **L** | Coverage-ramp commitment (this PR) | TBD | ✅ |
 
 Plus inline CI fixes (`b6b5561`, `20a047b`, `f42d9b5`, `c8c3df4`).
 
@@ -41,7 +42,6 @@ Pending PRs (gated on either home-data or quiet-stretch):
 |---|---|---|
 | H2 | Route extraction from `create_app()` | Quiet stretch (risky refactor) |
 | J | Stratified eval by geometry | Need 5+ sessions w/ geometry metadata |
-| L | Coverage-ramp commitment | Paperwork; do anytime |
 | B-format | 86-file ruff format sweep | Quiet stretch (noisy diff) |
 
 Five audit findings turned out to be **already implemented or

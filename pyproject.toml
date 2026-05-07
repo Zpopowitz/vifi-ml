@@ -138,12 +138,21 @@ parallel = false
 data_file = ".coverage"
 
 [tool.coverage.report]
-# Floor below current baseline (~41%) so a regression triggers but we
-# don't block on the existing untested infra/orchestrator paths.
-# Hardware loggers + dashboard interactivity + capture orchestration
-# need hardware-mock harnesses (tracked in DEFERRED_ITEMS.md). Ramp
-# this number as those land:  40 → 55 → 70 → 85.
-fail_under = 38
+# Floor commitment, ramped per milestone (see docs/DEFERRED_ITEMS.md
+# "Coverage ramp" section for the targets + rationale):
+#   M1 (now)       40   ← we are here (~41% baseline; 40 locks in
+#                       no-regression without tripping on flaky
+#                       deltas)
+#   M2 (pilot)     55   ← bump after CSI quality gate + scope
+#                       enforcement tests land in service of the
+#                       pilot
+#   M3 (multi-site) 70  ← multi-tenancy refactor will require
+#                       broader integration tests anyway
+#   M4 (pre-FDA)   85   ← FDA submission baseline; expects ~80%+
+#                       on the safety-critical modules
+# Hardware loggers + dashboard interactivity + capture
+# orchestration need hardware-mock harnesses to lift these higher.
+fail_under = 40
 show_missing = true
 exclude_also = [
     "raise NotImplementedError",

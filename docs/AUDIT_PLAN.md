@@ -216,9 +216,15 @@ Six metrics exposed:
 `loop()` gains an optional `metrics=` kwarg; when None, no
 counters increment (back-compat for tests). 6 new tests.
 
-B4. **Coverage ramp plan codified** — `pyproject.toml:140-146`
-mentions a 38→55→70→85 ramp but no milestones. Add to
-`docs/DEFERRED_ITEMS.md` with target dates aligned to M2/M3/M4.
+B4. ~~**Coverage ramp plan codified**~~ — **landed in PR-L**.
+`pyproject.toml` floor bumped 38 → 40 (locks in the current
+baseline without tripping on flaky deltas) and the comment now
+references the milestone-tied ramp table in
+`docs/DEFERRED_ITEMS.md` "Coverage ramp" section. Each step is
+gated on a PR that mechanically lifts coverage as a side effect
+(M2 = PR-D + PR-I + B-bucket tests; M3 = multi-tenancy refactor;
+M4 = compliance work). Floor never raised without a
+test-producing PR landing first.
 
 ---
 
