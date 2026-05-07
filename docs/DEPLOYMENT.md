@@ -15,7 +15,7 @@ For the milestone-aligned view of which one fits when, see
 | Shape | When | Cost (1 room) | Cost (10 rooms) | Network |
 |---|---|---|---|---|
 | **Single-host (laptop / mini PC)** | Pre-pilot demo, single subject | $0 (your laptop) or ~$170 | n/a | LAN |
-| **Edge boxes + central server** ⭐ | Multi-room pilot | ~$320 | ~$470 | LAN |
+| **Edge boxes + central server** ⭐ | Multi-room pilot | ~$340 | ~$1.4K | LAN |
 | **Edge boxes + cloud central** | Multi-clinic, post-pilot | ~$170 + cloud | ~$170 + cloud | Internet |
 
 The middle option is what most clinical pilots want. ⭐ recommended
@@ -52,7 +52,7 @@ One small "edge" box per room, one central server for the whole
 clinic. This is how real telemetry systems are built.
 
 ```
-ROOM 1 ─┐ ┌─Pi 5 (4 GB) (edge)─────────────────┐
+ROOM 1 ─┐ ┌─Pi 5 (2 GB) (edge)─────────────────┐
         │ │ ESP32 USB → csi_capture.py        │
         │ │ Polar BLE → hr_logger.py          │  bus traffic
         │ │ Vernier BLE → rr_logger.py        │ ─────────►┐
@@ -83,25 +83,26 @@ ROOM N ─┤ (...)                                    │ inference +     │
 | Item | Qty | ~Cost | Notes |
 |---|---|---|---|
 | Beelink S12 Pro N100 mini PC (8 GB / 256 GB SSD) | 1 | $170 | Central server. Runs your existing x86 Docker images unchanged |
-| Raspberry Pi 5 (4 GB) starter kit | 2 | $90 each | Edge boxes; USB 3.0 + faster CPU vs Pi 4; current shipping platform |
-| ESP32-S3-DevKitC-1U-N8R8 + antenna | 4 (2 TX + 2 RX) | ~$30 | One TX/RX pair per room |
-| Polar H10 chest strap | 1+ | $90 each | Reference HR; can share between rooms during testing |
-| Vernier GDX-RB respiration belt | 1+ | $200 each | Reference RR (when M1 RR captures begin) |
+| Raspberry Pi 5 (2 GB) starter kit (CanaKit or Adafruit) | 2 | $95 each | Edge boxes; 2 GB RAM is enough — CSI capture + BLE forwarders peak ~700 MB |
+| ESP32-S3-DevKitC-1U-N8R8 + external dipole antenna | 4 (2 TX + 2 RX) | ~$30 | One TX/RX pair per room |
+| Polar H10 chest strap | 1+ | $90 each | Reference HR; share across rooms during validation |
+| Vernier GDX-RB respiration belt | 1+ | $200 each | Reference RR; share across rooms during validation |
 | GL.iNet GL-AX1800 travel router (OR use clinic LAN) | 1 | $50 | Dedicated ViFi WiFi |
 | Cat6 Ethernet cable (router → central) | 1 | $10 | Wired beats WiFi for the central uplink |
-| **Total (2-room demo)** | | **~$530** | excludes Vernier belts |
+| **Total (2-room demo)** | | **~$540** | excludes Vernier belts |
 
 ### Hardware shopping list — 10-room clinical pilot
 
 | Item | Qty | Cost | Notes |
 |---|---|---|---|
 | Beelink S12 Pro N100 (central) | 1 | $170 | One per clinic floor (≤15 rooms) |
-| Raspberry Pi 5 (4 GB) edge | 10 | $900 | One per room; USB 3 + dual-band 802.11ac for faster CSI offload |
+| Raspberry Pi 5 (2 GB) edge starter kit | 10 | $950 | One per room; bundles PSU + microSD + case + fan |
 | ESP32-S3 pairs | 20 | $300 | One pair per room |
-| Polar H10 | 10 | $900 | One per active patient |
-| Vernier GDX-RB (when ready) | 10 | $2000 | Same |
+| Polar H10 | 1-3 | $90-270 | Shared across rooms during validation; not deployed in production |
+| Vernier GDX-RB | 1-3 | $200-600 | Shared across rooms during validation; not deployed in production |
 | Cisco Meraki MR-series AP (BAA-eligible) | 1-2 | $500-1000 | Replaces consumer router for HIPAA |
-| **Total (10-room pilot)** | | **~$5K** | + monitoring agreements |
+| **Total (10-room pilot validation)** | | **~$3K-3.4K** | + monitoring agreements |
+| **Per-room marginal (production, post-validation)** | | **~$65** | ESP32 pair + Pi Zero 2W; refs removed |
 
 For pre-pilot, the consumer travel router is fine. For real patients,
 the AP must be from a vendor that signs a BAA — see
@@ -295,3 +296,161 @@ From `IMPLEMENTATION_PLAN.md`:
 | `tools/setup-central.sh` | Available | Use today |
 | `tools/setup_keys.sh` | Available | Use today |
 | `tools/audit_query.py` | Available | Use today |
+
+---
+
+## Validation phase vs production deployment
+
+The cost story has two distinct phases. Don't conflate them.
+
+### Validation phase (you are here)
+
+- **Goal**: collect paired CSI + reference HR + reference RR across
+  4-5 sessions per subject, multiple subjects, to retrain models on
+  real data and quantify cross-session MAE.
+- **Hardware per room**: ESP32 pair + Pi 5 (2 GB) + temporary Polar
+  H10 + temporary Vernier GDX-RB.
+- **Per-room cost**: ~$140 (with shared refs) to ~$340 (dedicated refs).
+- **Duration**: weeks to a few months per subject.
+- **Why the Pi at edge**: BLE references can't run on the ESP32; you
+  need a host with BLE radios for Polar + Vernier alongside USB serial
+  for the ESP32 RX.
+
+### Production deployment (post-pilot, what ships)
+
+- **Goal**: monitor real patients with HR + RR predicted from CSI alone.
+  No reference belts on the patient.
+- **Hardware per room**: ESP32 pair + Pi Zero 2W (USB host).
+- **Per-room cost**: ~$65.
+- **Why the Pi Zero 2W is enough**: only doing USB serial → Redis
+  forwarding. No BLE, no inference, no UI. 512 MB RAM and one core
+  handle that with room to spare.
+- **Why not ESP32 standalone**: the ESP32 *does* have WiFi, and
+  `tools/esp32_csi_collector.py` is already a UDP listener variant,
+  but using the same WiFi for both sensing and uplink is firmware-
+  fragile in practice. A $15 USB host is the cleaner separation.
+
+The headline "$50 of ESP32-S3 hardware" stays true — that's the
+sensor BOM. $65/room is the realistic deployed cost including the
+host. The validation phase Pi 5 is a one-time spend per pilot site,
+not a per-room operational cost.
+
+---
+
+## Capture methodology — controlling room geometry
+
+WiFi CSI is sensitive to room geometry, antenna orientation, and
+subject position. The corpus is only useful if those are nailed down
+across sessions.
+
+### What matters most (in order)
+
+1. **Antenna orientation + polarization match.** Co-polarize TX and
+   RX antennas; lock them so they don't flop between sessions. This
+   is the single biggest source of avoidable noise.
+2. **Antenna height ≈ chest level.** You're sensing chest motion;
+   antennas need to "see" it. Floor or ceiling-mounted is a different
+   problem.
+3. **Subject in the Fresnel zone.** Somewhere between TX and RX,
+   chest in the propagation path. Within that zone, ±50 cm is
+   forgiving; outside it, signal vanishes.
+4. **Static multipath stability.** Fan running, person walking by, a
+   door opening — all of those move the multipath baseline. Note
+   anything that changes in the session `notes.txt`.
+
+### What matters less than you'd think
+
+- Exact board placement. ±20-30 cm is fine within the same room; the
+  static multipath shifts but the modulation from breathing is still
+  there. `calibration.py` per-session calibration absorbs the bias.
+
+### Securing antenna orientation
+
+The ESP32-S3-DevKitC-1U has a U.FL connector with a short pigtail to
+an external dipole antenna. The pigtail joint is what flops around.
+
+**Cheap, reversible (recommended for validation):**
+
+- **Velcro hook-and-loop strips** ($5/roll). One half on the antenna
+  body, one on a foam-board / plywood / 3D-print jig. Locks
+  orientation but lets you pull off to reposition.
+- **Cable ties on a wall bracket.** Locks orientation, ~$2.
+
+**Semi-permanent (recommended once geometry is locked):**
+
+- **3D-printed antenna cradle** screwed to a wall mount. STL files
+  available for SMA/U.FL antennas; JLC3DP prints for ~$3/unit.
+- **Heat-shrink tubing over the U.FL pigtail joint.** Locks the fold
+  angle without committing to a wall mount.
+
+**Production:**
+
+- **Patch antenna with magnetic or screw mount.** Replaces the dipole
+  entirely. Patch antennas have a directional pattern that's actually
+  better for sensing a single subject in a Fresnel zone, and they
+  don't need orientation jigs.
+
+### Validation session protocol
+
+For each capture:
+
+1. **Tape the floor** at TX, RX, subject positions. Reproducible
+   geometry session-to-session.
+2. **Same antenna orientation every session.** Velcro/zip-tie/jig.
+3. **Same chair, same height, same orientation.** No swapping office
+   chairs between sessions.
+4. **Vary one thing per session:**
+
+   | Session | Posture | Activity | Notes |
+   |---|---|---|---|
+   | 1 | Seated, upright | Still, screen work | Baseline |
+   | 2 | Lying supine | Still | Chest-down profile |
+   | 3 | Seated | Post-walk (5 min) | Elevated baseline |
+   | 4 | Standing | Still | Vertical chest motion |
+   | 5 | Seated | Reading + talking | Speech artifact |
+
+5. **Annotate `notes.txt`** in each session directory.
+
+Cross-room generalization is its own experiment, in M3. Don't change
+rooms during the M2 paired-capture corpus.
+
+---
+
+## Recommended Pi 5 SKU
+
+Single SKU: **Raspberry Pi 5 (2 GB RAM)**. Reputable buy paths:
+
+| Store | SKU | Price | Notes |
+|---|---|---|---|
+| **CanaKit** (US) | "Raspberry Pi 5 - 2GB" | $50 | Most reliable US stock |
+| **Adafruit** | Product 5812 | $50 | Same board, ships fast |
+| **PiShop.us** | "Raspberry Pi 5 (2 GB)" | $50 | Often has stock when others don't |
+| **DigiKey** | SC1112 | $50 | Already a DigiKey customer? Easy |
+
+Plus accessories (or buy a kit that bundles them):
+
+| Item | Cost | Notes |
+|---|---|---|
+| Official Pi 5 PSU (USB-C, 27 W / 5V/5A) | $12 | Don't skimp — Pi 5 brown-outs USB devices on weaker PSUs |
+| microSD (32 GB, A2 class) | $8 | SanDisk Extreme or Samsung Pro Endurance |
+| Case with active cooling fan | $15 | Pi 5 thermal-throttles without one under sustained load |
+
+**Easiest single buy**: CanaKit "Raspberry Pi 5 Starter Kit (2 GB)"
+bundles all of the above for ~$95. Recommended.
+
+### Why 2 GB is enough
+
+The combined load on the edge box during validation:
+
+| Process | Resident memory | What it does |
+|---|---|---|
+| `csi_capture.py` | ~80-120 MB | USB serial → Redis publish |
+| `hr_logger.py` | ~60-80 MB | Polar BLE → Redis |
+| `rr_logger.py` | ~80-120 MB | Vernier BLE → Redis (numpy for force FFT) |
+| Raspberry Pi OS Lite | ~150-250 MB | base OS |
+| Headroom (BLE stack + buffers) | ~200 MB | |
+| **Total** | **~600-800 MB** | |
+
+2 GB Pi 5 leaves ~1.2 GB free at peak. Bump to 4 GB only if you
+later add edge inference (XGBoost predict + 30-sec CSI buffer) or
+multi-patient per room.
