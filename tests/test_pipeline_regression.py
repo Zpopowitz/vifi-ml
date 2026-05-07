@@ -183,9 +183,9 @@ def test_calibrate_cfo_sfo_removes_linear_trend():
 
     per_sub_phase_std = np.std(cal_phase, axis=0)
     middle = per_sub_phase_std[20:-20]
-    assert np.median(middle) < 0.05, (
-        f"calibration didn't remove CFO; median phase std = {np.median(middle)}"
-    )
+    assert (
+        np.median(middle) < 0.05
+    ), f"calibration didn't remove CFO; median phase std = {np.median(middle)}"
 
 
 def test_estimate_cfo_returns_finite():

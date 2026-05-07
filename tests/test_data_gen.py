@@ -56,9 +56,9 @@ def test_spectral_peak_matches_rr():
     mask = freqs > 0.1
     peak_freq = freqs[mask][np.argmax(spec[mask])]
     expected_rr_hz = 18.0 / 60.0
-    assert abs(peak_freq - expected_rr_hz) < 0.1, (
-        f"Expected RR peak ~{expected_rr_hz:.3f} Hz, got {peak_freq:.3f}"
-    )
+    assert (
+        abs(peak_freq - expected_rr_hz) < 0.1
+    ), f"Expected RR peak ~{expected_rr_hz:.3f} Hz, got {peak_freq:.3f}"
 
 
 def test_dataset_save_load(tmp_path):

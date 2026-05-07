@@ -44,9 +44,9 @@ def test_in_distribution_scores_are_low():
     holdout = _gaussian_features(rng, 1000, 9)
     d2 = det.score(holdout)
     frac_above = float(np.mean(d2 > det.threshold))
-    assert frac_above < 0.05, (
-        f"in-distribution rejection rate {frac_above:.2%} too high"
-    )
+    assert (
+        frac_above < 0.05
+    ), f"in-distribution rejection rate {frac_above:.2%} too high"
 
 
 def test_out_of_distribution_scores_are_high():

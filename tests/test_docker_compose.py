@@ -55,16 +55,16 @@ def test_simulator_is_dev_profile_only(compose):
     up`) -- only with `--profile dev`."""
     sim = compose["services"].get("simulator")
     assert sim is not None, "simulator service missing"
-    assert sim.get("profiles") == ["dev"], (
-        f"simulator must be behind the 'dev' profile; got {sim.get('profiles')}"
-    )
+    assert sim.get("profiles") == [
+        "dev"
+    ], f"simulator must be behind the 'dev' profile; got {sim.get('profiles')}"
 
 
 def test_redis_exposes_6379(compose):
     redis = compose["services"]["redis"]
-    assert any(":6379" in p for p in redis["ports"]), (
-        f"redis must expose 6379; got {redis['ports']}"
-    )
+    assert any(
+        ":6379" in p for p in redis["ports"]
+    ), f"redis must expose 6379; got {redis['ports']}"
 
 
 def test_api_exposes_8000_and_8501(compose):
@@ -73,9 +73,9 @@ def test_api_exposes_8000_and_8501(compose):
     api = compose["services"]["api"]
     ports = api["ports"]
     assert any("8000" in p for p in ports), f"api must expose 8000; got {ports}"
-    assert any("8501" in p for p in ports), (
-        f"api must alias 8501 → 8000 for dashboard URL compat; got {ports}"
-    )
+    assert any(
+        "8501" in p for p in ports
+    ), f"api must alias 8501 → 8000 for dashboard URL compat; got {ports}"
 
 
 def test_compose_does_not_inherit_host_vifi_bus_url():
@@ -129,15 +129,15 @@ def test_audit_log_volume_persists_across_restarts(compose):
     user can't write to a host directory owned by root."""
     audit = compose["services"]["audit_subscriber"]
     volumes = audit.get("volumes", [])
-    assert any(":/app/data/audit" in v for v in volumes), (
-        f"audit_subscriber must mount /app/data/audit; got {volumes}"
-    )
+    assert any(
+        ":/app/data/audit" in v for v in volumes
+    ), f"audit_subscriber must mount /app/data/audit; got {volumes}"
     # And it must be a named volume, not a host bind mount, to avoid
     # the UID-mismatch trap.
     top_volumes = compose.get("volumes", {})
-    assert "audit_data" in top_volumes, (
-        "named volume `audit_data` must be declared at the top level"
-    )
+    assert (
+        "audit_data" in top_volumes
+    ), "named volume `audit_data` must be declared at the top level"
 
 
 def test_workers_use_patient_id_env(compose):
@@ -146,9 +146,9 @@ def test_workers_use_patient_id_env(compose):
     services = compose["services"]
     for name in ("inference_worker", "audit_subscriber", "simulator"):
         cmd = str(services[name].get("command", ""))
-        assert "${VIFI_PATIENT_ID" in cmd, (
-            f"{name} should parameterize patient id via env var; got: {cmd!r}"
-        )
+        assert (
+            "${VIFI_PATIENT_ID" in cmd
+        ), f"{name} should parameterize patient id via env var; got: {cmd!r}"
 
 
 def test_every_app_service_has_its_own_healthcheck(compose):
@@ -169,17 +169,17 @@ def test_workers_healthcheck_pings_redis(compose):
     for name in ("inference_worker", "audit_subscriber"):
         hc = services[name].get("healthcheck", {})
         cmd = hc.get("test", [])
-        assert any("redis" in str(c) for c in cmd), (
-            f"{name} healthcheck should ping Redis; got {cmd}"
-        )
+        assert any(
+            "redis" in str(c) for c in cmd
+        ), f"{name} healthcheck should ping Redis; got {cmd}"
 
 
 def test_api_healthcheck_uses_health_endpoint(compose):
     api = compose["services"]["api"]
     cmd = api.get("healthcheck", {}).get("test", [])
-    assert any("/health" in str(c) for c in cmd), (
-        f"api healthcheck should curl /health; got {cmd}"
-    )
+    assert any(
+        "/health" in str(c) for c in cmd
+    ), f"api healthcheck should curl /health; got {cmd}"
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +217,9 @@ def test_caddy_is_prod_profile_only(compose):
     localhost; Caddy must not start unless --profile prod is passed."""
     caddy = compose["services"].get("caddy")
     assert caddy is not None, "caddy service missing"
-    assert caddy.get("profiles") == ["prod"], (
-        f"caddy must be behind 'prod' profile; got {caddy.get('profiles')}"
-    )
+    assert caddy.get("profiles") == [
+        "prod"
+    ], f"caddy must be behind 'prod' profile; got {caddy.get('profiles')}"
 
 
 def test_caddy_exposes_443_and_80(compose):
