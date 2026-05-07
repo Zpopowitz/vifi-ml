@@ -77,7 +77,12 @@ def test_check_csi_serial_passes_when_csi_rows_appear(tmp_path):
 
 
 def test_check_csi_serial_fails_on_missing_port():
-    ok, detail = preflight._check_csi_serial("/dev/ttyDOES_NOT_EXIST")
+    # Mock pyserial so the missing-port branch is reachable in CI
+    # environments without pyserial installed (it's lazy-imported in
+    # tools/preflight.py since it's only needed on hardware hosts).
+    fake_serial_mod = MagicMock()
+    with patch.dict(sys.modules, {"serial": fake_serial_mod}):
+        ok, detail = preflight._check_csi_serial("/dev/ttyDOES_NOT_EXIST")
     assert not ok
     assert "doesn't exist" in detail
 

@@ -34,9 +34,10 @@ def _stub_features(_cap, _log, *args, **kwargs):
     return X, y
 
 
-def test_loso_requires_at_least_two_sessions():
+def test_loso_requires_at_least_two_sessions(tmp_path):
+    # Paths don't need to exist — the function rejects on len < 2 first.
     with pytest.raises(ValueError):
-        eval_loso.loso_eval([(Path("/tmp/c1.txt"), Path("/tmp/h1.csv"))])
+        eval_loso.loso_eval([(tmp_path / "c1.txt", tmp_path / "h1.csv")])
 
 
 def test_loso_holds_each_session_out_once(tmp_path):
