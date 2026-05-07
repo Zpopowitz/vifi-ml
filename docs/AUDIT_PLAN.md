@@ -123,10 +123,18 @@ tools.model_swap {list,inspect,promote,rollback} <base>`.
 `current` symlink at boot via `resolve_active_model_dir()` so old
 in-place layouts and new versioned layouts both work. 9 tests.
 
-A3. **Audit-subscriber liveness check** — `tools/audit_health.py`.
-No operator-level "is the audit subscriber actually consuming?"
-check today. Reads `audit_dir/`'s newest file mtime + Redis
-consumer-group XPENDING for the audit consumer. ~half day.
+A3. ~~**Audit-subscriber liveness check**~~ — **landed in PR-G**.
+`tools/audit_health.py`: combines (1) newest audit JSONL mtime
+on disk and (2) per-topic `pending_count` for the `audit`
+consumer group into a single OK / WARN / FAIL verdict + matching
+exit code (0 / 1 / 2) for cron / monitoring scrape. Heuristics:
+stale newest file + bus activity = FAIL (subscriber stuck);
+empty dir + bus activity = FAIL; high pending count = WARN; bus
+unreachable = FAIL. CLI:
+`python -m tools.audit_health --patient-id room-3 [--quiet]`.
+9 tests covering missing dir / empty+idle / empty+activity /
+stale+activity / high pending / unreachable bus / happy path /
+exit codes / pending_count() exception tolerance.
 
 A4. ~~**Inference-worker integration test**~~ — **retracted**:
 ground-truthed during PR-F. `tests/test_inference_worker.py`
