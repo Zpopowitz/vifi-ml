@@ -24,6 +24,7 @@ from tools.run_paired_session import (  # noqa: E402
     run_session,
     session_dir_name,
 )
+from tools.validate_session_metadata import _validate_one  # noqa: E402
 
 
 def _base_args(**overrides) -> Namespace:
@@ -171,9 +172,6 @@ def test_geometry_fields_propagated_when_set():
 
 def test_geometry_fields_validate_in_locked_schema(tmp_path):
     """Validator accepts well-formed geometry fields and rejects junk."""
-    import json
-    from tools.validate_session_metadata import _validate_one
-
     good = build_session_metadata(_base_args(
         tx_rx_distance_m=2.0, subject_to_tx_distance_m=1.0,
         subject_on_axis=True, antenna_type="external_dipole",
