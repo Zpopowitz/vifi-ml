@@ -21,6 +21,7 @@ without an explicit horizon to prevent accidental nuking.
 
 CAUTION: this is a one-way operation. Always test on a copy first.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,7 +45,7 @@ def _parse_filename_date(path: Path) -> datetime | None:
     name = path.stem
     if not name.startswith("audit-"):
         return None
-    date_part = name[len("audit-"):].rstrip("Z")
+    date_part = name[len("audit-") :].rstrip("Z")
     try:
         return datetime.strptime(date_part, "%Y-%m-%d").replace(
             tzinfo=timezone.utc,
@@ -53,8 +54,13 @@ def _parse_filename_date(path: Path) -> datetime | None:
         return None
 
 
-def sweep(audit_dir: Path, max_age_days: int, *, dry_run: bool = False,
-          now: datetime | None = None) -> dict:
+def sweep(
+    audit_dir: Path,
+    max_age_days: int,
+    *,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> dict:
     """Delete audit files older than `max_age_days`. Returns a summary."""
     if max_age_days <= 0:
         raise ValueError("max_age_days must be > 0; refusing to act.")
@@ -75,8 +81,12 @@ def sweep(audit_dir: Path, max_age_days: int, *, dry_run: bool = False,
         if dry_run:
             log.info("[DRY RUN] would delete %s (%d bytes)", path, size_bytes)
         else:
-            log.info("deleting %s (%d bytes, age %s)",
-                     path, size_bytes, (now or datetime.now(timezone.utc)) - d)
+            log.info(
+                "deleting %s (%d bytes, age %s)",
+                path,
+                size_bytes,
+                (now or datetime.now(timezone.utc)) - d,
+            )
             path.unlink()
         deleted.append(path)
 
@@ -94,14 +104,16 @@ def sweep(audit_dir: Path, max_age_days: int, *, dry_run: bool = False,
     if deleted and not dry_run:
         try:
             writer = AuditLogWriter(audit_dir=audit_dir)
-            writer.write({
-                "event": "audit_retention_sweep",
-                "operator": os.environ.get("USER", "unknown"),
-                "max_age_days": max_age_days,
-                "cutoff_iso": cutoff.isoformat(),
-                "deleted_paths": summary["deleted_paths"],
-                "n_deleted": summary["n_deleted"],
-            })
+            writer.write(
+                {
+                    "event": "audit_retention_sweep",
+                    "operator": os.environ.get("USER", "unknown"),
+                    "max_age_days": max_age_days,
+                    "cutoff_iso": cutoff.isoformat(),
+                    "deleted_paths": summary["deleted_paths"],
+                    "n_deleted": summary["n_deleted"],
+                }
+            )
             writer.close()
         except Exception as exc:
             log.error("could not record retention sweep: %s", exc)
@@ -111,14 +123,23 @@ def sweep(audit_dir: Path, max_age_days: int, *, dry_run: bool = False,
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--audit-dir", type=Path,
-                   default=Path(os.environ.get("VIFI_AUDIT_DIR",
-                                               "data/audit")))
-    p.add_argument("--max-age-days", type=int, required=True,
-                   help="Delete files older than this many days. "
-                        "HIPAA floor is ~6 years (2200 days).")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Print what would be deleted without deleting.")
+    p.add_argument(
+        "--audit-dir",
+        type=Path,
+        default=Path(os.environ.get("VIFI_AUDIT_DIR", "data/audit")),
+    )
+    p.add_argument(
+        "--max-age-days",
+        type=int,
+        required=True,
+        help="Delete files older than this many days. "
+        "HIPAA floor is ~6 years (2200 days).",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be deleted without deleting.",
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
@@ -132,8 +153,10 @@ def main() -> None:
         return
 
     summary = sweep(args.audit_dir, args.max_age_days, dry_run=args.dry_run)
-    print(f"deleted {summary['n_deleted']} kept {summary['n_kept']} "
-          f"skipped {summary['n_skipped']}")
+    print(
+        f"deleted {summary['n_deleted']} kept {summary['n_kept']} "
+        f"skipped {summary['n_skipped']}"
+    )
 
 
 if __name__ == "__main__":

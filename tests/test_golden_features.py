@@ -13,6 +13,7 @@ When a golden value legitimately changes:
 These tests use fixed seeds so they're stable across runs. They're
 NOT marked slow — they should always run on every commit.
 """
+
 from __future__ import annotations
 
 import sys
@@ -32,8 +33,12 @@ from preprocess import FEATURE_NAMES, extract_features
 @pytest.fixture
 def sample():
     iq, meta = generate_sample(
-        duration_s=10.0, fs=100.0,
-        hr_bpm=72.0, rr_bpm=18.0, snr_db=25.0, seed=42,
+        duration_s=10.0,
+        fs=100.0,
+        hr_bpm=72.0,
+        rr_bpm=18.0,
+        snr_db=25.0,
+        seed=42,
     )
     return iq, meta
 
@@ -61,9 +66,7 @@ def test_hr_peak_is_in_band(sample):
     hr_peak_hz = float(feats[hr_peak_hz_idx])
     # 72 bpm = 1.2 Hz; allow a generous band but assert physically
     # plausible.
-    assert 0.9 <= hr_peak_hz <= 1.8, (
-        f"HR peak {hr_peak_hz} Hz outside HR_BAND_HZ"
-    )
+    assert 0.9 <= hr_peak_hz <= 1.8, f"HR peak {hr_peak_hz} Hz outside HR_BAND_HZ"
 
 
 def test_rr_peak_is_in_band(sample):
@@ -72,9 +75,7 @@ def test_rr_peak_is_in_band(sample):
     feats = extract_features(iq, fs=meta.fs)
     rr_peak_hz_idx = FEATURE_NAMES.index("rr_peak_hz")
     rr_peak_hz = float(feats[rr_peak_hz_idx])
-    assert 0.15 <= rr_peak_hz <= 0.6, (
-        f"RR peak {rr_peak_hz} Hz outside RR_BAND_HZ"
-    )
+    assert 0.15 <= rr_peak_hz <= 0.6, f"RR peak {rr_peak_hz} Hz outside RR_BAND_HZ"
 
 
 def test_too_short_input_rejected():

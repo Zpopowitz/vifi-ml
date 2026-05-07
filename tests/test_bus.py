@@ -4,6 +4,7 @@ Covers the in-memory backend end-to-end. The Redis backend is exercised
 indirectly via the same protocol; tests for it live in
 tests/test_bus_redis.py and are skipped when no Redis is reachable.
 """
+
 from __future__ import annotations
 
 import sys
@@ -34,6 +35,7 @@ from modules.bus import (  # noqa: E402
 # Topic helpers
 # ---------------------------------------------------------------------------
 
+
 def test_topic_helpers_are_namespaced_by_patient():
     assert csi_raw("p1") == "csi.raw.p1"
     assert hr_reference("p1") == "hr.reference.p1"
@@ -52,6 +54,7 @@ def test_all_topics_covers_each_stream_and_role():
 # Message-id ordering
 # ---------------------------------------------------------------------------
 
+
 def test_id_parser_handles_sentinels_and_normal_ids():
     assert _parse_id(EARLIEST) == (0, 0)
     assert _parse_id("123-4") == (123, 4)
@@ -68,6 +71,7 @@ def test_id_ordering_compares_ts_then_seq():
 # ---------------------------------------------------------------------------
 # In-memory bus: publish + read
 # ---------------------------------------------------------------------------
+
 
 def test_publish_assigns_monotonic_ids_within_same_ms():
     bus = InMemoryBus()
@@ -141,13 +145,16 @@ def test_read_multiplexes_topics_in_global_id_order():
 
     msgs = bus.read({"a": EARLIEST, "b": EARLIEST}, block_ms=0)
     assert [(m.topic, m.payload["n"]) for m in msgs] == [
-        ("a", 1), ("b", 2), ("a", 3),
+        ("a", 1),
+        ("b", 2),
+        ("a", 3),
     ]
 
 
 # ---------------------------------------------------------------------------
 # History
 # ---------------------------------------------------------------------------
+
 
 def test_history_filters_by_time_range():
     bus = InMemoryBus()
@@ -166,14 +173,14 @@ def test_history_unknown_topic_is_empty():
 # subscribe() generator
 # ---------------------------------------------------------------------------
 
+
 def test_subscribe_yields_until_stop_event_set():
     bus = InMemoryBus()
     stop = threading.Event()
     received: list[int] = []
 
     def consumer():
-        for m in subscribe(bus, ["t"], from_id=EARLIEST,
-                           block_ms=50, stop=stop):
+        for m in subscribe(bus, ["t"], from_id=EARLIEST, block_ms=50, stop=stop):
             received.append(m.payload["n"])
 
     th = threading.Thread(target=consumer)
@@ -194,6 +201,7 @@ def test_subscribe_yields_until_stop_event_set():
 # ---------------------------------------------------------------------------
 # bus_from_env factory
 # ---------------------------------------------------------------------------
+
 
 def test_bus_from_env_defaults_to_in_memory(monkeypatch):
     monkeypatch.delenv("VIFI_BUS_URL", raising=False)

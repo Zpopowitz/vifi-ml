@@ -1,4 +1,5 @@
 """Tests for roadmap stubs and 501 endpoints."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,13 +15,16 @@ def client():
     return TestClient(create_app(Path("models")))
 
 
-@pytest.mark.parametrize("path,method", [
-    ("/predict/apnea",         "post"),
-    ("/predict/gait",          "post"),
-    ("/predict/falls",         "post"),
-    ("/transients",            "get"),
-    ("/predict/multi_patient", "post"),
-])
+@pytest.mark.parametrize(
+    "path,method",
+    [
+        ("/predict/apnea", "post"),
+        ("/predict/gait", "post"),
+        ("/predict/falls", "post"),
+        ("/transients", "get"),
+        ("/predict/multi_patient", "post"),
+    ],
+)
 def test_roadmap_endpoints_return_501(client, path, method):
     r = getattr(client, method)(path)
     assert r.status_code == 501
@@ -35,12 +39,11 @@ def test_stub_call_emits_telemetry_log(client, caplog):
     accidental hits in deployed environments are visible even when
     Prometheus is off."""
     import logging
+
     with caplog.at_level(logging.INFO, logger="vifi.api"):
         client.post("/predict/apnea")
-    msgs = [r.getMessage() for r in caplog.records
-            if r.name == "vifi.api"]
-    assert any("stub_endpoint_called" in m and "capability=apnea" in m
-               for m in msgs)
+    msgs = [r.getMessage() for r in caplog.records if r.name == "vifi.api"]
+    assert any("stub_endpoint_called" in m and "capability=apnea" in m for m in msgs)
 
 
 def test_roadmap_listing(client):
@@ -51,8 +54,7 @@ def test_roadmap_listing(client):
     assert body["shipped"] == ["hr"]
     assert body["synthetic_only"] == ["rr"]
     planned_caps = set(body["planned"].keys())
-    assert {"apnea", "gait", "falls",
-            "transients", "multi_patient"} <= planned_caps
+    assert {"apnea", "gait", "falls", "transients", "multi_patient"} <= planned_caps
     # presence is now shipped, not in the planned list
     assert "presence" not in planned_caps
 
@@ -62,6 +64,7 @@ def test_presence_endpoint_works(client):
     import numpy as np
 
     from data_gen import generate_sample
+
     iq, _ = generate_sample(hr_bpm=75.0, rr_bpm=18.0, snr_db=25.0, seed=0)
     gains = np.abs(np.random.default_rng(0).standard_normal(16)) + 0.2
     csi = (np.abs(iq)[:, None] * gains[None, :]).astype(float)
@@ -77,6 +80,7 @@ def test_module_stubs_import_and_raise():
 
     from modules import apnea, falls, gait, transient_events
     from modules.four_node_sync import FourNodeArray
+
     dummy = np.zeros((100, 8), dtype=np.float32)
 
     # presence has been implemented (see test_tools.py), no longer a stub.

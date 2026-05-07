@@ -10,6 +10,7 @@ Both routes capture `synthetic_bundle` + `real_bundle` by
 reference so lazy-loading state stays consistent with the predict
 path.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,11 +23,13 @@ from api import MODEL_VERSION, VIFI_VERSION, HealthResponse
 from api_internals.bundles import RealModelBundle, SyntheticModelBundle
 
 
-def register_meta_routes(app: FastAPI,
-                        synthetic_bundle: SyntheticModelBundle,
-                        real_bundle: RealModelBundle,
-                        model_dir: Path,
-                        real_model_dir: Path) -> None:
+def register_meta_routes(
+    app: FastAPI,
+    synthetic_bundle: SyntheticModelBundle,
+    real_bundle: RealModelBundle,
+    model_dir: Path,
+    real_model_dir: Path,
+) -> None:
     """Wire `/readyz` + `/health` onto `app`."""
 
     @app.get("/readyz")
@@ -41,10 +44,12 @@ def register_meta_routes(app: FastAPI,
         """
         ready = synthetic_bundle.is_loaded or real_bundle.is_loaded
         return JSONResponse(
-            {"ready": ready,
-             "synthetic_loaded": synthetic_bundle.is_loaded,
-             "real_loaded": real_bundle.is_loaded,
-             "code_version": VIFI_VERSION},
+            {
+                "ready": ready,
+                "synthetic_loaded": synthetic_bundle.is_loaded,
+                "real_loaded": real_bundle.is_loaded,
+                "code_version": VIFI_VERSION,
+            },
             status_code=200 if ready else 503,
         )
 
@@ -60,10 +65,8 @@ def register_meta_routes(app: FastAPI,
                 synthetic_bundle.load()
                 synth_loaded = True
                 synth_feature_names = synthetic_bundle.feature_names
-                synth_hr_tol = float(
-                    synthetic_bundle.metadata.get("hr_tol_bpm", 0.0))
-                synth_rr_tol = float(
-                    synthetic_bundle.metadata.get("rr_tol_bpm", 0.0))
+                synth_hr_tol = float(synthetic_bundle.metadata.get("hr_tol_bpm", 0.0))
+                synth_rr_tol = float(synthetic_bundle.metadata.get("rr_tol_bpm", 0.0))
                 synth_meta = synthetic_bundle.metadata
             except HTTPException as exc:
                 synth_meta = {"error": exc.detail}

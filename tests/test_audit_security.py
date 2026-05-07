@@ -6,6 +6,7 @@ Two pieces:
   2. Optional Fernet record-level encryption works end-to-end (encrypt
      on write, decrypt on read returns the original record).
 """
+
 from __future__ import annotations
 
 import json
@@ -32,10 +33,12 @@ def _reset_modules():
 
 def _import_audit():
     from audit import AuditLogWriter
+
     return AuditLogWriter
 
 
 # Pseudonymization
+
 
 def test_subject_id_is_pseudonymized_on_write(tmp_path, monkeypatch):
     monkeypatch.setenv("VIFI_PSEUDO_SALT", "x" * 32)
@@ -81,10 +84,12 @@ def test_records_without_subject_field_unchanged(tmp_path, monkeypatch):
 
 # Fernet encryption
 
+
 @pytest.fixture
 def fernet_key():
     pytest.importorskip("cryptography")
     from cryptography.fernet import Fernet
+
     return Fernet.generate_key().decode("ascii")
 
 
@@ -94,8 +99,7 @@ def test_encrypted_audit_round_trip(tmp_path, monkeypatch, fernet_key):
     AuditLogWriter = _import_audit()
     w = AuditLogWriter(audit_dir=tmp_path)
     assert w.encrypted
-    w.write({"subject_id": "founder", "hr_pred": 73.5,
-             "model_version": "xgb-1.0"})
+    w.write({"subject_id": "founder", "hr_pred": 73.5, "model_version": "xgb-1.0"})
     w.close()
 
     line = json.loads(next(tmp_path.glob("audit-*.jsonl")).read_text().strip())
@@ -103,9 +107,10 @@ def test_encrypted_audit_round_trip(tmp_path, monkeypatch, fernet_key):
     assert "hr_pred" not in line
 
     from cryptography.fernet import Fernet
-    inner = json.loads(Fernet(fernet_key).decrypt(
-        line["ciphertext"].encode("ascii")
-    ).decode("utf-8"))
+
+    inner = json.loads(
+        Fernet(fernet_key).decrypt(line["ciphertext"].encode("ascii")).decode("utf-8")
+    )
     assert inner["hr_pred"] == 73.5
     assert inner["model_version"] == "xgb-1.0"
     assert inner["subject_id"].startswith("pseudo:")

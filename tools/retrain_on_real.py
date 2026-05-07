@@ -18,6 +18,7 @@ Optional per-session calibration:
         --calibration-mode per_session \\
         --model-dir models_real_calibrated
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,12 +52,17 @@ from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 def _frozen_seed(default: int = 42) -> int:
     """Reproducibility seed. Uses VIFI_SEED env var if set, else `default`."""
     import os
+
     return int(os.environ.get("VIFI_SEED", str(default)))
 
 
 def build_feature_matrix(
-    capture_path: Path, hr_log_path: Path, start_offset_s: float,
-    window_s: float, stride_s: float, fs_resample: float,
+    capture_path: Path,
+    hr_log_path: Path,
+    start_offset_s: float,
+    window_s: float,
+    stride_s: float,
+    fs_resample: float,
     calibration_mode: str = "none",
     calibration_seconds: float = 30.0,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -78,11 +84,13 @@ def build_feature_matrix(
     while t + window_s <= t_end:
         mask = (csi_unix_ts >= t) & (csi_unix_ts < t + window_s)
         if mask.sum() < 50:
-            t += stride_s; continue
+            t += stride_s
+            continue
         win_ts, win_amps = csi_unix_ts[mask], amps[mask]
         grid = np.arange(win_ts[0], win_ts[-1], 1.0 / fs_resample)
         if grid.size < 64:
-            t += stride_s; continue
+            t += stride_s
+            continue
         resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
         for s in range(win_amps.shape[1]):
             resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
@@ -111,29 +119,48 @@ def build_feature_matrix(
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--pair", action="append", nargs=2,
-                   metavar=("CAPTURE", "HR_LOG"), required=True,
-                   help="repeat for each paired session")
+    p.add_argument(
+        "--pair",
+        action="append",
+        nargs=2,
+        metavar=("CAPTURE", "HR_LOG"),
+        required=True,
+        help="repeat for each paired session",
+    )
     p.add_argument("--start-offset", type=float, default=0.0)
     p.add_argument("--window", type=float, default=10.0)
     p.add_argument("--stride", type=float, default=5.0)
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--val-frac", type=float, default=0.2)
     p.add_argument("--model-dir", type=Path, default=Path("models_real"))
-    p.add_argument("--no-versioned", action="store_true",
-                   help="legacy mode: write artifacts in-place under "
-                        "--model-dir instead of the versioned "
-                        "<model-dir>/<sha>/ layout. Use when you don't "
-                        "want to keep the run in version history.")
-    p.add_argument("--seed", type=int, default=None,
-                   help="random seed (default: VIFI_SEED env var, else 42)")
-    p.add_argument("--calibration-mode", choices=["none", "per_session"],
-                   default="none",
-                   help="'per_session' applies per-session baseline calibration "
-                        "before training (each session's first 30s used as calibration). "
-                        "'none' is legacy behavior.")
-    p.add_argument("--calibration-seconds", type=float, default=30.0,
-                   help="seconds of each session's start used as the calibration window")
+    p.add_argument(
+        "--no-versioned",
+        action="store_true",
+        help="legacy mode: write artifacts in-place under "
+        "--model-dir instead of the versioned "
+        "<model-dir>/<sha>/ layout. Use when you don't "
+        "want to keep the run in version history.",
+    )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="random seed (default: VIFI_SEED env var, else 42)",
+    )
+    p.add_argument(
+        "--calibration-mode",
+        choices=["none", "per_session"],
+        default="none",
+        help="'per_session' applies per-session baseline calibration "
+        "before training (each session's first 30s used as calibration). "
+        "'none' is legacy behavior.",
+    )
+    p.add_argument(
+        "--calibration-seconds",
+        type=float,
+        default=30.0,
+        help="seconds of each session's start used as the calibration window",
+    )
     args = p.parse_args()
     if args.seed is None:
         args.seed = _frozen_seed()
@@ -146,13 +173,18 @@ def main() -> None:
     for cap, log in args.pair:
         print(f"[+] {cap} <- {log}")
         X, y = build_feature_matrix(
-            Path(cap), Path(log), args.start_offset,
-            args.window, args.stride, args.fs,
+            Path(cap),
+            Path(log),
+            args.start_offset,
+            args.window,
+            args.stride,
+            args.fs,
             calibration_mode=args.calibration_mode,
             calibration_seconds=args.calibration_seconds,
         )
         print(f"    {X.shape[0]} windows")
-        X_parts.append(X); y_parts.append(y)
+        X_parts.append(X)
+        y_parts.append(y)
 
     X = np.vstack(X_parts)
     y = np.concatenate(y_parts)
@@ -162,19 +194,26 @@ def main() -> None:
     from xgboost import XGBRegressor
 
     X_tr, X_va, y_tr, y_va = train_test_split(
-        X, y, test_size=args.val_frac, random_state=args.seed,
+        X,
+        y,
+        test_size=args.val_frac,
+        random_state=args.seed,
     )
     model = XGBRegressor(
-        n_estimators=400, max_depth=5, learning_rate=0.08,
-        subsample=0.9, colsample_bytree=0.9,
-        objective="reg:squarederror", tree_method="hist",
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        objective="reg:squarederror",
+        tree_method="hist",
         random_state=args.seed,
     )
     model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
     pred = model.predict(X_va)
     mae = float(np.mean(np.abs(pred - y_va)))
     acc = float(np.mean(np.abs(pred - y_va) <= 5.0))
-    print(f"[=] val MAE: {mae:.2f} bpm ({acc*100:.1f}% within +-5 bpm)")
+    print(f"[=] val MAE: {mae:.2f} bpm ({acc * 100:.1f}% within +-5 bpm)")
 
     # Stage the artifacts in a temp dir, then promote() into the
     # versioned layout (`<model_dir>/<sha>/...` + `current` symlink).
@@ -205,31 +244,35 @@ def main() -> None:
         model.save_model(args.model_dir / "hr_model.json")
         ood_detector = MahalanobisDetector.fit(X_tr)
         ood_detector.save(args.model_dir / "mahalanobis.json")
-        (args.model_dir / "metadata.json").write_text(
-            json.dumps(metadata, indent=2))
-        print(f"[+] saved {args.model_dir / 'hr_model.json'} "
-              f"(in-place; --no-versioned)")
+        (args.model_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+        print(
+            f"[+] saved {args.model_dir / 'hr_model.json'} (in-place; --no-versioned)"
+        )
     else:
         from tools.model_swap import promote  # noqa: PLC0415
+
         with TemporaryDirectory() as staging:
             staging_path = Path(staging)
             model.save_model(staging_path / "hr_model.json")
             ood_detector = MahalanobisDetector.fit(X_tr)
             ood_detector.save(staging_path / "mahalanobis.json")
-            (staging_path / "metadata.json").write_text(
-                json.dumps(metadata, indent=2))
+            (staging_path / "metadata.json").write_text(json.dumps(metadata, indent=2))
             sha = promote(staging_path, args.model_dir)
-        print(f"[+] saved {args.model_dir}/{sha}/ "
-              f"(current -> {sha})")
-        print(f"    list / rollback: "
-              f"`python -m tools.model_swap list {args.model_dir}`")
-    print(f"[+] OOD detector "
-          f"(threshold={ood_detector.threshold:.2f}, "
-          f"n_train={ood_detector.n_train})")
+        print(f"[+] saved {args.model_dir}/{sha}/ (current -> {sha})")
+        print(
+            f"    list / rollback: `python -m tools.model_swap list {args.model_dir}`"
+        )
+    print(
+        f"[+] OOD detector "
+        f"(threshold={ood_detector.threshold:.2f}, "
+        f"n_train={ood_detector.n_train})"
+    )
     if args.calibration_mode == "per_session":
-        print("[!] calibration_mode=per_session - at inference time, also pass "
-              "--calibration-mode per_session to first_capture_report.py "
-              "(or use --calibration-subject / --auto-identify for stored calibrations)")
+        print(
+            "[!] calibration_mode=per_session - at inference time, also pass "
+            "--calibration-mode per_session to first_capture_report.py "
+            "(or use --calibration-subject / --auto-identify for stored calibrations)"
+        )
 
 
 if __name__ == "__main__":

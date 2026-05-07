@@ -33,6 +33,7 @@ Live mode (CSV + bus, for the live dashboard):
                         --out hr_log_session1.csv \
                         --bus --patient-id alice
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +56,9 @@ except ImportError:
 
 def _require_bleak() -> None:
     if BleakClient is None or BleakScanner is None:
-        print("ERROR: bleak not installed. Run: pip install bleak",
-              file=sys.stderr)
+        print("ERROR: bleak not installed. Run: pip install bleak", file=sys.stderr)
         sys.exit(1)
+
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -94,11 +95,15 @@ async def scan() -> None:
         print(f"  {d.address}  {d.name or '(unnamed)'}{marker}")
 
 
-async def log(address: str, duration_s: float, out_path: Path,
-              bus_publisher: Optional["_BusPublisher"] = None,
-              reconnect_max: int = 20,
-              reconnect_wait_s: float = 1.5,
-              reconnect_max_wait_s: float = 30.0) -> int:
+async def log(
+    address: str,
+    duration_s: float,
+    out_path: Path,
+    bus_publisher: Optional["_BusPublisher"] = None,
+    reconnect_max: int = 20,
+    reconnect_wait_s: float = 1.5,
+    reconnect_max_wait_s: float = 30.0,
+) -> int:
     """Connect to the H10 and log HR readings to CSV for `duration_s` of
     wall-clock time. If Windows BLE drops the connection mid-stream
     (very common with bleak on Win11), reconnect and keep going until
@@ -110,16 +115,26 @@ async def log(address: str, duration_s: float, out_path: Path,
     cumulative wait is bounded around 4 minutes — well within a typical
     180 s session."""
     _require_bleak()
-    return await _log_impl(address, duration_s, out_path,
-                           bus_publisher, reconnect_max,
-                           reconnect_wait_s, reconnect_max_wait_s)
+    return await _log_impl(
+        address,
+        duration_s,
+        out_path,
+        bus_publisher,
+        reconnect_max,
+        reconnect_wait_s,
+        reconnect_max_wait_s,
+    )
 
 
-async def _log_impl(address: str, duration_s: float, out_path: Path,
-                    bus_publisher: Optional["_BusPublisher"],
-                    reconnect_max: int,
-                    reconnect_wait_s: float,
-                    reconnect_max_wait_s: float = 30.0) -> int:
+async def _log_impl(
+    address: str,
+    duration_s: float,
+    out_path: Path,
+    bus_publisher: Optional["_BusPublisher"],
+    reconnect_max: int,
+    reconnect_wait_s: float,
+    reconnect_max_wait_s: float = 30.0,
+) -> int:
     """Body of log(); pulled out so _require_bleak runs before any
     closures capture the (possibly None) Bleak symbols.
 
@@ -151,14 +166,18 @@ async def _log_impl(address: str, duration_s: float, out_path: Path,
                 bus_publisher.publish(t, hr)
             if total_count % 10 == 0:
                 remaining = max(0.0, deadline - time.time())
-                print(f"  {total_count:4d} readings, last HR={hr} bpm, "
-                      f"{remaining:.0f}s left")
+                print(
+                    f"  {total_count:4d} readings, last HR={hr} bpm, "
+                    f"{remaining:.0f}s left"
+                )
 
         while time.time() < deadline:
             chunk_start = time.time()
-            print(f"Connecting to {address} "
-                  f"(attempt {reconnect_count + 1}, "
-                  f"{deadline - chunk_start:.0f}s left)...")
+            print(
+                f"Connecting to {address} "
+                f"(attempt {reconnect_count + 1}, "
+                f"{deadline - chunk_start:.0f}s left)..."
+            )
             try:
                 async with BleakClient(address, timeout=20.0) as client:
                     print(f"Connected. Logging HR to {out_path}")
@@ -175,8 +194,10 @@ async def _log_impl(address: str, duration_s: float, out_path: Path,
             except Exception as exc:
                 # OSError, BleakError, etc. -- assume BLE dropped. Reconnect.
                 elapsed = time.time() - chunk_start
-                print(f"  [!] connection dropped after {elapsed:.1f}s "
-                      f"({type(exc).__name__}: {exc})")
+                print(
+                    f"  [!] connection dropped after {elapsed:.1f}s "
+                    f"({type(exc).__name__}: {exc})"
+                )
                 reconnect_count += 1
                 if reconnect_count >= reconnect_max:
                     print(f"  [!] hit reconnect cap ({reconnect_max}); giving up")
@@ -184,14 +205,18 @@ async def _log_impl(address: str, duration_s: float, out_path: Path,
                 if time.time() >= deadline:
                     break
                 # Exponential backoff capped at reconnect_max_wait_s.
-                wait_s = min(reconnect_wait_s * (2 ** (reconnect_count - 1)),
-                             reconnect_max_wait_s)
+                wait_s = min(
+                    reconnect_wait_s * (2 ** (reconnect_count - 1)),
+                    reconnect_max_wait_s,
+                )
                 print(f"  reconnecting in {wait_s:.1f}s...")
                 await asyncio.sleep(wait_s)
 
     elapsed = time.time() - start_wall
-    print(f"Done. Logged {total_count} readings over {elapsed:.1f}s "
-          f"to {out_path} ({reconnect_count} reconnects)")
+    print(
+        f"Done. Logged {total_count} readings over {elapsed:.1f}s "
+        f"to {out_path} ({reconnect_count} reconnects)"
+    )
     return total_count
 
 
@@ -206,6 +231,7 @@ class _BusPublisher:
 
     def __init__(self, patient_id: str) -> None:
         from modules.bus import bus_from_env, hr_reference
+
         self.bus = bus_from_env()
         self.topic = hr_reference(patient_id)
         self.patient_id = patient_id
@@ -228,8 +254,10 @@ class _BusPublisher:
             if self._error_count <= 3:
                 print(f"  [bus publish failed: {exc}]", file=sys.stderr)
             elif self._error_count == 4:
-                print("  [bus publish suppressed; further errors silenced]",
-                      file=sys.stderr)
+                print(
+                    "  [bus publish suppressed; further errors silenced]",
+                    file=sys.stderr,
+                )
 
     def close(self) -> None:
         try:
@@ -240,20 +268,29 @@ class _BusPublisher:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polar H10 HR logger")
-    parser.add_argument("--scan", action="store_true",
-                        help="scan for nearby BLE devices and exit")
+    parser.add_argument(
+        "--scan", action="store_true", help="scan for nearby BLE devices and exit"
+    )
     parser.add_argument("--address", help="H10 BLE MAC address")
-    parser.add_argument("--duration", type=float, default=120.0,
-                        help="recording duration in seconds")
-    parser.add_argument("--out", type=Path, default=Path("hr_log.csv"),
-                        help="output CSV path")
-    parser.add_argument("--bus", action="store_true",
-                        help=("also publish each reading to the ViFi bus "
-                              "(set VIFI_BUS_URL=redis://...; in-memory "
-                              "is process-local and won't reach other "
-                              "processes)"))
-    parser.add_argument("--patient-id", default="default",
-                        help="patient id for bus topic namespacing")
+    parser.add_argument(
+        "--duration", type=float, default=120.0, help="recording duration in seconds"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=Path("hr_log.csv"), help="output CSV path"
+    )
+    parser.add_argument(
+        "--bus",
+        action="store_true",
+        help=(
+            "also publish each reading to the ViFi bus "
+            "(set VIFI_BUS_URL=redis://...; in-memory "
+            "is process-local and won't reach other "
+            "processes)"
+        ),
+    )
+    parser.add_argument(
+        "--patient-id", default="default", help="patient id for bus topic namespacing"
+    )
     args = parser.parse_args()
 
     if args.scan:
@@ -268,8 +305,7 @@ def main() -> None:
         publisher = _BusPublisher(args.patient_id)
         print(f"Publishing to bus topic: {publisher.topic}")
     try:
-        asyncio.run(log(args.address, args.duration, args.out,
-                        bus_publisher=publisher))
+        asyncio.run(log(args.address, args.duration, args.out, bus_publisher=publisher))
     finally:
         if publisher is not None:
             publisher.close()

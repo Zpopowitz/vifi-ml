@@ -32,10 +32,11 @@ landed nine PRs:
 | **H1** | Bundle classes → `api_internals/bundles.py` | `a23d179` | ✅ |
 | **H2** | Middleware + SPA mount → `api_internals/{middleware,spa}.py` | `64f50bb` | ✅ |
 | **H3** | Predict + identify + stub routes → `api_internals/routes_*.py` | `cca499b` | ✅ |
-| **H4** | /health, /readyz, /api/v1/rooms, WebSocket → `api_internals/{routes_meta,routes_rooms,websocket}.py` | TBD | ✅ |
+| **H4** | /health, /readyz, /api/v1/rooms, WebSocket → `api_internals/{routes_meta,routes_rooms,websocket}.py` | `c9df57a` | ✅ |
 | **K** | Prometheus metrics in inference_worker | `c0969ac` | ✅ |
 | **I** | CSI quality gate | `2ca0b0b` | ✅ |
-| **L** | Coverage-ramp commitment (this PR) | TBD | ✅ |
+| **L** | Coverage-ramp commitment | `3737a1d` | ✅ |
+| **B-format** | 104-file ruff format sweep + CI enforcement | TBD | ✅ |
 
 Plus inline CI fixes (`b6b5561`, `20a047b`, `f42d9b5`, `c8c3df4`).
 
@@ -44,7 +45,6 @@ Pending PRs (gated on either home-data or quiet-stretch):
 | PR | What | Gating |
 |---|---|---|
 | J | Stratified eval by geometry | Need 5+ sessions w/ geometry metadata |
-| B-format | 86-file ruff format sweep | Quiet stretch (noisy diff) |
 
 Five audit findings turned out to be **already implemented or
 inaccurate when ground-truthed**: `config.py` orphan, Caddyfile

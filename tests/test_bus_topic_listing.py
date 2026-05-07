@@ -5,6 +5,7 @@ them interchangeably from tests (InMemoryBus) and prod (Redis).
 RedisStreamBus tests use the same flaky-redis mock pattern as
 test_chaos.py.
 """
+
 from __future__ import annotations
 
 import sys
@@ -22,6 +23,7 @@ from modules.bus import InMemoryBus
 # ---------------------------------------------------------------------------
 # InMemoryBus
 # ---------------------------------------------------------------------------
+
 
 def test_list_topics_empty_when_no_publishes():
     bus = InMemoryBus()
@@ -69,6 +71,7 @@ def test_last_msg_id_returns_most_recent_publish():
 # RedisStreamBus (mocked)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def fake_redis_module(monkeypatch):
     redis_mod = MagicMock()
@@ -76,6 +79,7 @@ def fake_redis_module(monkeypatch):
 
     class _ConnError(Exception):
         pass
+
     class _Timeout(Exception):
         pass
 
@@ -90,12 +94,16 @@ def test_redis_list_topics_uses_scan_iter(fake_redis_module):
     redis_mod = fake_redis_module
     client = MagicMock()
     # scan_iter returns the matching stream keys.
-    client.scan_iter.return_value = iter([
-        "csi.raw.alice", "csi.raw.bob",
-    ])
+    client.scan_iter.return_value = iter(
+        [
+            "csi.raw.alice",
+            "csi.raw.bob",
+        ]
+    )
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(url="redis://fake/0", max_retries=0)
     topics = bus.list_topics(prefix="csi.")
     # SCAN is called with the prefix as the match pattern.
@@ -112,6 +120,7 @@ def test_redis_list_topics_returns_empty_on_redis_error(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(url="redis://fake/0", max_retries=0)
     # Caller (e.g., /api/v1/rooms) shouldn't 500 just because Redis
     # blipped during a SCAN; empty list is "no rooms found" and the
@@ -129,6 +138,7 @@ def test_redis_last_msg_id_returns_xinfo_stream_value(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(url="redis://fake/0", max_retries=0)
     assert bus.last_msg_id("csi.raw.alice") == "1714772400123-0"
 
@@ -140,5 +150,6 @@ def test_redis_last_msg_id_returns_none_on_missing_stream(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(url="redis://fake/0", max_retries=0)
     assert bus.last_msg_id("csi.raw.alice") is None

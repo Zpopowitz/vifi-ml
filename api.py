@@ -8,6 +8,7 @@ Endpoints:
     POST /predict/capture       -> real ESP32-S3 capture text in, HR timeline out
     POST /identify              -> fingerprint-match a capture against stored calibrations
 """
+
 from __future__ import annotations
 
 import json
@@ -72,6 +73,7 @@ log = logging.getLogger("vifi.api")
 # Synthetic-pipeline schemas (legacy, used by /predict and /predict/demo)
 # ---------------------------------------------------------------------------
 
+
 class IQRequest(BaseModel):
     fs: float = Field(100.0, gt=0, description="Sample rate in Hz")
     # 64 = MIN_SAMPLES_PER_GRID; below this Hann + zero-padded FFT
@@ -108,8 +110,10 @@ class DemoRequest(BaseModel):
 
 class CSIRequest(BaseModel):
     """Per-packet subcarrier amplitudes from ESP32 / Nexmon."""
-    fs: float = Field(..., gt=0, le=1000.0,
-                      description="packet rate (Hz); capped at 1 kHz")
+
+    fs: float = Field(
+        ..., gt=0, le=1000.0, description="packet rate (Hz); capped at 1 kHz"
+    )
     # I044: bound the size + shape of the CSI matrix to close a memory-
     # exhaustion DoS vector.
     csi_amp: List[List[float]] = Field(..., min_length=64, max_length=120000)
@@ -119,9 +123,7 @@ class CSIRequest(BaseModel):
     @classmethod
     def _bounded_subcarriers(cls, v):
         if v and (len(v[0]) < 1 or len(v[0]) > 256):
-            raise ValueError(
-                f"csi_amp inner length {len(v[0])} out of range [1, 256]"
-            )
+            raise ValueError(f"csi_amp inner length {len(v[0])} out of range [1, 256]")
         return v
 
 
@@ -143,8 +145,10 @@ class HealthResponse(BaseModel):
 # Real-capture schemas (M4 + real ESP32-S3 path)
 # ---------------------------------------------------------------------------
 
+
 class CalibrationOptions(BaseModel):
     """How to calibrate before prediction."""
+
     mode: str = Field("none", description="'none', 'per_session', or 'stored'")
     subject_id: Optional[str] = None
     room_id: Optional[str] = None
@@ -154,11 +158,13 @@ class CalibrationOptions(BaseModel):
 
 class CaptureRequest(BaseModel):
     """Raw ESP32-S3 CSI capture text + slicing config."""
+
     # 50 MB cap (I043) — about 1 hour at 100 Hz × 192 subcarriers as
     # plain text. Long enough for any real session, short enough that
     # a malicious POST can't OOM the API.
-    capture_text: str = Field(..., max_length=50_000_000,
-                              description="contents of capture.txt (max 50 MB)")
+    capture_text: str = Field(
+        ..., max_length=50_000_000, description="contents of capture.txt (max 50 MB)"
+    )
     packet_rate_hz: Optional[float] = Field(
         None,
         description="actual measured packet rate; falls back to 100 Hz if absent",
@@ -235,6 +241,7 @@ class IdentifyRequest(BaseModel):
 # Real-capture inference
 # ---------------------------------------------------------------------------
 
+
 def _parse_capture_text(text: str, packet_rate_hz: Optional[float]):
     """Run parse_capture_file against an in-memory capture text blob.
 
@@ -244,7 +251,10 @@ def _parse_capture_text(text: str, packet_rate_hz: Optional[float]):
     from tools.parse_csi_capture import parse_capture_file
 
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".txt", delete=False, encoding="utf-8",
+        mode="w",
+        suffix=".txt",
+        delete=False,
+        encoding="utf-8",
     ) as tf:
         tf.write(text)
         tmp_path = Path(tf.name)
@@ -259,8 +269,9 @@ def _parse_capture_text(text: str, packet_rate_hz: Optional[float]):
     return amps, csi_ts
 
 
-def _build_envelope(win_amps: np.ndarray, win_ts: np.ndarray,
-                    fs_resample: float) -> Optional[np.ndarray]:
+def _build_envelope(
+    win_amps: np.ndarray, win_ts: np.ndarray, fs_resample: float
+) -> Optional[np.ndarray]:
     """Resample + variance-pick + normalize -> 1-D envelope ready for features.
 
     Returns None if the window is too short.
@@ -279,9 +290,9 @@ def _build_envelope(win_amps: np.ndarray, win_ts: np.ndarray,
     return np.mean(picked / std, axis=1).astype(np.float32)
 
 
-def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
-                         opts: CalibrationOptions
-                         ) -> tuple[Optional[np.ndarray], Optional[str], Optional[SubjectMatch]]:
+def _resolve_calibration(
+    amps_full: np.ndarray, ts_full: np.ndarray, opts: CalibrationOptions
+) -> tuple[Optional[np.ndarray], Optional[str], Optional[SubjectMatch]]:
     """Map CalibrationOptions -> (calibration_vector, label, subject_match).
 
     Returns (None, None, None) when calibration is disabled or unavailable.
@@ -289,8 +300,9 @@ def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
     build the calibration vector from this capture's own first windows.
     """
     if opts.mode not in ("none", "per_session", "stored"):
-        raise HTTPException(status_code=400,
-                            detail=f"unknown calibration.mode: {opts.mode}")
+        raise HTTPException(
+            status_code=400, detail=f"unknown calibration.mode: {opts.mode}"
+        )
 
     if opts.mode == "none" and not opts.auto_identify:
         return None, None, None
@@ -325,10 +337,13 @@ def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
             top_candidates=[[c, float(s)] for c, s in result.top_candidates],
         )
         if result.matched and result.calibration is not None:
-            cal_vec = np.asarray(result.calibration.calibration_vector,
-                                 dtype=np.float32)
-            label = (f"auto-identified {result.subject_id} "
-                     f"({result.posture}) sim={result.confidence:.3f}")
+            cal_vec = np.asarray(
+                result.calibration.calibration_vector, dtype=np.float32
+            )
+            label = (
+                f"auto-identified {result.subject_id} "
+                f"({result.posture}) sim={result.confidence:.3f}"
+            )
             return cal_vec, label, match
         return None, None, match
 
@@ -347,24 +362,27 @@ def _resolve_calibration(amps_full: np.ndarray, ts_full: np.ndarray,
         return None, None, None
     chosen = matches[0]
     cal_vec = np.asarray(chosen.calibration_vector, dtype=np.float32)
-    label = (f"stored: {chosen.subject_id} room={chosen.room_id} "
-             f"posture={chosen.posture}")
+    label = (
+        f"stored: {chosen.subject_id} room={chosen.room_id} posture={chosen.posture}"
+    )
     return cal_vec, label, None
 
 
-def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
-                     ) -> CaptureResponse:
+def _predict_capture(bundle: RealModelBundle, req: CaptureRequest) -> CaptureResponse:
     bundle.load()
 
     amps, csi_ts = _parse_capture_text(req.capture_text, req.packet_rate_hz)
     if amps.shape[0] < 64:
-        raise HTTPException(status_code=400,
-                            detail=f"capture too short: {amps.shape[0]} packets")
+        raise HTTPException(
+            status_code=400, detail=f"capture too short: {amps.shape[0]} packets"
+        )
     duration = float(csi_ts[-1] - csi_ts[0])
     packet_rate = (amps.shape[0] / duration) if duration > 0 else 0.0
 
     cal_vec, cal_label, subject_match = _resolve_calibration(
-        amps, csi_ts, req.calibration,
+        amps,
+        csi_ts,
+        req.calibration,
     )
 
     use_intervals = req.emit_intervals and bundle.has_quantiles()
@@ -384,21 +402,28 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
 
     # Rolling fingerprint tracker (only if we have a baseline to compare against).
     tracker: Optional[RollingFingerprintTracker] = None
-    if subject_match is not None and subject_match.matched and \
-            req.calibration.auto_identify:
+    if (
+        subject_match is not None
+        and subject_match.matched
+        and req.calibration.auto_identify
+    ):
         # Auto-identified subject -- use their stored fingerprint as baseline.
         from calibration import load_subject_file  # noqa: E402
+
         if subject_match.subject_id:
             cals = load_subject_file(ROOT, subject_match.subject_id)
             for c in cals:
-                if c.room_id == subject_match.room_id and \
-                        c.posture == subject_match.posture:
+                if (
+                    c.room_id == subject_match.room_id
+                    and c.posture == subject_match.posture
+                ):
                     tracker = RollingFingerprintTracker(
                         np.asarray(c.fingerprint, dtype=np.float32)
                     )
                     break
     elif req.calibration.mode == "stored" and req.calibration.subject_id:
         from calibration import load_subject_file  # noqa: E402
+
         cals = load_subject_file(ROOT, req.calibration.subject_id)
         if cals:
             chosen = cals[0]
@@ -448,9 +473,7 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
                 continue
             if not per_session_built:
                 if per_session_pool:
-                    cal_vec = compute_calibration_vector(
-                        np.asarray(per_session_pool)
-                    )
+                    cal_vec = compute_calibration_vector(np.asarray(per_session_pool))
                 if per_session_amps_pool and tracker is None:
                     baseline_amps = np.vstack(per_session_amps_pool)
                     tracker = RollingFingerprintTracker(
@@ -503,45 +526,57 @@ def _predict_capture(bundle: RealModelBundle, req: CaptureRequest
             suppressed_reason = "wide_interval"
             _record_suppression("wide_interval")
 
-        rows.append(CaptureWindow(
-            window_start_s=round(float(t - t0), 2),
-            hr_pred=round(hr_pred, 2),
-            hr_low=round(hr_low, 2) if hr_low is not None else None,
-            hr_high=round(hr_high, 2) if hr_high is not None else None,
-            interval_width=round(interval_width, 2)
-            if interval_width is not None else None,
-            suppressed=suppressed,
-            suppressed_reason=suppressed_reason,
-            fingerprint_similarity=round(sim, 4) if sim is not None else None,
-            mahalanobis=round(mahalanobis_score, 4)
-            if mahalanobis_score is not None else None,
-        ))
+        rows.append(
+            CaptureWindow(
+                window_start_s=round(float(t - t0), 2),
+                hr_pred=round(hr_pred, 2),
+                hr_low=round(hr_low, 2) if hr_low is not None else None,
+                hr_high=round(hr_high, 2) if hr_high is not None else None,
+                interval_width=round(interval_width, 2)
+                if interval_width is not None
+                else None,
+                suppressed=suppressed,
+                suppressed_reason=suppressed_reason,
+                fingerprint_similarity=round(sim, 4) if sim is not None else None,
+                mahalanobis=round(mahalanobis_score, 4)
+                if mahalanobis_score is not None
+                else None,
+            )
+        )
 
         # Audit log -- one record per window, regardless of suppression.
-        audit_writer.write({
-            "window_start_s": round(float(t - t0), 2),
-            "hr_pred": round(hr_pred, 2),
-            "hr_low": round(hr_low, 2) if hr_low is not None else None,
-            "hr_high": round(hr_high, 2) if hr_high is not None else None,
-            "interval_width": round(interval_width, 2)
-            if interval_width is not None else None,
-            "suppressed": suppressed,
-            "suppressed_reason": suppressed_reason,
-            "fingerprint_similarity": round(sim, 4) if sim is not None else None,
-            "mahalanobis": round(mahalanobis_score, 4)
-            if mahalanobis_score is not None else None,
-            "calibration_id": cal_label,
-            "subject_id": (subject_match.subject_id
-                           if subject_match is not None else None),
-            "model_version": MODEL_VERSION,
-            "feature_set_version": FEATURE_SET_VERSION,
-            "pipeline_version": "v2",
-            "capture_hash": capture_hash,
-        })
+        audit_writer.write(
+            {
+                "window_start_s": round(float(t - t0), 2),
+                "hr_pred": round(hr_pred, 2),
+                "hr_low": round(hr_low, 2) if hr_low is not None else None,
+                "hr_high": round(hr_high, 2) if hr_high is not None else None,
+                "interval_width": round(interval_width, 2)
+                if interval_width is not None
+                else None,
+                "suppressed": suppressed,
+                "suppressed_reason": suppressed_reason,
+                "fingerprint_similarity": round(sim, 4) if sim is not None else None,
+                "mahalanobis": round(mahalanobis_score, 4)
+                if mahalanobis_score is not None
+                else None,
+                "calibration_id": cal_label,
+                "subject_id": (
+                    subject_match.subject_id if subject_match is not None else None
+                ),
+                "model_version": MODEL_VERSION,
+                "feature_set_version": FEATURE_SET_VERSION,
+                "pipeline_version": "v2",
+                "capture_hash": capture_hash,
+            }
+        )
         t += req.stride_s
 
-    audit_path = str(audit_writer.current_path) \
-        if audit_writer.current_path is not None else None
+    audit_path = (
+        str(audit_writer.current_path)
+        if audit_writer.current_path is not None
+        else None
+    )
     audit_writer.close()
 
     return CaptureResponse(
@@ -568,12 +603,14 @@ def _identify_only(bundle: RealModelBundle, req: IdentifyRequest) -> SubjectMatc
         identify,
         load_all_calibrations,
     )
+
     amps, csi_ts = _parse_capture_text(req.capture_text, packet_rate_hz=None)
     t0 = csi_ts[0]
     mask = csi_ts <= t0 + req.fingerprint_seconds
     if not np.any(mask):
-        raise HTTPException(status_code=400,
-                            detail="capture has no packets in fingerprint window")
+        raise HTTPException(
+            status_code=400, detail="capture has no packets in fingerprint window"
+        )
     fp = compute_fingerprint(amps[mask])
     result = identify(fp, load_all_calibrations(ROOT), room_filter=req.room_id)
     return SubjectMatch(
@@ -591,6 +628,7 @@ def _identify_only(bundle: RealModelBundle, req: IdentifyRequest) -> SubjectMatc
 # ---------------------------------------------------------------------------
 # Synthetic helpers (preserved from previous version)
 # ---------------------------------------------------------------------------
+
 
 def _confidence_from_feature(feats: np.ndarray, idx: int) -> float:
     val = float(feats[idx])
@@ -616,8 +654,10 @@ def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
 # App factory
 # ---------------------------------------------------------------------------
 
-def create_app(model_dir: Path = MODEL_DIR,
-               real_model_dir: Path = REAL_MODEL_DIR) -> FastAPI:
+
+def create_app(
+    model_dir: Path = MODEL_DIR, real_model_dir: Path = REAL_MODEL_DIR
+) -> FastAPI:
     """Build the FastAPI app. Always succeeds — missing models are reported
     via 503 from the relevant endpoints, not as a boot failure.
     """
@@ -627,6 +667,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     # Validate DSP constants at boot — bands inside Nyquist, top-K
     # within range, etc. Misconfigured envs fail fast.
     from config import validate_at_boot as _validate_dsp  # noqa: PLC0415
+
     _validate_dsp()
 
     # Production-mode audit guard: if api_key auth is on, require
@@ -636,9 +677,11 @@ def create_app(model_dir: Path = MODEL_DIR,
     # disk). FDA postmarket surveillance expects both. Refuse to
     # boot rather than silently run insecure.
     if os.environ.get("VIFI_AUTH_MODE", "none").lower() == "api_key":
-        missing = [k for k in ("VIFI_AUDIT_CHAIN_KEY",
-                               "VIFI_AUDIT_ENCRYPTION_KEY")
-                   if not os.environ.get(k)]
+        missing = [
+            k
+            for k in ("VIFI_AUDIT_CHAIN_KEY", "VIFI_AUDIT_ENCRYPTION_KEY")
+            if not os.environ.get(k)
+        ]
         if missing and os.environ.get("VIFI_ALLOW_INSECURE_AUDIT") != "1":
             raise RuntimeError(
                 f"VIFI_AUTH_MODE=api_key but {missing} not set. "
@@ -648,21 +691,28 @@ def create_app(model_dir: Path = MODEL_DIR,
                 "(not recommended)."
             )
 
-    app = FastAPI(title="ViFi", version=VIFI_VERSION,
-                  # Hide /openapi.json + /docs unless explicitly requested
-                  # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
-                  docs_url="/docs" if os.environ.get(
-                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
-                  redoc_url="/redoc" if os.environ.get(
-                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
-                  openapi_url="/openapi.json" if os.environ.get(
-                      "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None)
+    app = FastAPI(
+        title="ViFi",
+        version=VIFI_VERSION,
+        # Hide /openapi.json + /docs unless explicitly requested
+        # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
+        docs_url="/docs"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        else None,
+        redoc_url="/redoc"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        else None,
+        openapi_url="/openapi.json"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        else None,
+    )
     # Middleware setup lives in api_internals/middleware.py (PR-H2 split).
     # Request flow into app: request_id -> security_headers -> rate_limit
     #                        -> auth -> CORS -> gzip -> app
     # (FastAPI runs outermost-first, which is reverse of add_middleware
     # call order; install_middleware encodes the right sequence.)
     from api_internals.middleware import install_middleware  # noqa: PLC0415
+
     install_middleware(app)
 
     # If real_model_dir uses the versioned layout
@@ -670,6 +720,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     # active version before constructing the bundle. Falls back to
     # the dir itself for legacy in-place / --no-versioned layouts.
     from tools.model_swap import resolve_active_model_dir  # noqa: PLC0415
+
     real_model_dir = resolve_active_model_dir(real_model_dir)
 
     synthetic_bundle = SyntheticModelBundle(model_dir)
@@ -680,8 +731,13 @@ def create_app(model_dir: Path = MODEL_DIR,
         start = time.perf_counter()
         response = await call_next(request)
         ms = (time.perf_counter() - start) * 1000
-        log.info("%s %s -> %s (%.1f ms)",
-                 request.method, request.url.path, response.status_code, ms)
+        log.info(
+            "%s %s -> %s (%.1f ms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            ms,
+        )
         return response
 
     # /readyz + /health are in api_internals/routes_meta.py (PR-H4
@@ -689,8 +745,13 @@ def create_app(model_dir: Path = MODEL_DIR,
     # is_loaded reads stay coherent with the predict path's lazy
     # load.
     from api_internals.routes_meta import register_meta_routes  # noqa: PLC0415
+
     register_meta_routes(
-        app, synthetic_bundle, real_bundle, model_dir, real_model_dir,
+        app,
+        synthetic_bundle,
+        real_bundle,
+        model_dir,
+        real_model_dir,
     )
 
     # /predict, /predict/demo, /predict/csi, /predict/capture,
@@ -700,18 +761,22 @@ def create_app(model_dir: Path = MODEL_DIR,
     from api_internals.routes_predict import (  # noqa: PLC0415
         register_predict_routes,
     )
+
     register_predict_routes(app, synthetic_bundle, real_bundle)
 
     # /predict/presence is shipped (not stubbed); kept inline because
     # it doesn't need any closure deps from create_app.
-    @app.post("/predict/presence",
-              dependencies=[Depends(require_scope("read:presence"))])
+    @app.post(
+        "/predict/presence", dependencies=[Depends(require_scope("read:presence"))]
+    )
     def predict_presence(req: CSIRequest):
         from modules.presence import detect_presence, presence_score
+
         arr = np.asarray(req.csi_amp, dtype=np.float32)
         if arr.ndim != 2:
-            raise HTTPException(status_code=400,
-                                detail=f"csi_amp must be 2-D, got {arr.shape}")
+            raise HTTPException(
+                status_code=400, detail=f"csi_amp must be 2-D, got {arr.shape}"
+            )
         return {
             "present": detect_presence(arr, fs=req.fs),
             "score": round(presence_score(arr, fs=req.fs), 6),
@@ -723,11 +788,13 @@ def create_app(model_dir: Path = MODEL_DIR,
     # api_internals/routes_stubs.py (PR-H3 split). Owns the
     # `_ROADMAP` dict + the 5 501-stub endpoints + `/roadmap`.
     from api_internals.routes_stubs import register_stub_routes  # noqa: PLC0415
+
     register_stub_routes(app)
 
     # /api/v1/rooms is in api_internals/routes_rooms.py (PR-H4 split).
     # The 5 s response cache is per-app instance.
     from api_internals.routes_rooms import register_rooms_route  # noqa: PLC0415
+
     register_rooms_route(app)
 
     # ------------------------------------------------------------------
@@ -758,6 +825,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     # /api/v1/stream WebSocket is in api_internals/websocket.py
     # (PR-H4 split). Live HR/RR fan-out from the message bus.
     from api_internals.websocket import register_stream_route  # noqa: PLC0415
+
     register_stream_route(app)
 
     # Optional Prometheus /metrics. Off by default (I132).
@@ -768,6 +836,7 @@ def create_app(model_dir: Path = MODEL_DIR,
     # AFTER all explicit API route registrations so /health,
     # /predict, etc. take precedence over the catch-all.
     from api_internals.spa import mount_dashboard_spa  # noqa: PLC0415
+
     mount_dashboard_spa(app, dashboard_dir=ROOT / "dashboard")
 
     # Warm-up: load models on startup if available so first user doesn't
@@ -797,6 +866,7 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     # 0.0.0.0 is intentional: this entrypoint runs inside the api
     # container, where 127.0.0.1 would be unreachable from compose
     # peers + outside clients. Authentication, CORS, rate limiting,

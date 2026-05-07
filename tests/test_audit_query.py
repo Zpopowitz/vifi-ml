@@ -8,6 +8,7 @@ Covers:
   * Plaintext + Fernet-encrypted record handling.
   * Three output formats (JSONL, CSV, table).
 """
+
 from __future__ import annotations
 
 import io
@@ -36,6 +37,7 @@ from tools.audit_query import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_jsonl(path: Path, records: list[dict]):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -51,10 +53,16 @@ def _make_record(ts_iso: str, **extra) -> dict:
 # Date filename pre-filter
 # ---------------------------------------------------------------------------
 
+
 def test_parse_filename_date_handles_z_suffix():
-    assert _parse_filename_date(
-        Path("audit-2026-05-04Z.jsonl"),
-    ).date().isoformat() == "2026-05-04"
+    assert (
+        _parse_filename_date(
+            Path("audit-2026-05-04Z.jsonl"),
+        )
+        .date()
+        .isoformat()
+        == "2026-05-04"
+    )
 
 
 def test_parse_filename_date_returns_none_on_garbage():
@@ -64,8 +72,7 @@ def test_parse_filename_date_returns_none_on_garbage():
 
 def test_files_in_range_includes_only_matching_dates(tmp_path):
     for d in ("2026-05-01", "2026-05-04", "2026-05-08"):
-        _write_jsonl(tmp_path / f"audit-{d}Z.jsonl",
-                     [_make_record(f"{d}T12:00:00Z")])
+        _write_jsonl(tmp_path / f"audit-{d}Z.jsonl", [_make_record(f"{d}T12:00:00Z")])
     since = datetime(2026, 5, 3, tzinfo=timezone.utc)
     until = datetime(2026, 5, 6, tzinfo=timezone.utc)
     files = files_in_range(tmp_path, since, until)
@@ -81,60 +88,87 @@ def test_files_in_range_includes_only_matching_dates(tmp_path):
 # iter_records — plaintext
 # ---------------------------------------------------------------------------
 
+
 def test_iter_records_yields_all_when_no_filters(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z", topic="hr.predicted.alice",
-                     subject_id="pseudo:abc123"),
-        _make_record("2026-05-04T08:00:01Z", topic="hr.reference.alice",
-                     subject_id="pseudo:abc123"),
-        _make_record("2026-05-04T08:00:02Z", topic="rr.predicted.alice",
-                     subject_id="pseudo:abc123"),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record(
+                "2026-05-04T08:00:00Z",
+                topic="hr.predicted.alice",
+                subject_id="pseudo:abc123",
+            ),
+            _make_record(
+                "2026-05-04T08:00:01Z",
+                topic="hr.reference.alice",
+                subject_id="pseudo:abc123",
+            ),
+            _make_record(
+                "2026-05-04T08:00:02Z",
+                topic="rr.predicted.alice",
+                subject_id="pseudo:abc123",
+            ),
+        ],
+    )
     records = list(iter_records(tmp_path))
     assert len(records) == 3
 
 
 def test_iter_records_subject_filter(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z", subject_id="pseudo:abc"),
-        _make_record("2026-05-04T08:00:01Z", subject_id="pseudo:def"),
-        _make_record("2026-05-04T08:00:02Z", subject_id="pseudo:abc"),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record("2026-05-04T08:00:00Z", subject_id="pseudo:abc"),
+            _make_record("2026-05-04T08:00:01Z", subject_id="pseudo:def"),
+            _make_record("2026-05-04T08:00:02Z", subject_id="pseudo:abc"),
+        ],
+    )
     records = list(iter_records(tmp_path, subject="pseudo:abc"))
     assert len(records) == 2
     assert all(r.subject_id == "pseudo:abc" for r in records)
 
 
 def test_iter_records_topic_prefix_filter(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z", topic="hr.predicted.alice"),
-        _make_record("2026-05-04T08:00:01Z", topic="hr.reference.alice"),
-        _make_record("2026-05-04T08:00:02Z", topic="rr.predicted.alice"),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record("2026-05-04T08:00:00Z", topic="hr.predicted.alice"),
+            _make_record("2026-05-04T08:00:01Z", topic="hr.reference.alice"),
+            _make_record("2026-05-04T08:00:02Z", topic="rr.predicted.alice"),
+        ],
+    )
     records = list(iter_records(tmp_path, topic_prefix="hr.predicted"))
     assert len(records) == 1
 
 
 def test_iter_records_event_filter(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z", topic="hr.predicted.alice"),
-        _make_record("2026-05-04T08:00:01Z", event="audit_retention_sweep"),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record("2026-05-04T08:00:00Z", topic="hr.predicted.alice"),
+            _make_record("2026-05-04T08:00:01Z", event="audit_retention_sweep"),
+        ],
+    )
     records = list(iter_records(tmp_path, event="audit_retention_sweep"))
     assert len(records) == 1
 
 
 def test_iter_records_ts_filter(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z"),
-        _make_record("2026-05-04T12:00:00Z"),
-        _make_record("2026-05-04T15:00:00Z"),
-    ])
-    records = list(iter_records(
-        tmp_path,
-        since=datetime(2026, 5, 4, 10, 0, tzinfo=timezone.utc),
-        until=datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc),
-    ))
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record("2026-05-04T08:00:00Z"),
+            _make_record("2026-05-04T12:00:00Z"),
+            _make_record("2026-05-04T15:00:00Z"),
+        ],
+    )
+    records = list(
+        iter_records(
+            tmp_path,
+            since=datetime(2026, 5, 4, 10, 0, tzinfo=timezone.utc),
+            until=datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc),
+        )
+    )
     assert len(records) == 1
     assert records[0].ts_iso == "2026-05-04T12:00:00Z"
 
@@ -143,7 +177,7 @@ def test_iter_records_skips_unparseable_lines(tmp_path):
     p = tmp_path / "audit-2026-05-04Z.jsonl"
     p.write_text(
         '{"ts_iso":"2026-05-04T08:00:00Z","topic":"x"}\n'
-        'not-json\n'
+        "not-json\n"
         '{"ts_iso":"2026-05-04T08:00:01Z","topic":"y"}\n'
     )
     records = list(iter_records(tmp_path))
@@ -154,9 +188,11 @@ def test_iter_records_skips_unparseable_lines(tmp_path):
 # iter_records — encrypted
 # ---------------------------------------------------------------------------
 
+
 def test_iter_records_decrypts_fernet_records(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     from cryptography.fernet import Fernet
+
     key = Fernet.generate_key().decode("ascii")
     monkeypatch.setenv("VIFI_AUDIT_ENCRYPTION_KEY", key)
 
@@ -186,6 +222,7 @@ def test_iter_records_decrypts_fernet_records(tmp_path, monkeypatch):
 def test_iter_records_keeps_envelope_when_decrypt_false(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     from cryptography.fernet import Fernet
+
     key = Fernet.generate_key().decode("ascii")
     cipher = Fernet(key.encode("ascii"))
     ciphertext = cipher.encrypt(b'{"x":1}').decode("ascii")
@@ -208,11 +245,18 @@ def test_iter_records_keeps_envelope_when_decrypt_false(tmp_path, monkeypatch):
 # Output formats
 # ---------------------------------------------------------------------------
 
+
 def test_emit_jsonl_round_trips(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z",
-                     topic="hr.predicted.alice", subject_id="pseudo:abc"),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record(
+                "2026-05-04T08:00:00Z",
+                topic="hr.predicted.alice",
+                subject_id="pseudo:abc",
+            ),
+        ],
+    )
     buf = io.StringIO()
     n = emit_jsonl(iter_records(tmp_path), buf)
     assert n == 1
@@ -221,11 +265,17 @@ def test_emit_jsonl_round_trips(tmp_path):
 
 
 def test_emit_csv_includes_header(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z",
-                     topic="hr.predicted.alice", subject_id="pseudo:abc",
-                     payload={"hr_bpm": 73.5, "hr_confidence": 0.9}),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record(
+                "2026-05-04T08:00:00Z",
+                topic="hr.predicted.alice",
+                subject_id="pseudo:abc",
+                payload={"hr_bpm": 73.5, "hr_confidence": 0.9},
+            ),
+        ],
+    )
     buf = io.StringIO()
     n = emit_csv(iter_records(tmp_path), buf)
     assert n == 1
@@ -242,11 +292,17 @@ def test_emit_table_says_so_when_empty(tmp_path):
 
 
 def test_emit_table_renders_columns(tmp_path):
-    _write_jsonl(tmp_path / "audit-2026-05-04Z.jsonl", [
-        _make_record("2026-05-04T08:00:00Z",
-                     topic="hr.predicted.alice", subject_id="pseudo:abc",
-                     payload={"hr_bpm": 73.5}),
-    ])
+    _write_jsonl(
+        tmp_path / "audit-2026-05-04Z.jsonl",
+        [
+            _make_record(
+                "2026-05-04T08:00:00Z",
+                topic="hr.predicted.alice",
+                subject_id="pseudo:abc",
+                payload={"hr_bpm": 73.5},
+            ),
+        ],
+    )
     buf = io.StringIO()
     emit_table(iter_records(tmp_path), buf)
     out = buf.getvalue()

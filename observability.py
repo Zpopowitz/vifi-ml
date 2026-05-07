@@ -8,6 +8,7 @@ Prometheus metrics expose `/metrics` on the API process if
 `VIFI_METRICS_ENABLED=true`. Defaults off so a misconfigured
 deployment doesn't accidentally expose internal counters.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,19 +21,38 @@ from typing import Any
 # Structured logging
 # ---------------------------------------------------------------------------
 
+
 class JSONFormatter(logging.Formatter):
     """Emit one log record per line as JSON. Includes any `extra=`
     fields, the request_id when present, and the standard fields
     (timestamp, level, logger, message)."""
 
-    _RESERVED = frozenset({
-        "name", "msg", "args", "levelname", "levelno",
-        "pathname", "filename", "module", "exc_info",
-        "exc_text", "stack_info", "lineno", "funcName",
-        "created", "msecs", "relativeCreated", "thread",
-        "threadName", "processName", "process", "asctime",
-        "message",
-    })
+    _RESERVED = frozenset(
+        {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "asctime",
+            "message",
+        }
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         out: dict[str, Any] = {
@@ -74,9 +94,9 @@ def configure_logging() -> None:
     if fmt == "json":
         handler.setFormatter(JSONFormatter())
     else:
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s %(message)s"
-        ))
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level)
@@ -85,6 +105,7 @@ def configure_logging() -> None:
 # ---------------------------------------------------------------------------
 # Prometheus metrics (optional; lazy import)
 # ---------------------------------------------------------------------------
+
 
 def metrics_enabled() -> bool:
     return os.environ.get("VIFI_METRICS_ENABLED", "false").lower() == "true"
@@ -121,23 +142,28 @@ def install_prometheus_endpoint(app) -> bool:
     registry = CollectorRegistry()
     request_count = Counter(
         "vifi_http_requests_total",
-        "Total HTTP requests", ["method", "path", "status"],
+        "Total HTTP requests",
+        ["method", "path", "status"],
         registry=registry,
     )
     request_latency = Histogram(
         "vifi_http_request_duration_seconds",
-        "HTTP request latency (seconds)", ["method", "path"],
+        "HTTP request latency (seconds)",
+        ["method", "path"],
         registry=registry,
     )
 
     @app.middleware("http")
     async def _instrument(request: Request, call_next):
         import time
+
         start = time.perf_counter()
         response = await call_next(request)
         dur = time.perf_counter() - start
         request_count.labels(
-            request.method, request.url.path, str(response.status_code),
+            request.method,
+            request.url.path,
+            str(response.status_code),
         ).inc()
         request_latency.labels(request.method, request.url.path).observe(dur)
         return response
@@ -166,6 +192,7 @@ def install_prometheus_endpoint(app) -> bool:
 #
 # Returns the `registry` plus a dict of metric handles ready to .inc() /
 # .observe() on. Caller wires them into hot paths.
+
 
 def install_worker_metrics(default_port: int = 8001):
     """Install Prometheus metrics for a worker process.
@@ -199,22 +226,26 @@ def install_worker_metrics(default_port: int = 8001):
         "packets_total": Counter(
             "vifi_inference_packets_total",
             "CSI packets ingested by the inference worker",
-            ["patient_id"], registry=registry,
+            ["patient_id"],
+            registry=registry,
         ),
         "predictions_total": Counter(
             "vifi_inference_predictions_total",
             "Predictions emitted by the inference worker",
-            ["patient_id", "kind"], registry=registry,
+            ["patient_id", "kind"],
+            registry=registry,
         ),
         "windows_too_short_total": Counter(
             "vifi_inference_windows_too_short_total",
             "Windows where run_once returned None (insufficient packets)",
-            ["patient_id"], registry=registry,
+            ["patient_id"],
+            registry=registry,
         ),
         "dlq_total": Counter(
             "vifi_inference_dlq_total",
             "Malformed CSI messages routed to the DLQ",
-            ["patient_id"], registry=registry,
+            ["patient_id"],
+            registry=registry,
         ),
         "prediction_duration_seconds": Histogram(
             "vifi_inference_prediction_duration_seconds",
@@ -225,8 +256,7 @@ def install_worker_metrics(default_port: int = 8001):
         ),
         "window_packets": Histogram(
             "vifi_inference_window_packets",
-            "Packets per prediction window (sparse windows = signal "
-            "drop)",
+            "Packets per prediction window (sparse windows = signal drop)",
             ["patient_id"],
             buckets=(16, 32, 64, 128, 256, 512, 1024, 2048),
             registry=registry,

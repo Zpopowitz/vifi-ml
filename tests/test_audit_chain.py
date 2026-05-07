@@ -1,4 +1,5 @@
 """Tests for audit log HMAC chain integrity (I075) + retention sweep (I078)."""
+
 from __future__ import annotations
 
 import json
@@ -28,12 +29,14 @@ def _reset_modules():
 
 def _import_audit():
     import audit
+
     return audit
 
 
 # ---------------------------------------------------------------------------
 # HMAC chain
 # ---------------------------------------------------------------------------
+
 
 def test_chain_writes_digest_per_record(tmp_path, monkeypatch):
     monkeypatch.setenv("VIFI_AUDIT_CHAIN_KEY", "k" * 64)
@@ -49,7 +52,7 @@ def test_chain_writes_digest_per_record(tmp_path, monkeypatch):
     lines = [json.loads(line) for line in file.read_text().strip().splitlines()]
     assert len(lines) == 2
     assert all("chain_digest" in line for line in lines)
-    assert len(lines[0]["chain_digest"]) == 64       # SHA-256 hex
+    assert len(lines[0]["chain_digest"]) == 64  # SHA-256 hex
     assert lines[0]["chain_digest"] != lines[1]["chain_digest"]
 
 
@@ -129,9 +132,11 @@ def test_chain_key_too_short_rejected(tmp_path, monkeypatch):
 def test_encrypted_log_still_chains(tmp_path, monkeypatch):
     cryptography = pytest.importorskip("cryptography")
     from cryptography.fernet import Fernet
+
     monkeypatch.setenv("VIFI_AUDIT_CHAIN_KEY", "k" * 64)
-    monkeypatch.setenv("VIFI_AUDIT_ENCRYPTION_KEY",
-                       Fernet.generate_key().decode("ascii"))
+    monkeypatch.setenv(
+        "VIFI_AUDIT_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii")
+    )
     monkeypatch.setenv("VIFI_PSEUDO_SALT", "s" * 32)
     audit = _import_audit()
     w = audit.AuditLogWriter(audit_dir=tmp_path)
@@ -149,6 +154,7 @@ def test_encrypted_log_still_chains(tmp_path, monkeypatch):
 # Retention sweep
 # ---------------------------------------------------------------------------
 
+
 def test_retention_sweep_deletes_old_files(tmp_path, monkeypatch):
     monkeypatch.setenv("VIFI_PSEUDO_SALT", "s" * 32)
     sys.modules.pop("audit", None)
@@ -165,9 +171,9 @@ def test_retention_sweep_deletes_old_files(tmp_path, monkeypatch):
     assert summary["n_deleted"] == 1
     assert summary["n_kept"] == 2
     # The oldest should be gone.
-    assert not (tmp_path /
-                f"audit-{(now - timedelta(days=365)).strftime('%Y-%m-%d')}Z.jsonl"
-                ).exists()
+    assert not (
+        tmp_path / f"audit-{(now - timedelta(days=365)).strftime('%Y-%m-%d')}Z.jsonl"
+    ).exists()
 
 
 def test_retention_sweep_dry_run_keeps_files(tmp_path, monkeypatch):
@@ -188,5 +194,6 @@ def test_retention_sweep_dry_run_keeps_files(tmp_path, monkeypatch):
 def test_retention_refuses_zero_age(tmp_path):
     sys.modules.pop("audit", None)
     from tools.audit_retention import sweep
+
     with pytest.raises(ValueError):
         sweep(tmp_path, max_age_days=0)

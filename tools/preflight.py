@@ -22,6 +22,7 @@ Exits 0 if every check passed, 1 otherwise. Designed to be run
 manually before every capture session, or wired into a session-launch
 shell script.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,16 +45,20 @@ def _check_redis_bus(url: str) -> tuple[bool, str]:
     try:
         client = redis.Redis.from_url(url, socket_timeout=2.0)
         client.ping()
-        msg_id = client.xadd("vifi.preflight",
-                             {"check": "ok", "ts": str(time.time())},
-                             maxlen=10, approximate=True)
+        msg_id = client.xadd(
+            "vifi.preflight",
+            {"check": "ok", "ts": str(time.time())},
+            maxlen=10,
+            approximate=True,
+        )
         return True, f"PING ok, XADD ok ({msg_id.decode()})"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
 
-def _check_csi_serial(port: str, baud: int = 921600,
-                      timeout_s: float = 5.0) -> tuple[bool, str]:
+def _check_csi_serial(
+    port: str, baud: int = 921600, timeout_s: float = 5.0
+) -> tuple[bool, str]:
     try:
         import serial  # type: ignore
     except ImportError:
@@ -79,16 +84,21 @@ def _check_csi_serial(port: str, baud: int = 921600,
         if rows == 0:
             return False, (
                 f"opened {port} but saw 0 CSI_DATA rows in {timeout_s:.0f}s "
-                "— check TX board powered + same channel as RX")
-        return True, f"saw {rows} CSI_DATA rows ({lines} lines) in "\
-                     f"{timeout_s:.0f}s on {port}"
+                "— check TX board powered + same channel as RX"
+            )
+        return (
+            True,
+            f"saw {rows} CSI_DATA rows ({lines} lines) in {timeout_s:.0f}s on {port}",
+        )
     finally:
         ser.close()
 
 
-async def _scan_ble_for(target_address: Optional[str],
-                        target_name_contains: Optional[str],
-                        timeout_s: float = 8.0) -> tuple[bool, str]:
+async def _scan_ble_for(
+    target_address: Optional[str],
+    target_name_contains: Optional[str],
+    timeout_s: float = 8.0,
+) -> tuple[bool, str]:
     try:
         import bleak  # type: ignore
     except ImportError:
@@ -108,7 +118,8 @@ async def _scan_ble_for(target_address: Optional[str],
     return False, (
         f"no match in {len(devices)} BLE devices "
         f"(looked for "
-        f"{target_address or target_name_contains})")
+        f"{target_address or target_name_contains})"
+    )
 
 
 def _check_h10(address: str) -> tuple[bool, str]:
@@ -127,18 +138,30 @@ def _print_check(name: str, ok: bool, detail: str) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Pre-capture sanity check. Run before every "
-                    "session to catch dumb failure modes early.")
-    p.add_argument("--bus-url", default="redis://localhost:6379/0",
-                   help="Redis URL to validate (default: localhost:6379/0)")
-    p.add_argument("--csi-port", default=None,
-                   help="ESP32 RX serial port; skip the CSI check if omitted")
+        "session to catch dumb failure modes early."
+    )
+    p.add_argument(
+        "--bus-url",
+        default="redis://localhost:6379/0",
+        help="Redis URL to validate (default: localhost:6379/0)",
+    )
+    p.add_argument(
+        "--csi-port",
+        default=None,
+        help="ESP32 RX serial port; skip the CSI check if omitted",
+    )
     p.add_argument("--csi-baud", type=int, default=921600)
     p.add_argument("--csi-timeout-s", type=float, default=5.0)
-    p.add_argument("--h10-address", default=None,
-                   help="Polar H10 MAC address; skip BLE H10 check if omitted")
-    p.add_argument("--vernier-name-contains", default=None,
-                   help="Vernier GDX-RB name fragment, "
-                        "e.g. 'GDX-RB'; skip if omitted")
+    p.add_argument(
+        "--h10-address",
+        default=None,
+        help="Polar H10 MAC address; skip BLE H10 check if omitted",
+    )
+    p.add_argument(
+        "--vernier-name-contains",
+        default=None,
+        help="Vernier GDX-RB name fragment, e.g. 'GDX-RB'; skip if omitted",
+    )
     p.add_argument("--ble-timeout-s", type=float, default=8.0)
     args = p.parse_args()
 
@@ -150,8 +173,7 @@ def main() -> None:
     results.append(ok)
 
     if args.csi_port:
-        ok, detail = _check_csi_serial(args.csi_port, args.csi_baud,
-                                       args.csi_timeout_s)
+        ok, detail = _check_csi_serial(args.csi_port, args.csi_baud, args.csi_timeout_s)
         _print_check(f"CSI serial ({args.csi_port})", ok, detail)
         results.append(ok)
 

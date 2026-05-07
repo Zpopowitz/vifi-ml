@@ -37,6 +37,7 @@ Typical usage during a paired capture:
 Run alongside hr_logger.py and csi_capture.py — three separate terminals
 each writing into the same data/captures/<subject>/<session>/ directory.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,12 +63,16 @@ def _require_godirect():
     """
     try:
         from godirect import GoDirect
+
         return GoDirect
     except ImportError:
-        print("ERROR: godirect not installed. Run: pip install godirect",
-              file=sys.stderr)
-        print("Note: godirect requires bleak on Win/Mac and dbus on Linux.",
-              file=sys.stderr)
+        print(
+            "ERROR: godirect not installed. Run: pip install godirect", file=sys.stderr
+        )
+        print(
+            "Note: godirect requires bleak on Win/Mac and dbus on Linux.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
@@ -126,7 +131,7 @@ class _ForceToRR:
         # Parabolic interpolation for sub-bin precision.
         if 0 < peak < len(spec) - 1:
             a, b, c = spec[peak - 1], spec[peak], spec[peak + 1]
-            denom = (a - 2 * b + c)
+            denom = a - 2 * b + c
             shift = 0.5 * (a - c) / denom if denom != 0 else 0.0
         else:
             shift = 0.0
@@ -145,13 +150,15 @@ class _BusPublisher:
 
     def __init__(self, patient_id: str) -> None:
         from modules.bus import bus_from_env, rr_reference
+
         self.bus = bus_from_env()
         self.topic = rr_reference(patient_id)
         self.patient_id = patient_id
         self._error_count = 0
 
-    def publish(self, ts_unix: float, rr_bpm: float,
-                force_n: Optional[float] = None) -> None:
+    def publish(
+        self, ts_unix: float, rr_bpm: float, force_n: Optional[float] = None
+    ) -> None:
         try:
             payload = {
                 "ts_unix": ts_unix,
@@ -216,11 +223,14 @@ def _find_resp_sensors(device, want_force: bool):
     return resp_id, (force_id if want_force else None)
 
 
-def log(duration_s: float, out_path: Path,
-        period_ms: int = DEFAULT_PERIOD_MS,
-        log_force: bool = False,
-        device_name_filter: Optional[str] = None,
-        bus_publisher: Optional[_BusPublisher] = None) -> int:
+def log(
+    duration_s: float,
+    out_path: Path,
+    period_ms: int = DEFAULT_PERIOD_MS,
+    log_force: bool = False,
+    device_name_filter: Optional[str] = None,
+    bus_publisher: Optional[_BusPublisher] = None,
+) -> int:
     """Connect to the first available GDX-RB and log to CSV for duration_s.
 
     The CSV always has columns [timestamp_unix, rr_bpm]. With log_force=True
@@ -273,8 +283,9 @@ def log(duration_s: float, out_path: Path,
         with open(out_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(header)
-            print(f"Logging to {out_path} for {duration_s:.0f} s "
-                  f"(period={period_ms} ms)")
+            print(
+                f"Logging to {out_path} for {duration_s:.0f} s (period={period_ms} ms)"
+            )
             while time.time() < deadline:
                 if not device.read():
                     time.sleep(0.05)
@@ -292,10 +303,12 @@ def log(duration_s: float, out_path: Path,
                     continue
                 # Update the FFT estimator on every force sample so it's
                 # warm by the time we need it.
-                rr_from_force = (rr_estimator.update(force_value)
-                                 if force_value is not None else float("nan"))
-                onboard_ok = (rr_value is not None
-                              and not math.isnan(float(rr_value)))
+                rr_from_force = (
+                    rr_estimator.update(force_value)
+                    if force_value is not None
+                    else float("nan")
+                )
+                onboard_ok = rr_value is not None and not math.isnan(float(rr_value))
                 if onboard_ok:
                     rr_out = float(rr_value)
                     rr_source = "onboard"
@@ -308,8 +321,7 @@ def log(duration_s: float, out_path: Path,
                 t = time.time()
                 row = [f"{t:.3f}", f"{rr_out:.2f}", rr_source]
                 if log_force:
-                    row.append(f"{force_value:.4f}"
-                               if force_value is not None else "")
+                    row.append(f"{force_value:.4f}" if force_value is not None else "")
                 writer.writerow(row)
                 f.flush()
                 if bus_publisher is not None:
@@ -319,11 +331,14 @@ def log(duration_s: float, out_path: Path,
                 # every reading rather than every 10th — otherwise long
                 # captures look frozen even when data is flowing.
                 remaining = max(0.0, deadline - time.time())
-                extra = (f", force={force_value:.2f} N"
-                         if force_value is not None else "")
-                print(f"  {total:4d} readings, last RR={rr_out:.1f} "
-                      f"bpm ({rr_source}){extra}, "
-                      f"{remaining:.0f}s left")
+                extra = (
+                    f", force={force_value:.2f} N" if force_value is not None else ""
+                )
+                print(
+                    f"  {total:4d} readings, last RR={rr_out:.1f} "
+                    f"bpm ({rr_source}){extra}, "
+                    f"{remaining:.0f}s left"
+                )
         print(f"Done. Logged {total} readings to {out_path}")
         return total
     finally:
@@ -338,24 +353,40 @@ def log(duration_s: float, out_path: Path,
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Vernier GDX-RB respiration logger")
-    p.add_argument("--scan", action="store_true",
-                   help="list nearby Go Direct devices and exit")
-    p.add_argument("--duration", type=float, default=120.0,
-                   help="recording duration in seconds")
-    p.add_argument("--period-ms", type=int, default=DEFAULT_PERIOD_MS,
-                   help="sensor sample period in ms (default 1000)")
-    p.add_argument("--out", type=Path, default=Path("rr_log.csv"),
-                   help="output CSV path")
-    p.add_argument("--log-force", action="store_true",
-                   help="also log raw belt force in Newtons")
-    p.add_argument("--name-contains",
-                   help="require device name to contain this string "
-                        "(safety check when multiple Go Direct devices nearby)")
-    p.add_argument("--bus", action="store_true",
-                   help=("also publish each reading to rr.reference.<patient_id> "
-                         "on the ViFi message bus (set VIFI_BUS_URL=redis://...)"))
-    p.add_argument("--patient-id", default="default",
-                   help="patient id for bus topic namespacing")
+    p.add_argument(
+        "--scan", action="store_true", help="list nearby Go Direct devices and exit"
+    )
+    p.add_argument(
+        "--duration", type=float, default=120.0, help="recording duration in seconds"
+    )
+    p.add_argument(
+        "--period-ms",
+        type=int,
+        default=DEFAULT_PERIOD_MS,
+        help="sensor sample period in ms (default 1000)",
+    )
+    p.add_argument(
+        "--out", type=Path, default=Path("rr_log.csv"), help="output CSV path"
+    )
+    p.add_argument(
+        "--log-force", action="store_true", help="also log raw belt force in Newtons"
+    )
+    p.add_argument(
+        "--name-contains",
+        help="require device name to contain this string "
+        "(safety check when multiple Go Direct devices nearby)",
+    )
+    p.add_argument(
+        "--bus",
+        action="store_true",
+        help=(
+            "also publish each reading to rr.reference.<patient_id> "
+            "on the ViFi message bus (set VIFI_BUS_URL=redis://...)"
+        ),
+    )
+    p.add_argument(
+        "--patient-id", default="default", help="patient id for bus topic namespacing"
+    )
     args = p.parse_args()
 
     if args.scan:

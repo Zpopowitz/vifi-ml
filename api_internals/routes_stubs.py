@@ -16,6 +16,7 @@ rate when `VIFI_METRICS_ENABLED=true`.
 `register_stub_routes(app)` wires everything; no closure deps on
 create_app's bundles.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,10 +28,10 @@ from fastapi import FastAPI, HTTPException
 # `/roadmap` manifest. When something graduates from planned to
 # shipped, drop it here AND remove its 501 stub.
 _ROADMAP = {
-    "apnea":         {"eta": "Q3 2026", "depends_on": ["rr_real_hw"]},
-    "gait":          {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
-    "falls":         {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
-    "transients":    {"eta": "Q3 2026", "depends_on": ["rr_real_hw", "hr_real_hw"]},
+    "apnea": {"eta": "Q3 2026", "depends_on": ["rr_real_hw"]},
+    "gait": {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+    "falls": {"eta": "Q4 2026", "depends_on": ["real_hw_validation"]},
+    "transients": {"eta": "Q3 2026", "depends_on": ["rr_real_hw", "hr_real_hw"]},
     "multi_patient": {"eta": "Q1 2027", "depends_on": ["4_node_array"]},
 }
 
@@ -47,12 +48,18 @@ def register_stub_routes(app: FastAPI) -> None:
         # (`vifi_http_requests_total{path=...,status=501}`) already
         # captures the rate when `VIFI_METRICS_ENABLED=true`; this
         # `log.info` covers the case where Prometheus is off.
-        log.info("stub_endpoint_called capability=%s eta=%s",
-                 capability, _ROADMAP[capability]["eta"])
+        log.info(
+            "stub_endpoint_called capability=%s eta=%s",
+            capability,
+            _ROADMAP[capability]["eta"],
+        )
         raise HTTPException(
             status_code=501,
-            detail={"status": "planned", "capability": capability,
-                    **_ROADMAP[capability]},
+            detail={
+                "status": "planned",
+                "capability": capability,
+                **_ROADMAP[capability],
+            },
         )
 
     @app.post("/predict/apnea")

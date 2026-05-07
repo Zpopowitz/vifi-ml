@@ -22,6 +22,7 @@ Planned approach:
 
 Status: NOT IMPLEMENTED.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -45,9 +46,10 @@ class TransientEvent:
 @dataclass
 class BaselineTracker:
     """Per-patient running baseline + std. Bootstrapped from first N minutes."""
+
     kind: VitalKind
-    warmup_s: float = 300.0   # 5-minute warmup before flagging
-    history_s: float = 3600.0 # 1-hour rolling window
+    warmup_s: float = 300.0  # 5-minute warmup before flagging
+    history_s: float = 3600.0  # 1-hour rolling window
     values: list[tuple[float, float]] = field(default_factory=list)  # (t, v)
 
     def update(self, t: float, value: float) -> None:
@@ -57,8 +59,8 @@ class BaselineTracker:
         raise NotImplementedError
 
 
-def detect_transients(vitals_stream: list[tuple[float, float]],
-                      kind: VitalKind,
-                      n_sigma: float = 2.5) -> list[TransientEvent]:
+def detect_transients(
+    vitals_stream: list[tuple[float, float]], kind: VitalKind, n_sigma: float = 2.5
+) -> list[TransientEvent]:
     """Scan a stream of (timestamp, vital) readings for transient events."""
     raise NotImplementedError("transient-event logger not yet implemented")

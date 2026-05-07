@@ -4,6 +4,7 @@ Drives the universal subscriber against an InMemoryBus and verifies
 that all topics for a patient land in the audit JSONL with the
 expected envelope.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,10 +29,8 @@ from tools.audit_subscriber import drain_existing, run  # noqa: E402
 def test_drain_writes_all_topics_for_one_patient(tmp_path):
     bus = InMemoryBus()
     bus.publish(csi_raw("alice"), {"ts_unix": 1.0, "amps": [1.0]}, ts_ms=1000)
-    bus.publish(hr_reference("alice"),
-                {"ts_unix": 1.0, "hr_bpm": 72}, ts_ms=1001)
-    bus.publish(hr_predicted("alice"),
-                {"ts_unix": 1.0, "hr_bpm": 74.5}, ts_ms=1002)
+    bus.publish(hr_reference("alice"), {"ts_unix": 1.0, "hr_bpm": 72}, ts_ms=1001)
+    bus.publish(hr_predicted("alice"), {"ts_unix": 1.0, "hr_bpm": 74.5}, ts_ms=1002)
 
     writer = drain_existing(bus, ["alice"], audit_dir=tmp_path)
     path = writer.current_path
@@ -84,6 +83,7 @@ def test_run_loop_writes_messages_until_stop_event(tmp_path):
 
     def runner():
         from modules.bus import EARLIEST
+
         w = run(
             bus=bus,
             patient_ids=["alice"],

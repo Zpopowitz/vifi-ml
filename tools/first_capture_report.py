@@ -26,6 +26,7 @@ hr_model_q_high.json exist; produced by tools/train_quantile_models.py):
 Refuses to run if model's metadata.json says feature_set_version doesn't match
 this codebase's FEATURE_SET_VERSION (prevents v1 model running on v2 features).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,8 +73,9 @@ def interpolate_hr(hr_unix: np.ndarray, hr_bpm: np.ndarray, t: float) -> float:
     return float(np.interp(t, hr_unix, hr_bpm))
 
 
-def _detect_packet_rate(capture_path: Path,
-                        capture_duration_override: float | None) -> float:
+def _detect_packet_rate(
+    capture_path: Path, capture_duration_override: float | None
+) -> float:
     if capture_duration_override is not None:
         n_csi = 0
         with open(capture_path, "rb") as f:
@@ -81,34 +83,40 @@ def _detect_packet_rate(capture_path: Path,
                 if b"CSI_DATA," in line:
                     n_csi += 1
         rate = n_csi / capture_duration_override
-        print(f"      using --capture-duration: {n_csi} CSI lines / "
-              f"{capture_duration_override:.1f}s = {rate:.1f} Hz")
+        print(
+            f"      using --capture-duration: {n_csi} CSI lines / "
+            f"{capture_duration_override:.1f}s = {rate:.1f} Hz"
+        )
         return rate
 
     sidecar = Path(str(capture_path) + ".meta.json")
     if sidecar.exists():
         meta = json.loads(sidecar.read_text())
         rate = float(meta["actual_packet_rate_hz"])
-        print(f"      using metadata sidecar: {rate:.1f} Hz "
-              f"(measured during capture)")
+        print(f"      using metadata sidecar: {rate:.1f} Hz (measured during capture)")
         return rate
 
-    print("      WARNING: no metadata sidecar and no --capture-duration; "
-          "assuming 100 Hz. HR predictions will be biased if real rate differs.")
+    print(
+        "      WARNING: no metadata sidecar and no --capture-duration; "
+        "assuming 100 Hz. HR predictions will be biased if real rate differs."
+    )
     return 100.0
 
 
-def _resolve_calibration(capture_path: Path,
-                         subject_id: str | None,
-                         room_id: str | None,
-                         posture: str | None,
-                         auto_identify: bool):
+def _resolve_calibration(
+    capture_path: Path,
+    subject_id: str | None,
+    room_id: str | None,
+    posture: str | None,
+    auto_identify: bool,
+):
     from calibration import (  # noqa: E402
         compute_fingerprint,
         identify,
         load_all_calibrations,
         load_subject_file,
     )
+
     if auto_identify:
         amps, ts = parse_capture_file(capture_path)
         t0 = ts[0]
@@ -117,11 +125,17 @@ def _resolve_calibration(capture_path: Path,
         candidates = load_all_calibrations(ROOT)
         result = identify(fp, candidates, room_filter=room_id)
         if result.matched and result.calibration is not None:
-            cal_vec = np.asarray(result.calibration.calibration_vector, dtype=np.float32)
-            return cal_vec, (f"auto-identified {result.subject_id} "
-                              f"({result.posture}) similarity={result.confidence:.3f}")
-        print(f"      auto-identify: no match (best similarity {result.confidence:.3f}); "
-              f"running uncalibrated. {result.notes}")
+            cal_vec = np.asarray(
+                result.calibration.calibration_vector, dtype=np.float32
+            )
+            return cal_vec, (
+                f"auto-identified {result.subject_id} "
+                f"({result.posture}) similarity={result.confidence:.3f}"
+            )
+        print(
+            f"      auto-identify: no match (best similarity {result.confidence:.3f}); "
+            f"running uncalibrated. {result.notes}"
+        )
         return None, None
 
     if subject_id is None:
@@ -129,8 +143,10 @@ def _resolve_calibration(capture_path: Path,
 
     cals = load_subject_file(ROOT, subject_id)
     if not cals:
-        print(f"      WARNING: --calibration-subject {subject_id} requested but "
-              f"data/calibrations/{subject_id}.json doesn't exist; running uncalibrated")
+        print(
+            f"      WARNING: --calibration-subject {subject_id} requested but "
+            f"data/calibrations/{subject_id}.json doesn't exist; running uncalibrated"
+        )
         return None, None
 
     matches = cals
@@ -139,13 +155,18 @@ def _resolve_calibration(capture_path: Path,
     if posture is not None:
         matches = [c for c in matches if c.posture == posture]
     if not matches:
-        print(f"      WARNING: no calibration for ({subject_id}, room={room_id}, "
-              f"posture={posture}); running uncalibrated")
+        print(
+            f"      WARNING: no calibration for ({subject_id}, room={room_id}, "
+            f"posture={posture}); running uncalibrated"
+        )
         return None, None
 
     chosen = matches[0]
     cal_vec = np.asarray(chosen.calibration_vector, dtype=np.float32)
-    return cal_vec, f"{chosen.subject_id} room={chosen.room_id} posture={chosen.posture}"
+    return (
+        cal_vec,
+        f"{chosen.subject_id} room={chosen.room_id} posture={chosen.posture}",
+    )
 
 
 def _enforce_feature_version(models_dir: Path, current_version: str) -> None:
@@ -185,17 +206,19 @@ def run_report(
 ) -> None:
     print(f"[1/4] parsing {capture_path} ...")
     fs_csi = _detect_packet_rate(capture_path, capture_duration_s)
-    amps, csi_boot_ts = parse_capture_file(capture_path,
-                                            synthesised_fs=fs_csi)
+    amps, csi_boot_ts = parse_capture_file(capture_path, synthesised_fs=fs_csi)
     duration = csi_boot_ts[-1] - csi_boot_ts[0]
-    print(f"      {amps.shape[0]} packets, {amps.shape[1]} subcarriers,"
-          f" {duration:.1f} s")
+    print(
+        f"      {amps.shape[0]} packets, {amps.shape[1]} subcarriers, {duration:.1f} s"
+    )
 
     print(f"[2/4] parsing {hr_log_path} ...")
     hr_unix, hr_bpm = load_hr_log(hr_log_path)
-    print(f"      {hr_unix.shape[0]} HR readings,"
-          f" {hr_unix[-1] - hr_unix[0]:.1f} s coverage,"
-          f" mean HR {np.mean(hr_bpm):.1f} bpm")
+    print(
+        f"      {hr_unix.shape[0]} HR readings,"
+        f" {hr_unix[-1] - hr_unix[0]:.1f} s coverage,"
+        f" mean HR {np.mean(hr_bpm):.1f} bpm"
+    )
 
     csi_unix_ts = align_csi_to_unix(csi_boot_ts, hr_unix, start_offset_s)
 
@@ -211,7 +234,10 @@ def run_report(
     _enforce_feature_version(models_dir, FEATURE_SET_VERSION)
 
     cal_vec, cal_label = _resolve_calibration(
-        capture_path, calibration_subject, calibration_room, calibration_posture,
+        capture_path,
+        calibration_subject,
+        calibration_room,
+        calibration_posture,
         auto_identify,
     )
     if cal_vec is not None:
@@ -237,20 +263,26 @@ def run_report(
             q_high_model.load_model(q_high_path)
             print("      loaded quantile models for confidence intervals")
         else:
-            print(f"      WARNING: --emit-intervals requested but q_low/q_high models "
-                  f"not in {models_dir}; running without intervals")
+            print(
+                f"      WARNING: --emit-intervals requested but q_low/q_high models "
+                f"not in {models_dir}; running without intervals"
+            )
 
     # Optional out-of-distribution detector
     mahalanobis_detector = None
     mahalanobis_path = models_dir / "mahalanobis.json"
     if mahalanobis_path.exists():
         from quality import MahalanobisDetector  # noqa: E402
+
         mahalanobis_detector = MahalanobisDetector.load(mahalanobis_path)
-        print(f"      loaded Mahalanobis OOD detector "
-              f"(threshold={mahalanobis_detector.threshold:.2f})")
+        print(
+            f"      loaded Mahalanobis OOD detector "
+            f"(threshold={mahalanobis_detector.threshold:.2f})"
+        )
 
     # Audit log for postmarket surveillance
     from audit import AuditLogWriter, hash_capture  # noqa: E402
+
     capture_text = capture_path.read_text(encoding="utf-8", errors="ignore")
     audit_writer = AuditLogWriter()
     capture_hash = hash_capture(capture_text)
@@ -258,8 +290,7 @@ def run_report(
     rows = []
     t0, t_end = csi_unix_ts[0], csi_unix_ts[-1]
     t = t0
-    print(f"[3/4] scoring windows of {window_s:.0f}s,"
-          f" stride {stride_s:.0f}s ...")
+    print(f"[3/4] scoring windows of {window_s:.0f}s, stride {stride_s:.0f}s ...")
 
     per_session_cal_pool: list[np.ndarray] = []
     per_session_amps_pool: list[np.ndarray] = []
@@ -274,6 +305,7 @@ def run_report(
         RollingFingerprintTracker,
         compute_fingerprint,
     )
+
     tracker = None  # type: ignore[var-annotated]
 
     while t + window_s <= t_end:
@@ -305,6 +337,7 @@ def run_report(
                 apply_calibration,
                 compute_calibration_vector,
             )
+
             if (t - t0) < PER_SESSION_CAL_DURATION:
                 per_session_cal_pool.append(feats[0])
                 per_session_amps_pool.append(win_amps)
@@ -312,13 +345,19 @@ def run_report(
                 continue
             elif not per_session_cal_built:
                 if not per_session_cal_pool:
-                    print(f"      ERROR: per_session calibration mode but no windows "
-                          f"in first {PER_SESSION_CAL_DURATION:.0f} sec; falling back to no calibration")
+                    print(
+                        f"      ERROR: per_session calibration mode but no windows "
+                        f"in first {PER_SESSION_CAL_DURATION:.0f} sec; falling back to no calibration"
+                    )
                     cal_vec = None
                 else:
-                    cal_vec = compute_calibration_vector(np.asarray(per_session_cal_pool))
-                    print(f"      per-session calibration built from "
-                          f"{len(per_session_cal_pool)} baseline windows")
+                    cal_vec = compute_calibration_vector(
+                        np.asarray(per_session_cal_pool)
+                    )
+                    print(
+                        f"      per-session calibration built from "
+                        f"{len(per_session_cal_pool)} baseline windows"
+                    )
                 if per_session_amps_pool and tracker is None:
                     baseline_amps = np.vstack(per_session_amps_pool)
                     tracker = RollingFingerprintTracker(
@@ -329,6 +368,7 @@ def run_report(
 
         if cal_vec is not None:
             from calibration import apply_calibration  # noqa: E402
+
             feats = apply_calibration(feats, cal_vec)
 
         # Rolling fingerprint check (multi-subject detection)
@@ -388,7 +428,8 @@ def run_report(
             "suppressed_reason": suppressed_reason,
             "fingerprint_similarity": round(sim, 4) if sim is not None else None,
             "mahalanobis": round(mahalanobis_score, 4)
-            if mahalanobis_score is not None else None,
+            if mahalanobis_score is not None
+            else None,
         }
         if hr_low is not None:
             row["hr_low"] = round(hr_low, 1)
@@ -397,23 +438,27 @@ def run_report(
         rows.append(row)
 
         # Audit log entry per window
-        audit_writer.write({
-            "window_start_s": round(t - t0, 2),
-            "hr_pred": round(hr_pred, 2),
-            "hr_low": round(hr_low, 2) if hr_low is not None else None,
-            "hr_high": round(hr_high, 2) if hr_high is not None else None,
-            "interval_width": round(interval_width, 2)
-            if interval_width is not None else None,
-            "suppressed": suppressed,
-            "suppressed_reason": suppressed_reason,
-            "fingerprint_similarity": round(sim, 4) if sim is not None else None,
-            "mahalanobis": round(mahalanobis_score, 4)
-            if mahalanobis_score is not None else None,
-            "calibration_id": cal_label,
-            "feature_set_version": FEATURE_SET_VERSION,
-            "pipeline_version": "v2",
-            "capture_hash": capture_hash,
-        })
+        audit_writer.write(
+            {
+                "window_start_s": round(t - t0, 2),
+                "hr_pred": round(hr_pred, 2),
+                "hr_low": round(hr_low, 2) if hr_low is not None else None,
+                "hr_high": round(hr_high, 2) if hr_high is not None else None,
+                "interval_width": round(interval_width, 2)
+                if interval_width is not None
+                else None,
+                "suppressed": suppressed,
+                "suppressed_reason": suppressed_reason,
+                "fingerprint_similarity": round(sim, 4) if sim is not None else None,
+                "mahalanobis": round(mahalanobis_score, 4)
+                if mahalanobis_score is not None
+                else None,
+                "calibration_id": cal_label,
+                "feature_set_version": FEATURE_SET_VERSION,
+                "pipeline_version": "v2",
+                "capture_hash": capture_hash,
+            }
+        )
         t += stride_s
 
     audit_path = audit_writer.current_path
@@ -437,28 +482,37 @@ def run_report(
     print("[4/4] results")
     print(f"      windows scored:     {len(rows)}")
     if n_suppressed > 0:
-        breakdown = ", ".join(f"{k}={v}" for k, v in
-                              sorted(n_suppressed_by_reason.items()))
+        breakdown = ", ".join(
+            f"{k}={v}" for k, v in sorted(n_suppressed_by_reason.items())
+        )
         print(f"      suppressed:         {n_suppressed} ({breakdown})")
-    print(f"      HR MAE:             {mae:.2f} bpm  (over {len(scored_rows)} accepted windows)")
+    print(
+        f"      HR MAE:             {mae:.2f} bpm  (over {len(scored_rows)} accepted windows)"
+    )
     print(f"      HR bias:            {bias:+.2f} bpm")
-    print(f"      within +-5 bpm:     {within_5*100:.1f}%")
+    print(f"      within +-5 bpm:     {within_5 * 100:.1f}%")
     print()
     print("first 10 windows:")
     if emit_intervals and q_low_model is not None:
-        print(f"  {'start_s':>8} {'true':>6} {'pred':>6} {'low':>6} {'high':>6} {'err':>6}")
+        print(
+            f"  {'start_s':>8} {'true':>6} {'pred':>6} {'low':>6} {'high':>6} {'err':>6}"
+        )
         for r in rows[:10]:
             tag = " (S)" if r.get("suppressed") else ""
-            print(f"  {r['window_start_s']:>8.1f}"
-                  f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
-                  f" {r.get('hr_low', 0):>6.1f} {r.get('hr_high', 0):>6.1f}"
-                  f" {r['error_bpm']:>+6.2f}{tag}")
+            print(
+                f"  {r['window_start_s']:>8.1f}"
+                f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
+                f" {r.get('hr_low', 0):>6.1f} {r.get('hr_high', 0):>6.1f}"
+                f" {r['error_bpm']:>+6.2f}{tag}"
+            )
     else:
         print(f"  {'start_s':>8} {'true':>6} {'pred':>6} {'err':>6}")
         for r in rows[:10]:
-            print(f"  {r['window_start_s']:>8.1f}"
-                  f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
-                  f" {r['error_bpm']:>+6.2f}")
+            print(
+                f"  {r['window_start_s']:>8.1f}"
+                f" {r['hr_true']:>6.1f} {r['hr_pred']:>6.1f}"
+                f" {r['error_bpm']:>+6.2f}"
+            )
 
     if json_out is not None:
         payload = {
@@ -486,31 +540,61 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--capture", required=True, type=Path)
     p.add_argument("--hr-log", required=True, type=Path)
-    p.add_argument("--start-offset", type=float, default=0.0,
-                   help="seconds from first HR row to first CSI packet")
+    p.add_argument(
+        "--start-offset",
+        type=float,
+        default=0.0,
+        help="seconds from first HR row to first CSI packet",
+    )
     p.add_argument("--window", type=float, default=10.0)
     p.add_argument("--stride", type=float, default=5.0)
-    p.add_argument("--fs", type=float, default=100.0,
-                   help="resample rate for feature extraction")
-    p.add_argument("--capture-duration", type=float, default=None,
-                   help="actual wall-clock duration of CSI capture (seconds).")
-    p.add_argument("--json", type=Path, default=None,
-                   help="write per-window JSON here")
-    p.add_argument("--calibration-subject", default=None,
-                   help="apply this subject's stored calibration")
-    p.add_argument("--calibration-room", default=None,
-                   help="constrain calibration lookup to this room_id")
-    p.add_argument("--calibration-posture", default=None,
-                   help="constrain calibration lookup to this posture")
-    p.add_argument("--auto-identify", action="store_true",
-                   help="fingerprint the first 30s and auto-pick the matching calibration")
-    p.add_argument("--calibration-mode", choices=["none", "per_session"],
-                   default="none",
-                   help="'per_session' calibrates from this capture's own first 30s.")
-    p.add_argument("--emit-intervals", action="store_true",
-                   help="report 80%% prediction interval per window using quantile models")
-    p.add_argument("--max-interval-bpm", type=float, default=15.0,
-                   help="suppress predictions when interval width exceeds this (default 15)")
+    p.add_argument(
+        "--fs", type=float, default=100.0, help="resample rate for feature extraction"
+    )
+    p.add_argument(
+        "--capture-duration",
+        type=float,
+        default=None,
+        help="actual wall-clock duration of CSI capture (seconds).",
+    )
+    p.add_argument("--json", type=Path, default=None, help="write per-window JSON here")
+    p.add_argument(
+        "--calibration-subject",
+        default=None,
+        help="apply this subject's stored calibration",
+    )
+    p.add_argument(
+        "--calibration-room",
+        default=None,
+        help="constrain calibration lookup to this room_id",
+    )
+    p.add_argument(
+        "--calibration-posture",
+        default=None,
+        help="constrain calibration lookup to this posture",
+    )
+    p.add_argument(
+        "--auto-identify",
+        action="store_true",
+        help="fingerprint the first 30s and auto-pick the matching calibration",
+    )
+    p.add_argument(
+        "--calibration-mode",
+        choices=["none", "per_session"],
+        default="none",
+        help="'per_session' calibrates from this capture's own first 30s.",
+    )
+    p.add_argument(
+        "--emit-intervals",
+        action="store_true",
+        help="report 80%% prediction interval per window using quantile models",
+    )
+    p.add_argument(
+        "--max-interval-bpm",
+        type=float,
+        default=15.0,
+        help="suppress predictions when interval width exceeds this (default 15)",
+    )
     args = p.parse_args()
     run_report(
         capture_path=args.capture,

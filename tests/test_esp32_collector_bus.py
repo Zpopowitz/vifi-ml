@@ -5,6 +5,7 @@ We don't bind a real UDP socket; we drive the parsing/publish path
 directly. The simulator path uses data_gen which depends on numpy/scipy
 and is exercised in tests/test_data_gen.py separately.
 """
+
 from __future__ import annotations
 
 import sys
@@ -24,6 +25,7 @@ from modules.bus import EARLIEST, InMemoryBus, csi_raw  # noqa: E402
 def _make_publisher(patient_id: str, bus: InMemoryBus):
     with patch("modules.bus.bus_from_env", return_value=bus):
         from tools.esp32_csi_collector import _BusPublisher
+
         return _BusPublisher(patient_id)
 
 
@@ -53,6 +55,7 @@ def test_publish_swallows_errors_so_udp_listener_keeps_running():
 
     with patch("modules.bus.bus_from_env", return_value=_BrokenBus()):
         from tools.esp32_csi_collector import _BusPublisher
+
         pub = _BusPublisher("alice")
 
     amps = np.array([1.0, 2.0], dtype=np.float32)
@@ -76,9 +79,14 @@ def test_udp_listener_publishes_parsed_packets_to_bus(monkeypatch):
         def __init__(self):
             self.calls = 0
 
-        def setsockopt(self, *_a, **_kw): pass
-        def bind(self, *_a, **_kw): pass
-        def settimeout(self, *_a, **_kw): pass
+        def setsockopt(self, *_a, **_kw):
+            pass
+
+        def bind(self, *_a, **_kw):
+            pass
+
+        def settimeout(self, *_a, **_kw):
+            pass
 
         def recvfrom(self, _max):
             self.calls += 1
@@ -88,7 +96,8 @@ def test_udp_listener_publishes_parsed_packets_to_bus(monkeypatch):
             # listener loop exits.
             raise OSError("test shutdown")
 
-        def close(self): pass
+        def close(self):
+            pass
 
     monkeypatch.setattr(
         "tools.esp32_csi_collector.socket.socket",
@@ -96,6 +105,7 @@ def test_udp_listener_publishes_parsed_packets_to_bus(monkeypatch):
     )
 
     from tools.esp32_csi_collector import RingBuffer, udp_listener
+
     buf = RingBuffer(duration_s=10.0)
     stop = threading.Event()
     udp_listener("0", buf, stop, bus_publisher=pub)

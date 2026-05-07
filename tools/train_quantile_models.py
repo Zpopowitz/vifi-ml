@@ -22,6 +22,7 @@ Usage:
 This produces hr_model.json (mean), hr_model_q_low.json, hr_model_q_high.json
 in the same directory, all sharing one metadata.json.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,40 +47,61 @@ def _seed() -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--pair", action="append", nargs=2,
-                   metavar=("CAPTURE", "HR_LOG"), required=True,
-                   help="repeat for each paired session")
+    p.add_argument(
+        "--pair",
+        action="append",
+        nargs=2,
+        metavar=("CAPTURE", "HR_LOG"),
+        required=True,
+        help="repeat for each paired session",
+    )
     p.add_argument("--start-offset", type=float, default=0.0)
     p.add_argument("--window", type=float, default=10.0)
     p.add_argument("--stride", type=float, default=5.0)
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--val-frac", type=float, default=0.2)
     p.add_argument("--model-dir", type=Path, required=True)
-    p.add_argument("--calibration-mode", choices=["none", "per_session"],
-                   default="none")
+    p.add_argument(
+        "--calibration-mode", choices=["none", "per_session"], default="none"
+    )
     p.add_argument("--calibration-seconds", type=float, default=30.0)
-    p.add_argument("--quantile-low", type=float, default=0.10,
-                   help="lower quantile for the prediction interval (default 0.10)")
-    p.add_argument("--quantile-high", type=float, default=0.90,
-                   help="upper quantile for the prediction interval (default 0.90)")
+    p.add_argument(
+        "--quantile-low",
+        type=float,
+        default=0.10,
+        help="lower quantile for the prediction interval (default 0.10)",
+    )
+    p.add_argument(
+        "--quantile-high",
+        type=float,
+        default=0.90,
+        help="upper quantile for the prediction interval (default 0.90)",
+    )
     args = p.parse_args()
 
     seed = _seed()
     print(f"[~] seed={seed} (set VIFI_SEED env to override)")
-    print(f"[~] training mean + q={args.quantile_low} + q={args.quantile_high} regressors")
+    print(
+        f"[~] training mean + q={args.quantile_low} + q={args.quantile_high} regressors"
+    )
 
     X_parts: list[np.ndarray] = []
     y_parts: list[np.ndarray] = []
     for cap, log in args.pair:
         print(f"[+] {cap} <- {log}")
         X, y = build_feature_matrix(
-            Path(cap), Path(log), args.start_offset,
-            args.window, args.stride, args.fs,
+            Path(cap),
+            Path(log),
+            args.start_offset,
+            args.window,
+            args.stride,
+            args.fs,
             calibration_mode=args.calibration_mode,
             calibration_seconds=args.calibration_seconds,
         )
         print(f"    {X.shape[0]} windows")
-        X_parts.append(X); y_parts.append(y)
+        X_parts.append(X)
+        y_parts.append(y)
 
     X = np.vstack(X_parts)
     y = np.concatenate(y_parts)
@@ -89,15 +111,22 @@ def main() -> None:
     from xgboost import XGBRegressor
 
     X_tr, X_va, y_tr, y_va = train_test_split(
-        X, y, test_size=args.val_frac, random_state=seed,
+        X,
+        y,
+        test_size=args.val_frac,
+        random_state=seed,
     )
 
     args.model_dir.mkdir(parents=True, exist_ok=True)
 
     mean_model = XGBRegressor(
-        n_estimators=400, max_depth=5, learning_rate=0.08,
-        subsample=0.9, colsample_bytree=0.9,
-        objective="reg:squarederror", tree_method="hist",
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        objective="reg:squarederror",
+        tree_method="hist",
         random_state=seed,
     )
     mean_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
@@ -107,9 +136,13 @@ def main() -> None:
     mean_model.save_model(args.model_dir / "hr_model.json")
 
     q_low_model = XGBRegressor(
-        n_estimators=400, max_depth=5, learning_rate=0.08,
-        subsample=0.9, colsample_bytree=0.9,
-        objective="reg:quantileerror", quantile_alpha=args.quantile_low,
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        objective="reg:quantileerror",
+        quantile_alpha=args.quantile_low,
         tree_method="hist",
         random_state=seed + 1,
     )
@@ -118,9 +151,13 @@ def main() -> None:
     q_low_model.save_model(args.model_dir / "hr_model_q_low.json")
 
     q_high_model = XGBRegressor(
-        n_estimators=400, max_depth=5, learning_rate=0.08,
-        subsample=0.9, colsample_bytree=0.9,
-        objective="reg:quantileerror", quantile_alpha=args.quantile_high,
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        objective="reg:quantileerror",
+        quantile_alpha=args.quantile_high,
         tree_method="hist",
         random_state=seed + 2,
     )
@@ -130,30 +167,37 @@ def main() -> None:
 
     in_interval = ((y_va >= pred_low) & (y_va <= pred_high)).mean()
     expected = args.quantile_high - args.quantile_low
-    print(f"[=] interval coverage on val: {in_interval*100:.1f}% (expected ~{expected*100:.0f}%)")
+    print(
+        f"[=] interval coverage on val: {in_interval * 100:.1f}% (expected ~{expected * 100:.0f}%)"
+    )
 
     interval_widths = pred_high - pred_low
     print(f"[=] median interval width: {np.median(interval_widths):.1f} bpm")
     print(f"[=] mean interval width:   {np.mean(interval_widths):.1f} bpm")
 
-    (args.model_dir / "metadata.json").write_text(json.dumps({
-        "feature_names": FEATURE_NAMES,
-        "feature_set_version": FEATURE_SET_VERSION,
-        "trained_on": "real_paired_captures",
-        "calibration_mode": args.calibration_mode,
-        "calibration_seconds": args.calibration_seconds,
-        "seed": seed,
-        "quantile_low": args.quantile_low,
-        "quantile_high": args.quantile_high,
-        "n_train": int(X_tr.shape[0]),
-        "n_val": int(X_va.shape[0]),
-        "metrics": {
-            "hr_mae": mae,
-            "interval_coverage_val": float(in_interval),
-            "interval_width_median": float(np.median(interval_widths)),
-            "interval_width_mean": float(np.mean(interval_widths)),
-        },
-    }, indent=2))
+    (args.model_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_names": FEATURE_NAMES,
+                "feature_set_version": FEATURE_SET_VERSION,
+                "trained_on": "real_paired_captures",
+                "calibration_mode": args.calibration_mode,
+                "calibration_seconds": args.calibration_seconds,
+                "seed": seed,
+                "quantile_low": args.quantile_low,
+                "quantile_high": args.quantile_high,
+                "n_train": int(X_tr.shape[0]),
+                "n_val": int(X_va.shape[0]),
+                "metrics": {
+                    "hr_mae": mae,
+                    "interval_coverage_val": float(in_interval),
+                    "interval_width_median": float(np.median(interval_widths)),
+                    "interval_width_mean": float(np.mean(interval_widths)),
+                },
+            },
+            indent=2,
+        )
+    )
     print(f"[+] saved 3 models + metadata to {args.model_dir}")
 
 

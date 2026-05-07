@@ -1,4 +1,5 @@
 """Tests for the observability layer (I130, I132)."""
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,13 @@ from observability import (
 def test_json_formatter_serializes_record():
     fmt = JSONFormatter()
     record = logging.LogRecord(
-        name="vifi.test", level=logging.INFO, pathname=__file__,
-        lineno=10, msg="hello %s", args=("world",), exc_info=None,
+        name="vifi.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=10,
+        msg="hello %s",
+        args=("world",),
+        exc_info=None,
     )
     record.request_id = "abc1234"
     out = fmt.format(record)
@@ -71,6 +77,7 @@ def test_install_prometheus_endpoint_when_enabled(monkeypatch):
         @app.get("/foo")
         def foo():
             return {"ok": True}
+
         c.get("/foo")
         r = c.get("/metrics")
         assert r.status_code == 200

@@ -13,6 +13,7 @@ chaos test (separate file). Invariants:
     behaviour for parity — see ack() docstring).
   * Multiple groups on the same topic see independent streams.
 """
+
 from __future__ import annotations
 
 import sys
@@ -40,6 +41,7 @@ def _publish_n(bus: InMemoryBus, topic: str, n: int) -> list[str]:
 # Basic group semantics
 # ---------------------------------------------------------------------------
 
+
 def test_create_group_idempotent():
     bus = InMemoryBus()
     bus.create_group("csi.raw.alice", "inference")
@@ -51,8 +53,7 @@ def test_read_group_returns_new_messages():
     _publish_n(bus, "csi.raw.alice", 3)
     bus.create_group("csi.raw.alice", "inference", start_id=EARLIEST)
 
-    msgs = bus.read_group("inference", "worker-1",
-                           ["csi.raw.alice"], block_ms=0)
+    msgs = bus.read_group("inference", "worker-1", ["csi.raw.alice"], block_ms=0)
     assert len(msgs) == 3
     assert [m.payload["i"] for m in msgs] == [0, 1, 2]
 
@@ -63,14 +64,12 @@ def test_read_group_skips_backlog_when_start_at_latest():
     bus.create_group("csi.raw.alice", "inference", start_id=LATEST)
 
     # Nothing yet: backlog skipped.
-    msgs = bus.read_group("inference", "worker-1",
-                           ["csi.raw.alice"], block_ms=0)
+    msgs = bus.read_group("inference", "worker-1", ["csi.raw.alice"], block_ms=0)
     assert msgs == []
 
     # New publishes are seen.
     bus.publish("csi.raw.alice", {"i": "new"}, ts_ms=2000)
-    msgs = bus.read_group("inference", "worker-1",
-                           ["csi.raw.alice"], block_ms=0)
+    msgs = bus.read_group("inference", "worker-1", ["csi.raw.alice"], block_ms=0)
     assert len(msgs) == 1
     assert msgs[0].payload["i"] == "new"
 
@@ -80,8 +79,7 @@ def test_read_group_advances_after_ack():
     _publish_n(bus, "csi.raw.alice", 2)
     bus.create_group("csi.raw.alice", "inference", start_id=EARLIEST)
 
-    msgs = bus.read_group("inference", "worker-1",
-                           ["csi.raw.alice"], block_ms=0)
+    msgs = bus.read_group("inference", "worker-1", ["csi.raw.alice"], block_ms=0)
     assert len(msgs) == 2
 
     # ACK both — pending list drains.
@@ -90,14 +88,14 @@ def test_read_group_advances_after_ack():
     assert bus.pending_count("inference", "csi.raw.alice") == 0
 
     # Subsequent read sees nothing (no new + no pending).
-    again = bus.read_group("inference", "worker-1",
-                            ["csi.raw.alice"], block_ms=0)
+    again = bus.read_group("inference", "worker-1", ["csi.raw.alice"], block_ms=0)
     assert again == []
 
 
 # ---------------------------------------------------------------------------
 # At-least-once delivery — the core durability claim
 # ---------------------------------------------------------------------------
+
 
 def test_unacked_message_redelivered_on_restart():
     """The headline invariant: if a worker crashes mid-process, the
@@ -109,7 +107,10 @@ def test_unacked_message_redelivered_on_restart():
 
     # First read: deliver all 3.
     first_batch = bus.read_group(
-        "inference", "worker-1", ["csi.raw.alice"], block_ms=0,
+        "inference",
+        "worker-1",
+        ["csi.raw.alice"],
+        block_ms=0,
     )
     assert len(first_batch) == 3
     # Worker "crashes" without ACKing.
@@ -117,7 +118,10 @@ def test_unacked_message_redelivered_on_restart():
     # Second read with same consumer: gets pending entries first
     # (include_pending=True is the default).
     second_batch = bus.read_group(
-        "inference", "worker-1", ["csi.raw.alice"], block_ms=0,
+        "inference",
+        "worker-1",
+        ["csi.raw.alice"],
+        block_ms=0,
     )
     assert len(second_batch) == 3
     assert [m.msg_id for m in second_batch] == [m.msg_id for m in first_batch]
@@ -126,7 +130,10 @@ def test_unacked_message_redelivered_on_restart():
     for m in second_batch:
         bus.ack("inference", "csi.raw.alice", m.msg_id)
     third = bus.read_group(
-        "inference", "worker-1", ["csi.raw.alice"], block_ms=0,
+        "inference",
+        "worker-1",
+        ["csi.raw.alice"],
+        block_ms=0,
     )
     assert third == []
 
@@ -136,7 +143,10 @@ def test_partial_ack_leaves_only_unacked_pending():
     _publish_n(bus, "csi.raw.alice", 4)
     bus.create_group("csi.raw.alice", "inference", start_id=EARLIEST)
     msgs = bus.read_group(
-        "inference", "worker-1", ["csi.raw.alice"], block_ms=0,
+        "inference",
+        "worker-1",
+        ["csi.raw.alice"],
+        block_ms=0,
     )
     # ACK only the first two.
     bus.ack("inference", "csi.raw.alice", msgs[0].msg_id)
@@ -144,7 +154,10 @@ def test_partial_ack_leaves_only_unacked_pending():
     assert bus.pending_count("inference", "csi.raw.alice") == 2
 
     redelivered = bus.read_group(
-        "inference", "worker-1", ["csi.raw.alice"], block_ms=0,
+        "inference",
+        "worker-1",
+        ["csi.raw.alice"],
+        block_ms=0,
     )
     assert {m.msg_id for m in redelivered} == {msgs[2].msg_id, msgs[3].msg_id}
 
@@ -152,6 +165,7 @@ def test_partial_ack_leaves_only_unacked_pending():
 # ---------------------------------------------------------------------------
 # Multi-group, multi-consumer
 # ---------------------------------------------------------------------------
+
 
 def test_multiple_groups_see_independent_streams():
     """Two groups (e.g., 'inference' and 'audit') on the same topic
@@ -184,7 +198,10 @@ def test_blocking_read_returns_when_message_arrives():
 
     def reader():
         msgs = bus.read_group(
-            "inference", "w1", ["csi.raw.alice"], block_ms=2000,
+            "inference",
+            "w1",
+            ["csi.raw.alice"],
+            block_ms=2000,
         )
         received.extend(msgs)
         done.set()
@@ -203,7 +220,11 @@ def test_count_caps_returned_messages():
     _publish_n(bus, "csi.raw.alice", 10)
     bus.create_group("csi.raw.alice", "inference", start_id=EARLIEST)
     msgs = bus.read_group(
-        "inference", "w1", ["csi.raw.alice"], block_ms=0, count=4,
+        "inference",
+        "w1",
+        ["csi.raw.alice"],
+        block_ms=0,
+        count=4,
     )
     assert len(msgs) == 4
 

@@ -27,6 +27,7 @@ Status: NOT IMPLEMENTED. This module is an architectural placeholder;
 the first real-hardware milestone is 2-node (TX + RX) and the 4-node
 array is post-pilot.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

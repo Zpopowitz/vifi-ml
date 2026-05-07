@@ -10,6 +10,7 @@ Two pieces:
 Plus integration: malformed CSI lands in
 csi.raw.<patient>.dlq instead of crashing the worker.
 """
+
 from __future__ import annotations
 
 import sys
@@ -41,6 +42,7 @@ from tools.inference_worker import (
 # Topic helper
 # ---------------------------------------------------------------------------
 
+
 def test_dlq_appends_dlq_suffix():
     assert dlq("csi.raw.alice") == "csi.raw.alice.dlq"
     assert dlq("hr.reference.bob") == "hr.reference.bob.dlq"
@@ -54,6 +56,7 @@ def test_dlq_is_idempotent():
 # ---------------------------------------------------------------------------
 # route_to_dlq helper
 # ---------------------------------------------------------------------------
+
 
 def test_route_to_dlq_publishes_after_threshold():
     bus = InMemoryBus()
@@ -74,8 +77,7 @@ def test_route_to_dlq_publishes_after_threshold():
     assert bus.delivery_count("inference", topic, msg.msg_id) >= 5
 
     # route_to_dlq should fire and ACK the original.
-    routed = route_to_dlq(bus, "inference", msg, "test failure",
-                          max_deliveries=5)
+    routed = route_to_dlq(bus, "inference", msg, "test failure", max_deliveries=5)
     assert routed is True
 
     # DLQ has the rerouted message.
@@ -97,8 +99,7 @@ def test_route_to_dlq_skips_below_threshold():
     msgs = bus.read_group("inference", "w-1", [topic], block_ms=0)
     msg = msgs[0]
     # Single delivery, max_deliveries=5 → don't route.
-    routed = route_to_dlq(bus, "inference", msg, "transient",
-                          max_deliveries=5)
+    routed = route_to_dlq(bus, "inference", msg, "transient", max_deliveries=5)
     assert routed is False
     assert bus.history(dlq(topic), count=10) == []
 
@@ -106,6 +107,7 @@ def test_route_to_dlq_skips_below_threshold():
 # ---------------------------------------------------------------------------
 # Integration: malformed CSI in inference_worker
 # ---------------------------------------------------------------------------
+
 
 class _StubModel:
     def predict(self, feats):
@@ -134,10 +136,16 @@ def test_malformed_csi_routes_to_dlq_in_inference_worker():
         env = np.sin(2 * np.pi * 1.2 * (i / fs))
         gains = np.linspace(0.5, 1.5, n_sub)
         amps = (env * gains).astype(np.float32)
-        bus.publish(topic, {
-            "ts_unix": t, "amps": amps.tolist(),
-            "n_subcarriers": n_sub, "patient_id": patient,
-        }, ts_ms=int(t * 1000))
+        bus.publish(
+            topic,
+            {
+                "ts_unix": t,
+                "amps": amps.tolist(),
+                "n_subcarriers": n_sub,
+                "patient_id": patient,
+            },
+            ts_ms=int(t * 1000),
+        )
 
     loop(
         bus=bus,
@@ -167,5 +175,6 @@ def test_dlq_topic_not_included_in_all_topics():
     subscribing to all_topics(patient) shouldn't accidentally read
     their own DLQ outputs."""
     from modules.bus import all_topics
+
     topics = all_topics("alice")
     assert not any(t.endswith(".dlq") for t in topics)

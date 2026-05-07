@@ -20,6 +20,7 @@ Usage (library, amplitude only):
 Usage (library, with phase):
     amps, complex_csi, timestamps_s = parse_capture_file("capture.txt", return_complex=True)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,8 +34,9 @@ CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9, ]+)\]")
 IDF_TS_RE = re.compile(r"^[IWE] \((?P<ms>\d+)\)")
 
 
-def _parse_one_line(line: str
-                    ) -> tuple[np.ndarray | None, np.ndarray | None, float | None]:
+def _parse_one_line(
+    line: str,
+) -> tuple[np.ndarray | None, np.ndarray | None, float | None]:
     """Return (amps, complex_csi, timestamp_s) for a single line, or (None, None, None).
 
     `complex_csi` is the complex-valued I+jQ vector preserving phase, used by
@@ -66,10 +68,9 @@ def _parse_one_line(line: str
     return amps, cplx, ts_s
 
 
-def parse_capture_file(path: str | Path,
-                       synthesised_fs: float = 100.0,
-                       return_complex: bool = False
-                       ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
+def parse_capture_file(
+    path: str | Path, synthesised_fs: float = 100.0, return_complex: bool = False
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Parse a capture file.
 
     Default returns (amps, timestamps_s) for backward compatibility.
@@ -119,8 +120,10 @@ def parse_capture_file(path: str | Path,
                 pass
 
         ts_arr = np.arange(len(keep), dtype=np.float64) / effective_fs
-        print(f"[parse_csi_capture] note: no IDF timestamps in {path};"
-              f" synthesising {effective_fs:.1f} Hz grid ({source})")
+        print(
+            f"[parse_csi_capture] note: no IDF timestamps in {path};"
+            f" synthesising {effective_fs:.1f} Hz grid ({source})"
+        )
 
     if return_complex:
         return amps_arr, cplx_arr, ts_arr
@@ -130,15 +133,15 @@ def parse_capture_file(path: str | Path,
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("capture", type=Path, help="captured text file")
-    p.add_argument("--out", type=Path, default=None,
-                   help="output .npz (default: <capture>.npz)")
+    p.add_argument(
+        "--out", type=Path, default=None, help="output .npz (default: <capture>.npz)"
+    )
     args = p.parse_args()
 
     amps, ts = parse_capture_file(args.capture)
     out = args.out or args.capture.with_suffix(".npz")
     np.savez_compressed(out, amps=amps, timestamps_s=ts)
-    print(f"parsed {amps.shape[0]} packets across {amps.shape[1]} subcarriers"
-          f" -> {out}")
+    print(f"parsed {amps.shape[0]} packets across {amps.shape[1]} subcarriers -> {out}")
     print(f"duration: {ts[-1] - ts[0]:.1f} s")
     print(f"mean packet rate: {amps.shape[0] / (ts[-1] - ts[0]):.1f} pps")
 

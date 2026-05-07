@@ -5,6 +5,7 @@ don't need real CSI captures. Verifies the LOSO fold logic itself —
 that each session is held out exactly once, trained on the others,
 and that the average is computed only over valid folds.
 """
+
 from __future__ import annotations
 
 import sys
@@ -45,12 +46,13 @@ def test_loso_holds_each_session_out_once(tmp_path):
     for name in ("sessionA", "sessionB", "sessionC"):
         d = tmp_path / name
         d.mkdir()
-        cap = d / "capture.txt"; cap.write_text("")
-        log = d / "hr_log.csv"; log.write_text("")
+        cap = d / "capture.txt"
+        cap.write_text("")
+        log = d / "hr_log.csv"
+        log.write_text("")
         pairs.append((cap, log))
 
-    with patch.object(eval_loso, "build_feature_matrix",
-                      side_effect=_stub_features):
+    with patch.object(eval_loso, "build_feature_matrix", side_effect=_stub_features):
         result = eval_loso.loso_eval(pairs, calibration_mode="none")
 
     held_session_names = [r["session"] for r in result["fold_results"]]
@@ -68,16 +70,16 @@ def test_loso_skips_empty_session(tmp_path):
     for name in ("sessionA", "empty", "sessionC"):
         d = tmp_path / name
         d.mkdir()
-        cap = d / "capture.txt"; cap.write_text("")
-        log = d / "hr_log.csv"; log.write_text("")
+        cap = d / "capture.txt"
+        cap.write_text("")
+        log = d / "hr_log.csv"
+        log.write_text("")
         pairs.append((cap, log))
 
-    with patch.object(eval_loso, "build_feature_matrix",
-                      side_effect=_stub_features):
+    with patch.object(eval_loso, "build_feature_matrix", side_effect=_stub_features):
         result = eval_loso.loso_eval(pairs, calibration_mode="none")
 
-    empty_row = next(r for r in result["fold_results"]
-                     if r["session"] == "empty")
+    empty_row = next(r for r in result["fold_results"] if r["session"] == "empty")
     assert empty_row["n_held"] == 0
     assert empty_row["hr_mae_bpm"] != empty_row["hr_mae_bpm"]  # NaN
     # The non-empty folds remain valid.
@@ -89,19 +91,23 @@ def test_loso_average_only_over_valid_folds(tmp_path):
     for name in ("sessionA", "empty", "sessionC"):
         d = tmp_path / name
         d.mkdir()
-        cap = d / "capture.txt"; cap.write_text("")
-        log = d / "hr_log.csv"; log.write_text("")
+        cap = d / "capture.txt"
+        cap.write_text("")
+        log = d / "hr_log.csv"
+        log.write_text("")
         pairs.append((cap, log))
 
-    with patch.object(eval_loso, "build_feature_matrix",
-                      side_effect=_stub_features):
+    with patch.object(eval_loso, "build_feature_matrix", side_effect=_stub_features):
         result = eval_loso.loso_eval(pairs, calibration_mode="none")
 
     # Average should be finite (not NaN) and computed over the 2
     # valid folds only.
     assert result["avg_hr_mae_bpm"] == result["avg_hr_mae_bpm"]
-    valid_maes = [r["hr_mae_bpm"] for r in result["fold_results"]
-                  if r["hr_mae_bpm"] == r["hr_mae_bpm"]]
+    valid_maes = [
+        r["hr_mae_bpm"]
+        for r in result["fold_results"]
+        if r["hr_mae_bpm"] == r["hr_mae_bpm"]
+    ]
     expected = float(np.mean(valid_maes))
     assert abs(result["avg_hr_mae_bpm"] - expected) < 1e-6
 
@@ -111,12 +117,13 @@ def test_loso_returns_calibration_mode_in_result(tmp_path):
     for name in ("sessionA", "sessionB"):
         d = tmp_path / name
         d.mkdir()
-        cap = d / "capture.txt"; cap.write_text("")
-        log = d / "hr_log.csv"; log.write_text("")
+        cap = d / "capture.txt"
+        cap.write_text("")
+        log = d / "hr_log.csv"
+        log.write_text("")
         pairs.append((cap, log))
 
-    with patch.object(eval_loso, "build_feature_matrix",
-                      side_effect=_stub_features):
+    with patch.object(eval_loso, "build_feature_matrix", side_effect=_stub_features):
         result = eval_loso.loso_eval(pairs, calibration_mode="per_session")
     assert result["calibration_mode"] == "per_session"
     assert result["n_sessions"] == 2

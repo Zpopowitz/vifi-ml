@@ -30,6 +30,7 @@ Heuristics (tunable via flags):
   - audit_dir missing → FAIL
   - bus unreachable → FAIL (can't tell if subscriber is alive)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,8 +47,8 @@ if str(ROOT) not in sys.path:
 from modules.bus import all_topics, bus_from_env  # noqa: E402
 
 CONSUMER_GROUP = "audit"
-DEFAULT_MAX_AGE_S = 300.0       # 5 min
-DEFAULT_MAX_PENDING = 100       # per topic
+DEFAULT_MAX_AGE_S = 300.0  # 5 min
+DEFAULT_MAX_PENDING = 100  # per topic
 EXIT_OK = 0
 EXIT_WARN = 1
 EXIT_FAIL = 2
@@ -63,7 +64,7 @@ class HealthReport:
     pending_per_topic: dict[str, int] = field(default_factory=dict)
     bus_reachable: bool = True
     bus_error: str | None = None
-    verdict: str = "OK"          # OK | WARN | FAIL
+    verdict: str = "OK"  # OK | WARN | FAIL
     notes: list[str] = field(default_factory=list)
 
 
@@ -79,8 +80,10 @@ def _scan_disk(audit_dir: Path, report: HealthReport) -> None:
         report.notes.append(f"audit_dir {audit_dir} does not exist")
         report.verdict = "FAIL"
         return
-    files = sorted(audit_dir.glob("audit-*.jsonl"),
-                   key=lambda p: p.stat().st_mtime if p.exists() else 0)
+    files = sorted(
+        audit_dir.glob("audit-*.jsonl"),
+        key=lambda p: p.stat().st_mtime if p.exists() else 0,
+    )
     if not files:
         report.notes.append(f"no audit-*.jsonl files in {audit_dir}")
         # Empty is FAIL only if we expect activity (i.e. bus has data).
@@ -107,15 +110,15 @@ def _scan_bus(patient_id: str, report: HealthReport) -> None:
         for topic in all_topics(patient_id):
             try:
                 report.pending_per_topic[topic] = bus.pending_count(
-                    CONSUMER_GROUP, topic,
+                    CONSUMER_GROUP,
+                    topic,
                 )
             except Exception as exc:
                 # The group may not exist yet for this topic — that's
                 # the audit subscriber's job to create on its first
                 # read. Surface as 0 with a note.
                 report.pending_per_topic[topic] = 0
-                report.notes.append(
-                    f"pending_count({topic}) failed: {exc}")
+                report.notes.append(f"pending_count({topic}) failed: {exc}")
     finally:
         try:
             bus.close()
@@ -123,22 +126,22 @@ def _scan_bus(patient_id: str, report: HealthReport) -> None:
             pass
 
 
-def _combine_verdict(report: HealthReport, *,
-                     max_age_s: float,
-                     max_pending: int) -> None:
+def _combine_verdict(
+    report: HealthReport, *, max_age_s: float, max_pending: int
+) -> None:
     if report.verdict == "FAIL":
         return  # already terminal from a prior step
     has_bus_activity = any(p > 0 for p in report.pending_per_topic.values())
     if report.age_s is None:
         if has_bus_activity:
-            report.notes.append(
-                "no audit files on disk but bus has pending messages")
+            report.notes.append("no audit files on disk but bus has pending messages")
             report.verdict = "FAIL"
         else:
             # No files, no bus activity = subscriber idle but not broken.
             report.notes.append(
                 "no audit files yet (subscriber has not written; "
-                "may not have processed any messages)")
+                "may not have processed any messages)"
+            )
             if report.verdict == "OK":
                 report.verdict = "WARN"
         return
@@ -146,18 +149,18 @@ def _combine_verdict(report: HealthReport, *,
         report.notes.append(
             f"newest audit file is {report.age_s:.0f}s old "
             f"(>{max_age_s:.0f}s) but bus has activity — "
-            "subscriber likely stuck")
+            "subscriber likely stuck"
+        )
         report.verdict = "FAIL"
         return
     overloaded_topics = [
-        t for t, p in report.pending_per_topic.items()
-        if p > max_pending
+        t for t, p in report.pending_per_topic.items() if p > max_pending
     ]
     if overloaded_topics:
         report.notes.append(
             f"pending_count > {max_pending} on: "
-            + ", ".join(f"{t}={report.pending_per_topic[t]}"
-                        for t in overloaded_topics))
+            + ", ".join(f"{t}={report.pending_per_topic[t]}" for t in overloaded_topics)
+        )
         if report.verdict == "OK":
             report.verdict = "WARN"
 
@@ -166,10 +169,12 @@ def _exit_code(verdict: str) -> int:
     return {"OK": EXIT_OK, "WARN": EXIT_WARN, "FAIL": EXIT_FAIL}[verdict]
 
 
-def check(patient_id: str = "default",
-          audit_dir: Path | None = None,
-          max_age_s: float = DEFAULT_MAX_AGE_S,
-          max_pending: int = DEFAULT_MAX_PENDING) -> HealthReport:
+def check(
+    patient_id: str = "default",
+    audit_dir: Path | None = None,
+    max_age_s: float = DEFAULT_MAX_AGE_S,
+    max_pending: int = DEFAULT_MAX_PENDING,
+) -> HealthReport:
     audit_dir_resolved = _resolve_audit_dir(audit_dir)
     report = HealthReport(audit_dir=audit_dir_resolved)
     _scan_disk(audit_dir_resolved, report)
@@ -181,17 +186,21 @@ def check(patient_id: str = "default",
 def _print_report(report: HealthReport, *, quiet: bool) -> None:
     if quiet:
         # One-line summary suitable for cron / monitoring scrape.
-        print(f"audit_health verdict={report.verdict} "
-              f"age_s={report.age_s if report.age_s is not None else '-'} "
-              f"pending="
-              f"{sum(report.pending_per_topic.values())}")
+        print(
+            f"audit_health verdict={report.verdict} "
+            f"age_s={report.age_s if report.age_s is not None else '-'} "
+            f"pending="
+            f"{sum(report.pending_per_topic.values())}"
+        )
         return
     print(f"Audit health for audit_dir={report.audit_dir}")
     print(f"  Verdict: {report.verdict}")
     if report.newest_file is not None:
-        print(f"  Newest file: {report.newest_file.name} "
-              f"({report.newest_size_bytes} bytes, "
-              f"{report.age_s:.0f}s old)")
+        print(
+            f"  Newest file: {report.newest_file.name} "
+            f"({report.newest_size_bytes} bytes, "
+            f"{report.age_s:.0f}s old)"
+        )
     else:
         print("  Newest file: (none)")
     if report.bus_reachable:
@@ -211,18 +220,33 @@ def _print_report(report: HealthReport, *, quiet: bool) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Check whether the audit subscriber is alive + "
-                    "consuming. Exit 0=OK, 1=WARN, 2=FAIL.",
+        "consuming. Exit 0=OK, 1=WARN, 2=FAIL.",
     )
-    p.add_argument("--patient-id", default="default",
-                   help="patient id whose audit topics to inspect")
-    p.add_argument("--audit-dir", type=Path, default=None,
-                   help="override VIFI_AUDIT_DIR")
-    p.add_argument("--max-age-s", type=float, default=DEFAULT_MAX_AGE_S,
-                   help=f"newest-file max age in s (default {DEFAULT_MAX_AGE_S:.0f})")
-    p.add_argument("--max-pending", type=int, default=DEFAULT_MAX_PENDING,
-                   help=f"per-topic pending threshold (default {DEFAULT_MAX_PENDING})")
-    p.add_argument("--quiet", action="store_true",
-                   help="single-line summary suitable for cron / monitoring")
+    p.add_argument(
+        "--patient-id",
+        default="default",
+        help="patient id whose audit topics to inspect",
+    )
+    p.add_argument(
+        "--audit-dir", type=Path, default=None, help="override VIFI_AUDIT_DIR"
+    )
+    p.add_argument(
+        "--max-age-s",
+        type=float,
+        default=DEFAULT_MAX_AGE_S,
+        help=f"newest-file max age in s (default {DEFAULT_MAX_AGE_S:.0f})",
+    )
+    p.add_argument(
+        "--max-pending",
+        type=int,
+        default=DEFAULT_MAX_PENDING,
+        help=f"per-topic pending threshold (default {DEFAULT_MAX_PENDING})",
+    )
+    p.add_argument(
+        "--quiet",
+        action="store_true",
+        help="single-line summary suitable for cron / monitoring",
+    )
     args = p.parse_args()
     report = check(
         patient_id=args.patient_id,

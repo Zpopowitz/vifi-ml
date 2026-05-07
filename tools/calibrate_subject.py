@@ -29,6 +29,7 @@ Examples:
         --subject-id subj02 --room-id quiet --posture seated \\
         --capture-fresh --port COM6 --duration 30
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,8 +56,9 @@ from preprocess import extract_features  # noqa: E402
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 
 
-def slice_first_n_seconds(amps: np.ndarray, ts: np.ndarray, n_sec: float
-                          ) -> tuple[np.ndarray, np.ndarray]:
+def slice_first_n_seconds(
+    amps: np.ndarray, ts: np.ndarray, n_sec: float
+) -> tuple[np.ndarray, np.ndarray]:
     """Return only the first n_sec seconds of the capture."""
     t0 = ts[0]
     mask = ts <= t0 + n_sec
@@ -64,8 +66,11 @@ def slice_first_n_seconds(amps: np.ndarray, ts: np.ndarray, n_sec: float
 
 
 def compute_features_over_windows(
-    amps: np.ndarray, ts: np.ndarray, fs_resample: float,
-    window_s: float = 10.0, stride_s: float = 5.0,
+    amps: np.ndarray,
+    ts: np.ndarray,
+    fs_resample: float,
+    window_s: float = 10.0,
+    stride_s: float = 5.0,
 ) -> np.ndarray:
     """Run the standard envelope -> feature pipeline across rolling windows."""
     feats: list[np.ndarray] = []
@@ -74,11 +79,13 @@ def compute_features_over_windows(
     while t + window_s <= t_end:
         mask = (ts >= t) & (ts < t + window_s)
         if mask.sum() < 50:
-            t += stride_s; continue
+            t += stride_s
+            continue
         win_ts, win_amps = ts[mask], amps[mask]
         grid = np.arange(win_ts[0], win_ts[-1], 1.0 / fs_resample)
         if grid.size < 64:
-            t += stride_s; continue
+            t += stride_s
+            continue
         resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
         for s in range(win_amps.shape[1]):
             resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
@@ -98,9 +105,16 @@ def compute_features_over_windows(
 def fresh_capture(port: str, baud: int, duration_s: float, out_path: Path) -> None:
     """Run tools/csi_capture.py to record a fresh CSI window."""
     cmd = [
-        sys.executable, str(ROOT / "tools" / "csi_capture.py"),
-        "--port", port, "--baud", str(baud),
-        "--duration", str(duration_s), "--out", str(out_path),
+        sys.executable,
+        str(ROOT / "tools" / "csi_capture.py"),
+        "--port",
+        port,
+        "--baud",
+        str(baud),
+        "--duration",
+        str(duration_s),
+        "--out",
+        str(out_path),
     ]
     print(f"[capture] {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
@@ -110,16 +124,28 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--subject-id", required=True)
     p.add_argument("--room-id", required=True)
-    p.add_argument("--posture", default="seated",
-                   help="seated | lying_supine | lying_lateral | other")
-    p.add_argument("--capture", type=Path,
-                   help="path to an existing capture.txt to use as calibration data")
-    p.add_argument("--capture-fresh", action="store_true",
-                   help="capture a new 30-sec baseline live from --port")
-    p.add_argument("--port", default="COM6", help="ESP32-S3 RX serial port (fresh mode)")
+    p.add_argument(
+        "--posture",
+        default="seated",
+        help="seated | lying_supine | lying_lateral | other",
+    )
+    p.add_argument(
+        "--capture",
+        type=Path,
+        help="path to an existing capture.txt to use as calibration data",
+    )
+    p.add_argument(
+        "--capture-fresh",
+        action="store_true",
+        help="capture a new 30-sec baseline live from --port",
+    )
+    p.add_argument(
+        "--port", default="COM6", help="ESP32-S3 RX serial port (fresh mode)"
+    )
     p.add_argument("--baud", type=int, default=921600)
-    p.add_argument("--duration", type=float, default=30.0,
-                   help="seconds of baseline data to use")
+    p.add_argument(
+        "--duration", type=float, default=30.0, help="seconds of baseline data to use"
+    )
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--body-mass-lbs", type=float, default=None)
     p.add_argument("--notes", default="")
@@ -133,7 +159,9 @@ def main() -> None:
     elif args.capture is not None:
         cap_path = args.capture.resolve()
     else:
-        sys.exit("error: provide either --capture <path> or --capture-fresh --port <COM>")
+        sys.exit(
+            "error: provide either --capture <path> or --capture-fresh --port <COM>"
+        )
 
     print(f"[1/4] parsing {cap_path}")
     amps, ts = parse_capture_file(cap_path)
@@ -156,7 +184,9 @@ def main() -> None:
     print("[3/4] computing calibration features and fingerprint")
     feats = compute_features_over_windows(amps, ts, args.fs)
     if feats.shape[0] < 2:
-        sys.exit("error: not enough windows in baseline - capture longer or check signal")
+        sys.exit(
+            "error: not enough windows in baseline - capture longer or check signal"
+        )
     print(f"      {feats.shape[0]} windows scored")
 
     cal_vec = compute_calibration_vector(feats)
@@ -183,7 +213,9 @@ def main() -> None:
     print()
     print(f"calibration_id: {cal_id}")
     print(f"  cal vector:   {[f'{v:.3f}' for v in cal_vec]}")
-    print(f"  fingerprint:  {len(fingerprint)}-dim, L2 norm={float(np.linalg.norm(fingerprint)):.3f}")
+    print(
+        f"  fingerprint:  {len(fingerprint)}-dim, L2 norm={float(np.linalg.norm(fingerprint)):.3f}"
+    )
     print(f"  packet rate:  {packet_rate:.1f} Hz")
 
 

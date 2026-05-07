@@ -31,6 +31,7 @@ Usage:
 
 This is a read-only tool. It never modifies the audit log.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,17 +56,19 @@ log = logging.getLogger("vifi.audit_query")
 # Records
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Record:
     """One decoded audit record (encrypted or plaintext, normalized)."""
+
     ts_iso: str
     request_id: Optional[str]
     subject_id: Optional[str]
     chain_digest: Optional[str]
-    body: dict = field(default_factory=dict)   # flattened body, post-decrypt
-    file: str = ""                              # source file
+    body: dict = field(default_factory=dict)  # flattened body, post-decrypt
+    file: str = ""  # source file
     line_no: int = 0
-    encrypted: bool = False                    # was this record encrypted on disk?
+    encrypted: bool = False  # was this record encrypted on disk?
 
     def topic(self) -> Optional[str]:
         return self.body.get("topic")
@@ -82,21 +85,22 @@ class Record:
 # File iteration
 # ---------------------------------------------------------------------------
 
+
 def _parse_filename_date(path: Path) -> Optional[datetime]:
     """audit-2026-05-04Z.jsonl -> 2026-05-04 UTC; or None on a non-audit file."""
     name = path.stem
     if not name.startswith("audit-"):
         return None
-    raw = name[len("audit-"):].rstrip("Z")
+    raw = name[len("audit-") :].rstrip("Z")
     try:
         return datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 
 
-def files_in_range(audit_dir: Path,
-                   since: Optional[datetime],
-                   until: Optional[datetime]) -> list[Path]:
+def files_in_range(
+    audit_dir: Path, since: Optional[datetime], until: Optional[datetime]
+) -> list[Path]:
     """Files whose YYYY-MM-DD falls within [since, until]. Older/newer
     files are skipped (cheap pre-filter; per-record ts_iso filter is
     still applied)."""
@@ -116,6 +120,7 @@ def files_in_range(audit_dir: Path,
 # ---------------------------------------------------------------------------
 # Decryption
 # ---------------------------------------------------------------------------
+
 
 def _load_fernet():
     """Return a Fernet cipher from VIFI_AUDIT_ENCRYPTION_KEY, or None."""
@@ -167,14 +172,18 @@ def _decode_line(raw: str, fernet, decrypt: bool) -> Optional[dict]:
 # Iteration with filters
 # ---------------------------------------------------------------------------
 
-def iter_records(audit_dir: Path, *,
-                 since: Optional[datetime] = None,
-                 until: Optional[datetime] = None,
-                 subject: Optional[str] = None,
-                 topic_prefix: Optional[str] = None,
-                 event: Optional[str] = None,
-                 decrypt: bool = False,
-                 fernet=None) -> Iterator[Record]:
+
+def iter_records(
+    audit_dir: Path,
+    *,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    subject: Optional[str] = None,
+    topic_prefix: Optional[str] = None,
+    event: Optional[str] = None,
+    decrypt: bool = False,
+    fernet=None,
+) -> Iterator[Record]:
     """Yield records matching every supplied filter."""
     if fernet is None and decrypt:
         fernet = _load_fernet()
@@ -231,6 +240,7 @@ def iter_records(audit_dir: Path, *,
 # Output formats
 # ---------------------------------------------------------------------------
 
+
 def _flatten(rec: Record) -> dict:
     """Pick a flat row for CSV/table output. Keeps the most useful
     fields; drops nested payloads that don't fit a 2-D table."""
@@ -280,8 +290,17 @@ def emit_table(records: Iterator[Record], stream) -> int:
         return 0
 
     # Column order: ts | topic | subject | hr | rr | event | rid | chain
-    cols = ["ts_iso", "topic", "subject_id", "hr_bpm", "rr_bpm",
-            "event", "request_id", "encrypted", "chain_digest"]
+    cols = [
+        "ts_iso",
+        "topic",
+        "subject_id",
+        "hr_bpm",
+        "rr_bpm",
+        "event",
+        "request_id",
+        "encrypted",
+        "chain_digest",
+    ]
     widths = {c: max(len(c), max(len(str(r[c])) for r in rows)) for c in cols}
     # Cap widths so a single long field doesn't make the table unreadable.
     cap = {"topic": 26, "subject_id": 24, "request_id": 16}
@@ -305,6 +324,7 @@ def emit_table(records: Iterator[Record], stream) -> int:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _parse_when(s: str) -> datetime:
     """Accept 2026-05-04 or 2026-05-04T12:00:00 or 2026-05-04T12:00:00Z."""
     if s.endswith("Z"):
@@ -325,27 +345,50 @@ def main() -> int:
         description="Query the ViFi JSONL audit log.",
         epilog="see `docs/RUNBOOK.md` for common queries",
     )
-    p.add_argument("--audit-dir", type=Path,
-                   default=Path(os.environ.get("VIFI_AUDIT_DIR",
-                                                "data/audit")))
-    p.add_argument("--since", type=_parse_when, default=None,
-                   help="ISO date/time; ts_iso >= this")
-    p.add_argument("--until", type=_parse_when, default=None,
-                   help="ISO date/time; ts_iso <= this")
-    p.add_argument("--since-hours", type=float, default=None,
-                   help="convenience: --since now() - N hours")
-    p.add_argument("--subject", default=None,
-                   help="exact pseudonymized subject id (e.g. 'pseudo:abc123')")
-    p.add_argument("--topic-prefix", default=None,
-                   help="filter by topic prefix (e.g. 'hr.predicted')")
-    p.add_argument("--event", default=None,
-                   help="filter by event field (e.g. 'audit_retention_sweep')")
-    p.add_argument("--decrypt", action="store_true",
-                   help="decrypt Fernet records using VIFI_AUDIT_ENCRYPTION_KEY")
-    p.add_argument("--format", choices=["jsonl", "csv", "table"],
-                   default="jsonl", help="output format")
-    p.add_argument("--limit", type=int, default=None,
-                   help="stop after N records")
+    p.add_argument(
+        "--audit-dir",
+        type=Path,
+        default=Path(os.environ.get("VIFI_AUDIT_DIR", "data/audit")),
+    )
+    p.add_argument(
+        "--since", type=_parse_when, default=None, help="ISO date/time; ts_iso >= this"
+    )
+    p.add_argument(
+        "--until", type=_parse_when, default=None, help="ISO date/time; ts_iso <= this"
+    )
+    p.add_argument(
+        "--since-hours",
+        type=float,
+        default=None,
+        help="convenience: --since now() - N hours",
+    )
+    p.add_argument(
+        "--subject",
+        default=None,
+        help="exact pseudonymized subject id (e.g. 'pseudo:abc123')",
+    )
+    p.add_argument(
+        "--topic-prefix",
+        default=None,
+        help="filter by topic prefix (e.g. 'hr.predicted')",
+    )
+    p.add_argument(
+        "--event",
+        default=None,
+        help="filter by event field (e.g. 'audit_retention_sweep')",
+    )
+    p.add_argument(
+        "--decrypt",
+        action="store_true",
+        help="decrypt Fernet records using VIFI_AUDIT_ENCRYPTION_KEY",
+    )
+    p.add_argument(
+        "--format",
+        choices=["jsonl", "csv", "table"],
+        default="jsonl",
+        help="output format",
+    )
+    p.add_argument("--limit", type=int, default=None, help="stop after N records")
     p.add_argument("--log-level", default="WARNING")
     args = p.parse_args()
 
@@ -366,7 +409,8 @@ def main() -> int:
 
     records = iter_records(
         args.audit_dir,
-        since=args.since, until=args.until,
+        since=args.since,
+        until=args.until,
         subject=args.subject,
         topic_prefix=args.topic_prefix,
         event=args.event,
@@ -382,6 +426,7 @@ def main() -> int:
                     break
                 yield r
                 count += 1
+
         records = _capped(records, args.limit)
 
     if args.format == "jsonl":

@@ -15,6 +15,7 @@ runtime via the corresponding `VIFI_*` environment variable.
 The DSP-band edges fit inside `[0, fs/2]` for fs=100 Hz; runtime
 validators in callers verify this hasn't drifted.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,14 +53,14 @@ EDGE_SUBCARRIER_GUARD: int = _env_int("VIFI_EDGE_SUBCARRIER_GUARD", 8)
 # Athletes (<54 bpm) or tachycardic patients (>108 bpm) need a retrain
 # with a widened band — tracked in ROADMAP.md.
 HR_BAND_HZ: Tuple[float, float] = (
-    _env_float("VIFI_HR_LO_HZ", 0.9),   # 54 bpm
-    _env_float("VIFI_HR_HI_HZ", 1.8),   # 108 bpm
+    _env_float("VIFI_HR_LO_HZ", 0.9),  # 54 bpm
+    _env_float("VIFI_HR_HI_HZ", 1.8),  # 108 bpm
 )
 
 # RR_BAND covers ~9-36 bpm — normal-to-tachypneic adult range.
 RR_BAND_HZ: Tuple[float, float] = (
     _env_float("VIFI_RR_LO_HZ", 0.15),  # 9 bpm
-    _env_float("VIFI_RR_HI_HZ", 0.6),   # 36 bpm
+    _env_float("VIFI_RR_HI_HZ", 0.6),  # 36 bpm
 )
 
 # Total Butterworth band-pass cutoff (covers both HR + RR) used as the
@@ -96,8 +97,11 @@ def validate_at_boot() -> None:
     """
     fs_default = 100.0
     nyquist = fs_default / 2.0
-    for label, band in (("HR", HR_BAND_HZ), ("RR", RR_BAND_HZ),
-                        ("FILTER", FILTER_BAND_HZ)):
+    for label, band in (
+        ("HR", HR_BAND_HZ),
+        ("RR", RR_BAND_HZ),
+        ("FILTER", FILTER_BAND_HZ),
+    ):
         lo, hi = band
         if not (0.0 < lo < hi < nyquist):
             raise RuntimeError(

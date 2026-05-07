@@ -12,6 +12,7 @@ Two related goals:
 Storage layout: one JSON file per subject at `data/calibrations/<subject_id>.json`.
 A subject can have multiple stored calibrations across different rooms and postures.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ _LOG_SUBTRACT_NAMES = ("log_band_energy",)
 
 def _resolve_indices(names: tuple[str, ...]) -> list[int]:
     from preprocess import FEATURE_NAMES  # noqa: PLC0415 — break import cycle
+
     out = []
     for n in names:
         try:
@@ -54,12 +56,15 @@ ALL_CAL_INDICES = AMPLITUDE_DIVIDE_INDICES + LOG_SUBTRACT_INDICES
 
 DEFAULT_FINGERPRINT_DIM = 192  # one ESP32-S3 packet's subcarrier count
 DEFAULT_MATCH_THRESHOLD = 0.85  # cosine similarity to count as "same subject"
-DEFAULT_MULTI_SUBJECT_THRESHOLD = 0.55  # below this vs known fingerprint, multi-person suspected
+DEFAULT_MULTI_SUBJECT_THRESHOLD = (
+    0.55  # below this vs known fingerprint, multi-person suspected
+)
 
 
 @dataclass
 class Calibration:
     """One stored calibration for a (subject, room, posture) tuple."""
+
     calibration_id: str
     subject_id: str
     room_id: str
@@ -83,6 +88,7 @@ class Calibration:
 @dataclass
 class IdentificationResult:
     """Result of matching an unknown capture against stored calibrations."""
+
     matched: bool
     subject_id: Optional[str]
     room_id: Optional[str]
@@ -105,7 +111,9 @@ def compute_calibration_vector(features_matrix: np.ndarray) -> np.ndarray:
     return np.median(features_matrix, axis=0).astype(np.float32)
 
 
-def apply_calibration(features: np.ndarray, calibration_vector: np.ndarray) -> np.ndarray:
+def apply_calibration(
+    features: np.ndarray, calibration_vector: np.ndarray
+) -> np.ndarray:
     """Per-subject calibration on prediction features.
 
     For amplitude features: divide current by baseline.
@@ -117,6 +125,7 @@ def apply_calibration(features: np.ndarray, calibration_vector: np.ndarray) -> n
     a wrong shape would invisibly bypass calibration.
     """
     from preprocess import FEATURE_NAMES  # noqa: PLC0415
+
     expected = len(FEATURE_NAMES)
     last_dim = features.shape[-1] if features.ndim else 0
     if last_dim != expected:
@@ -197,8 +206,12 @@ def load_subject_file(repo_root: Path, subject_id: str) -> list[Calibration]:
     return [Calibration.from_dict(d) for d in raw.get("calibrations", [])]
 
 
-def save_subject_file(repo_root: Path, subject_id: str, calibrations: list[Calibration],
-                      body_mass_lbs: Optional[float] = None) -> Path:
+def save_subject_file(
+    repo_root: Path,
+    subject_id: str,
+    calibrations: list[Calibration],
+    body_mass_lbs: Optional[float] = None,
+) -> Path:
     """Write all of a subject's calibrations back to disk."""
     path = calibrations_root(repo_root) / f"{subject_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,79 +237,115 @@ def load_all_calibrations(repo_root: Path) -> list[Calibration]:
     return out
 
 
-def append_calibration(repo_root: Path, calibration: Calibration,
-                       body_mass_lbs: Optional[float] = None) -> Path:
+def append_calibration(
+    repo_root: Path, calibration: Calibration, body_mass_lbs: Optional[float] = None
+) -> Path:
     """Add one calibration to the subject's file, replacing any existing record
     with the same (room_id, posture)."""
     existing = load_subject_file(repo_root, calibration.subject_id)
-    keep = [c for c in existing
-            if not (c.room_id == calibration.room_id and c.posture == calibration.posture)]
+    keep = [
+        c
+        for c in existing
+        if not (c.room_id == calibration.room_id and c.posture == calibration.posture)
+    ]
     keep.append(calibration)
-    return save_subject_file(repo_root, calibration.subject_id, keep,
-                             body_mass_lbs=body_mass_lbs)
+    return save_subject_file(
+        repo_root, calibration.subject_id, keep, body_mass_lbs=body_mass_lbs
+    )
 
 
-def identify(unknown_fingerprint: np.ndarray, candidates: list[Calibration],
-             room_filter: Optional[str] = None,
-             match_threshold: float = DEFAULT_MATCH_THRESHOLD,
-             multi_threshold: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
-             ) -> IdentificationResult:
+def identify(
+    unknown_fingerprint: np.ndarray,
+    candidates: list[Calibration],
+    room_filter: Optional[str] = None,
+    match_threshold: float = DEFAULT_MATCH_THRESHOLD,
+    multi_threshold: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
+) -> IdentificationResult:
     """Find the calibration whose fingerprint best matches the unknown one."""
     if not candidates:
         return IdentificationResult(
-            matched=False, subject_id=None, room_id=None, posture=None,
-            confidence=0.0, calibration=None, top_candidates=[],
+            matched=False,
+            subject_id=None,
+            room_id=None,
+            posture=None,
+            confidence=0.0,
+            calibration=None,
+            top_candidates=[],
             multi_subject_suspected=False,
             notes="no calibrations stored - cold start, manual calibration required",
         )
 
-    pool = [c for c in candidates
-            if room_filter is None or c.room_id == room_filter]
+    pool = [c for c in candidates if room_filter is None or c.room_id == room_filter]
     if not pool:
         return IdentificationResult(
-            matched=False, subject_id=None, room_id=None, posture=None,
-            confidence=0.0, calibration=None, top_candidates=[],
+            matched=False,
+            subject_id=None,
+            room_id=None,
+            posture=None,
+            confidence=0.0,
+            calibration=None,
+            top_candidates=[],
             multi_subject_suspected=False,
             notes=f"no calibrations stored for room '{room_filter}' - re-cal needed",
         )
 
     similarities = []
     for c in pool:
-        s = cosine_similarity(unknown_fingerprint, np.asarray(c.fingerprint, dtype=np.float32))
+        s = cosine_similarity(
+            unknown_fingerprint, np.asarray(c.fingerprint, dtype=np.float32)
+        )
         similarities.append((c, s))
     similarities.sort(key=lambda t: t[1], reverse=True)
     best_cal, best_sim = similarities[0]
 
-    top3 = [(c.subject_id + (f" [{c.posture}]" if c.posture != "seated" else ""), s)
-            for c, s in similarities[:3]]
+    top3 = [
+        (c.subject_id + (f" [{c.posture}]" if c.posture != "seated" else ""), s)
+        for c, s in similarities[:3]
+    ]
 
     multi_suspected = best_sim < multi_threshold
 
     if best_sim >= match_threshold:
         notes = f"matched {best_cal.subject_id} ({best_cal.posture}) with {best_sim:.3f} similarity"
         return IdentificationResult(
-            matched=True, subject_id=best_cal.subject_id,
-            room_id=best_cal.room_id, posture=best_cal.posture,
-            confidence=best_sim, calibration=best_cal, top_candidates=top3,
-            multi_subject_suspected=False, notes=notes,
+            matched=True,
+            subject_id=best_cal.subject_id,
+            room_id=best_cal.room_id,
+            posture=best_cal.posture,
+            confidence=best_sim,
+            calibration=best_cal,
+            top_candidates=top3,
+            multi_subject_suspected=False,
+            notes=notes,
         )
 
     if multi_suspected:
-        notes = (f"low similarity to all known subjects (best {best_sim:.3f} vs "
-                 f"{best_cal.subject_id}); multi-subject or new subject suspected")
+        notes = (
+            f"low similarity to all known subjects (best {best_sim:.3f} vs "
+            f"{best_cal.subject_id}); multi-subject or new subject suspected"
+        )
     else:
-        notes = (f"closest match {best_cal.subject_id} ({best_sim:.3f}) below "
-                 f"threshold {match_threshold:.2f}; treat as new subject and recalibrate")
+        notes = (
+            f"closest match {best_cal.subject_id} ({best_sim:.3f}) below "
+            f"threshold {match_threshold:.2f}; treat as new subject and recalibrate"
+        )
 
     return IdentificationResult(
-        matched=False, subject_id=None, room_id=None, posture=None,
-        confidence=best_sim, calibration=None, top_candidates=top3,
-        multi_subject_suspected=multi_suspected, notes=notes,
+        matched=False,
+        subject_id=None,
+        room_id=None,
+        posture=None,
+        confidence=best_sim,
+        calibration=None,
+        top_candidates=top3,
+        multi_subject_suspected=multi_suspected,
+        notes=notes,
     )
 
 
-def make_calibration_id(subject_id: str, room_id: str, posture: str,
-                        captured_at: Optional[str] = None) -> str:
+def make_calibration_id(
+    subject_id: str, room_id: str, posture: str, captured_at: Optional[str] = None
+) -> str:
     """Stable ID like 'subj01_quiet_seated_2026-04-27T215000Z'.
 
     `captured_at` includes microseconds when generated here so two
@@ -339,10 +388,13 @@ class RollingFingerprintTracker:
                 ...
     """
 
-    def __init__(self, baseline_fingerprint: np.ndarray,
-                 match_threshold: float = DEFAULT_MATCH_THRESHOLD,
-                 multi_threshold: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
-                 hysteresis_n: int = 3):
+    def __init__(
+        self,
+        baseline_fingerprint: np.ndarray,
+        match_threshold: float = DEFAULT_MATCH_THRESHOLD,
+        multi_threshold: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
+        hysteresis_n: int = 3,
+    ):
         self.baseline = np.asarray(baseline_fingerprint, dtype=np.float32)
         self.match_threshold = float(match_threshold)
         self.multi_threshold = float(multi_threshold)
@@ -370,28 +422,31 @@ class RollingFingerprintTracker:
             self._counter_below_multi = 0
             self._counter_above_match = 0
 
-        if (self.state != "multi"
-                and self._counter_below_multi >= self.hysteresis_n):
+        if self.state != "multi" and self._counter_below_multi >= self.hysteresis_n:
             self.state = "multi"
-        elif (self.state != "single"
-                and self._counter_above_match >= self.hysteresis_n):
+        elif self.state != "single" and self._counter_above_match >= self.hysteresis_n:
             self.state = "single"
-        elif (self.state == "single"
-                and self.multi_threshold <= sim < self.match_threshold):
+        elif (
+            self.state == "single"
+            and self.multi_threshold <= sim < self.match_threshold
+        ):
             # Mid-zone but coming down from a steady single state -- treat as
             # transitional rather than confirmed.
-            self.state = "unknown" if self._counter_below_multi == 0 \
-                                       and self._counter_above_match == 0 \
-                                       else self.state
+            self.state = (
+                "unknown"
+                if self._counter_below_multi == 0 and self._counter_above_match == 0
+                else self.state
+            )
 
         return self.state, sim
 
 
-def detect_multi_subject(unknown_fingerprint: np.ndarray,
-                         calibrations: list[Calibration],
-                         room_id: Optional[str] = None,
-                         single_subject_floor: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
-                         ) -> tuple[bool, str]:
+def detect_multi_subject(
+    unknown_fingerprint: np.ndarray,
+    calibrations: list[Calibration],
+    room_id: Optional[str] = None,
+    single_subject_floor: float = DEFAULT_MULTI_SUBJECT_THRESHOLD,
+) -> tuple[bool, str]:
     """Heuristic multi-subject detector.
 
     A single, known patient fingerprint should land >= match_threshold against
@@ -401,19 +456,21 @@ def detect_multi_subject(unknown_fingerprint: np.ndarray,
 
     Returns (multi_subject_likely, reason_string).
     """
-    pool = [c for c in calibrations
-            if room_id is None or c.room_id == room_id]
+    pool = [c for c in calibrations if room_id is None or c.room_id == room_id]
     if not pool:
         return False, "no calibrations to compare against"
 
     sims = [
-        cosine_similarity(unknown_fingerprint,
-                          np.asarray(c.fingerprint, dtype=np.float32))
+        cosine_similarity(
+            unknown_fingerprint, np.asarray(c.fingerprint, dtype=np.float32)
+        )
         for c in pool
     ]
     best = max(sims)
     if best < single_subject_floor:
-        return True, (f"best fingerprint similarity {best:.3f} below "
-                      f"single-subject floor {single_subject_floor}; "
-                      f"multi-subject or unknown subject")
+        return True, (
+            f"best fingerprint similarity {best:.3f} below "
+            f"single-subject floor {single_subject_floor}; "
+            f"multi-subject or unknown subject"
+        )
     return False, f"best similarity {best:.3f} (matches a known single subject)"

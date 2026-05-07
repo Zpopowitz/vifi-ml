@@ -7,6 +7,7 @@ Covers the content-addressed promote → current → rollback dance:
   - list_versions() returns all valid versions, oldest-first
   - current_version() reads the symlink correctly
 """
+
 from __future__ import annotations
 
 import json
@@ -29,19 +30,24 @@ from tools.model_swap import (  # noqa: E402
 )
 
 
-def _make_source(tmp: Path, *, n_train: int, n_val: int = 10,
-                 hr_mae: float = 4.15) -> Path:
+def _make_source(
+    tmp: Path, *, n_train: int, n_val: int = 10, hr_mae: float = 4.15
+) -> Path:
     src = tmp / "src"
     src.mkdir()
     (src / "hr_model.json").write_text("{}")
     (src / "mahalanobis.json").write_text("{}")
-    (src / "metadata.json").write_text(json.dumps({
-        "feature_set_version": "v1",
-        "n_train": n_train,
-        "n_val": n_val,
-        "calibration_mode": "per_session",
-        "metrics": {"hr_mae": hr_mae, "hr_acc_within_5": 0.85},
-    }))
+    (src / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_set_version": "v1",
+                "n_train": n_train,
+                "n_val": n_val,
+                "calibration_mode": "per_session",
+                "metrics": {"hr_mae": hr_mae, "hr_acc_within_5": 0.85},
+            }
+        )
+    )
     return src
 
 
@@ -84,11 +90,17 @@ def test_promote_changes_sha_when_metadata_changes(tmp_path):
     src2_dir.mkdir()
     (src2_dir / "hr_model.json").write_text("{}")
     (src2_dir / "mahalanobis.json").write_text("{}")
-    (src2_dir / "metadata.json").write_text(json.dumps({
-        "feature_set_version": "v1", "n_train": 60, "n_val": 12,
-        "calibration_mode": "per_session",
-        "metrics": {"hr_mae": 3.92, "hr_acc_within_5": 0.91},
-    }))
+    (src2_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_set_version": "v1",
+                "n_train": 60,
+                "n_val": 12,
+                "calibration_mode": "per_session",
+                "metrics": {"hr_mae": 3.92, "hr_acc_within_5": 0.91},
+            }
+        )
+    )
     sha2 = promote(src2_dir, base)
     assert sha1 != sha2
     # current should now point at sha2.
@@ -103,11 +115,16 @@ def test_rollback_retargets_current(tmp_path):
     src2_dir.mkdir()
     (src2_dir / "hr_model.json").write_text("{}")
     (src2_dir / "mahalanobis.json").write_text("{}")
-    (src2_dir / "metadata.json").write_text(json.dumps({
-        "feature_set_version": "v1", "n_train": 60,
-        "calibration_mode": "per_session",
-        "metrics": {"hr_mae": 3.92},
-    }))
+    (src2_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_set_version": "v1",
+                "n_train": 60,
+                "calibration_mode": "per_session",
+                "metrics": {"hr_mae": 3.92},
+            }
+        )
+    )
     sha2 = promote(src2_dir, base)
     assert current_version(base) == sha2
     rollback(sha1, base)
@@ -149,10 +166,15 @@ def test_list_versions_returns_oldest_first(tmp_path):
     src2.mkdir()
     (src2 / "hr_model.json").write_text("{}")
     (src2 / "mahalanobis.json").write_text("{}")
-    (src2 / "metadata.json").write_text(json.dumps({
-        "feature_set_version": "v1", "n_train": 99,
-        "metrics": {"hr_mae": 5.0},
-    }))
+    (src2 / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_set_version": "v1",
+                "n_train": 99,
+                "metrics": {"hr_mae": 5.0},
+            }
+        )
+    )
     sha2 = promote(src2, base)
     versions = list_versions(base)
     assert [v.sha for v in versions] == [sha1, sha2]

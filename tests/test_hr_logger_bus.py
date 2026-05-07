@@ -4,6 +4,7 @@ We don't exercise the BLE path (needs hardware); these only verify that
 when bus publishing is enabled, readings land on the right topic with
 the expected schema, and that publish errors don't propagate.
 """
+
 from __future__ import annotations
 
 import sys
@@ -21,6 +22,7 @@ def _make_publisher(patient_id: str, bus: InMemoryBus):
     """Build a _BusPublisher whose bus is the in-memory one we control."""
     with patch("modules.bus.bus_from_env", return_value=bus):
         from hr_logger import _BusPublisher
+
         return _BusPublisher(patient_id)
 
 
@@ -59,6 +61,7 @@ def test_topic_isolates_patients():
 
 def test_publish_errors_are_swallowed_so_recording_continues():
     """Bus outage must not break the BLE callback chain."""
+
     class _BrokenBus:
         def publish(self, *_args, **_kwargs):
             raise RuntimeError("bus is down")
@@ -68,6 +71,7 @@ def test_publish_errors_are_swallowed_so_recording_continues():
 
     with patch("modules.bus.bus_from_env", return_value=_BrokenBus()):
         from hr_logger import _BusPublisher
+
         pub = _BusPublisher("alice")
 
     # Should not raise even though every publish fails.

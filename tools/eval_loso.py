@@ -32,6 +32,7 @@ Notes:
   isn't very stable; treat the headline number as illustrative
   rather than authoritative until N >= 5.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -54,15 +55,23 @@ def _frozen_seed(default: int = 42) -> int:
 
 def _build_per_session(
     pairs: list[tuple[Path, Path]],
-    start_offset: float, window_s: float, stride_s: float,
-    fs_resample: float, calibration_mode: str,
+    start_offset: float,
+    window_s: float,
+    stride_s: float,
+    fs_resample: float,
+    calibration_mode: str,
     calibration_seconds: float,
 ) -> list[tuple[str, np.ndarray, np.ndarray]]:
     out = []
     for cap, log in pairs:
         name = cap.parent.name
         X, y = build_feature_matrix(
-            cap, log, start_offset, window_s, stride_s, fs_resample,
+            cap,
+            log,
+            start_offset,
+            window_s,
+            stride_s,
+            fs_resample,
             calibration_mode=calibration_mode,
             calibration_seconds=calibration_seconds,
         )
@@ -82,26 +91,32 @@ def loso_eval(
     seed: int = 42,
 ) -> dict:
     if len(pairs) < 2:
-        raise ValueError(
-            f"need at least 2 sessions for LOSO; got {len(pairs)}")
+        raise ValueError(f"need at least 2 sessions for LOSO; got {len(pairs)}")
 
     from xgboost import XGBRegressor
 
     sessions = _build_per_session(
-        pairs, start_offset, window_s, stride_s, fs_resample,
-        calibration_mode, calibration_seconds,
+        pairs,
+        start_offset,
+        window_s,
+        stride_s,
+        fs_resample,
+        calibration_mode,
+        calibration_seconds,
     )
 
     fold_results: list[dict] = []
     for i, (held_name, X_held, y_held) in enumerate(sessions):
         if X_held.shape[0] == 0:
-            fold_results.append({
-                "session": held_name,
-                "n_held": 0,
-                "hr_mae_bpm": float("nan"),
-                "within_5": float("nan"),
-                "note": "no windows after feature extraction",
-            })
+            fold_results.append(
+                {
+                    "session": held_name,
+                    "n_held": 0,
+                    "hr_mae_bpm": float("nan"),
+                    "within_5": float("nan"),
+                    "note": "no windows after feature extraction",
+                }
+            )
             continue
         X_train_parts = [s[1] for j, s in enumerate(sessions) if j != i]
         y_train_parts = [s[2] for j, s in enumerate(sessions) if j != i]
@@ -110,19 +125,25 @@ def loso_eval(
         X_train = np.vstack(X_train_parts)
         y_train = np.concatenate(y_train_parts)
         if X_train.shape[0] == 0:
-            fold_results.append({
-                "session": held_name,
-                "n_held": int(X_held.shape[0]),
-                "hr_mae_bpm": float("nan"),
-                "within_5": float("nan"),
-                "note": "no training windows from other folds",
-            })
+            fold_results.append(
+                {
+                    "session": held_name,
+                    "n_held": int(X_held.shape[0]),
+                    "hr_mae_bpm": float("nan"),
+                    "within_5": float("nan"),
+                    "note": "no training windows from other folds",
+                }
+            )
             continue
 
         model = XGBRegressor(
-            n_estimators=400, max_depth=5, learning_rate=0.08,
-            subsample=0.9, colsample_bytree=0.9,
-            objective="reg:squarederror", tree_method="hist",
+            n_estimators=400,
+            max_depth=5,
+            learning_rate=0.08,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="reg:squarederror",
+            tree_method="hist",
             random_state=seed,
         )
         model.fit(X_train, y_train, verbose=False)
@@ -130,17 +151,18 @@ def loso_eval(
         residuals = np.abs(pred - y_held)
         mae = float(np.mean(residuals))
         within_5 = float(np.mean(residuals <= 5.0))
-        fold_results.append({
-            "session": held_name,
-            "n_train": int(X_train.shape[0]),
-            "n_held": int(X_held.shape[0]),
-            "hr_mae_bpm": mae,
-            "within_5": within_5,
-            "note": "",
-        })
+        fold_results.append(
+            {
+                "session": held_name,
+                "n_train": int(X_train.shape[0]),
+                "n_held": int(X_held.shape[0]),
+                "hr_mae_bpm": mae,
+                "within_5": within_5,
+                "note": "",
+            }
+        )
 
-    valid = [r for r in fold_results
-             if r.get("hr_mae_bpm") == r.get("hr_mae_bpm")]
+    valid = [r for r in fold_results if r.get("hr_mae_bpm") == r.get("hr_mae_bpm")]
     if valid:
         avg_mae = float(np.mean([r["hr_mae_bpm"] for r in valid]))
         avg_within_5 = float(np.mean([r["within_5"] for r in valid]))
@@ -160,10 +182,8 @@ def loso_eval(
 
 def _print_report(result: dict) -> None:
     print(f"\nLOSO HR evaluation ({result['calibration_mode']} calibration)")
-    print(f"Sessions: {result['n_sessions']}, "
-          f"valid folds: {result['n_valid_folds']}\n")
-    cols = ["session", "n_train", "n_held", "hr_mae_bpm",
-            "within_5", "note"]
+    print(f"Sessions: {result['n_sessions']}, valid folds: {result['n_valid_folds']}\n")
+    cols = ["session", "n_train", "n_held", "hr_mae_bpm", "within_5", "note"]
 
     def fmt(v) -> str:
         if isinstance(v, float):
@@ -175,9 +195,10 @@ def _print_report(result: dict) -> None:
         return str(v)
 
     rows = result["fold_results"]
-    widths = {c: max(len(c),
-                     max((len(fmt(r.get(c, ""))) for r in rows), default=1))
-              for c in cols}
+    widths = {
+        c: max(len(c), max((len(fmt(r.get(c, ""))) for r in rows), default=1))
+        for c in cols
+    }
     print(" | ".join(c.ljust(widths[c]) for c in cols))
     print("-+-".join("-" * widths[c] for c in cols))
     for r in rows:
@@ -185,8 +206,10 @@ def _print_report(result: dict) -> None:
 
     print()
     if result["avg_hr_mae_bpm"] == result["avg_hr_mae_bpm"]:
-        print(f"Cross-session HR MAE: {result['avg_hr_mae_bpm']:.2f} bpm "
-              f"(within ±5 bpm: {result['avg_within_5'] * 100:.1f}%)")
+        print(
+            f"Cross-session HR MAE: {result['avg_hr_mae_bpm']:.2f} bpm "
+            f"(within ±5 bpm: {result['avg_within_5'] * 100:.1f}%)"
+        )
     else:
         print("Cross-session HR MAE: — (no valid folds)")
 
@@ -194,21 +217,32 @@ def _print_report(result: dict) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Leave-one-session-out HR MAE evaluation. "
-                    "Honest cross-session generalization estimate.",
+        "Honest cross-session generalization estimate.",
     )
-    p.add_argument("--pair", action="append", nargs=2,
-                   metavar=("CAPTURE", "HR_LOG"), required=True,
-                   help="repeat for each paired session")
+    p.add_argument(
+        "--pair",
+        action="append",
+        nargs=2,
+        metavar=("CAPTURE", "HR_LOG"),
+        required=True,
+        help="repeat for each paired session",
+    )
     p.add_argument("--start-offset", type=float, default=0.0)
     p.add_argument("--window", type=float, default=10.0)
     p.add_argument("--stride", type=float, default=5.0)
     p.add_argument("--fs", type=float, default=100.0)
-    p.add_argument("--seed", type=int, default=None,
-                   help="random seed (default: VIFI_SEED env var, else 42)")
-    p.add_argument("--calibration-mode",
-                   choices=["none", "per_session"],
-                   default="per_session",
-                   help="default per_session matches RESULTS.md protocol")
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="random seed (default: VIFI_SEED env var, else 42)",
+    )
+    p.add_argument(
+        "--calibration-mode",
+        choices=["none", "per_session"],
+        default="per_session",
+        help="default per_session matches RESULTS.md protocol",
+    )
     p.add_argument("--calibration-seconds", type=float, default=30.0)
     args = p.parse_args()
     if args.seed is None:

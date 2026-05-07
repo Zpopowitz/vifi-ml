@@ -6,6 +6,7 @@ they are also the cheapest place for a regression to silently make the
 service insecure (e.g. someone re-introduces `allow_origins=["*"]`),
 so each one has its own targeted test.
 """
+
 from __future__ import annotations
 
 import sys
@@ -44,6 +45,7 @@ from security import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+
 
 def test_get_auth_mode_defaults_to_none(monkeypatch):
     monkeypatch.delenv("VIFI_AUTH_MODE", raising=False)
@@ -86,6 +88,7 @@ def test_validate_config_warns_when_auth_disabled(monkeypatch, caplog):
 # Key extraction + validation
 # ---------------------------------------------------------------------------
 
+
 def test_generated_api_key_is_unique_and_prefixed():
     a, b = generate_api_key(), generate_api_key()
     assert a != b
@@ -105,6 +108,7 @@ def test_constant_time_compare_rejects_mismatch():
 # ---------------------------------------------------------------------------
 # Auth middleware (FastAPI integration)
 # ---------------------------------------------------------------------------
+
 
 def _make_app() -> FastAPI:
     app = FastAPI()
@@ -147,8 +151,7 @@ def test_protected_endpoint_accepts_bearer_token(monkeypatch):
     monkeypatch.setenv("VIFI_API_KEYS", "secret-1")
     app = _make_app()
     with TestClient(app) as c:
-        r = c.get("/predict",
-                  headers={"Authorization": "Bearer secret-1"})
+        r = c.get("/predict", headers={"Authorization": "Bearer secret-1"})
         assert r.status_code == 200
 
 
@@ -199,6 +202,7 @@ def test_request_id_generated_when_missing(monkeypatch):
 # Error redaction
 # ---------------------------------------------------------------------------
 
+
 def test_unhandled_exception_is_redacted(monkeypatch):
     monkeypatch.setenv("VIFI_AUTH_MODE", "none")
     monkeypatch.setenv("VIFI_REVEAL_ERRORS", "false")
@@ -217,8 +221,7 @@ def test_unhandled_exception_is_redacted(monkeypatch):
         r = c.get("/boom")
         assert r.status_code == 500
         body = r.json()
-        assert body == {"error": "internal_error",
-                        "request_id": body["request_id"]}
+        assert body == {"error": "internal_error", "request_id": body["request_id"]}
         # The PHI in the exception message must NOT be on the wire.
         assert "John Smith" not in r.text
         assert "127" not in r.text
@@ -247,6 +250,7 @@ def test_reveal_errors_only_in_dev(monkeypatch):
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
+
 
 def test_parse_rate_limit_minute():
     assert parse_rate_limit("60/minute") == (60, 60.0)
@@ -305,9 +309,11 @@ def test_rate_limit_exempts_health(monkeypatch):
 # Public path enumeration
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_path_collapses_double_slashes(monkeypatch):
     """Path-confusion bypass class: /api/v1//health bypassed checks (I064)."""
     from security import _normalize_path
+
     assert _normalize_path("/api/v1//health") == "/api/v1/health"
     assert _normalize_path("/health/") == "/health"
     assert _normalize_path("/") == "/"
@@ -333,10 +339,10 @@ def test_xff_honored_only_for_trusted_proxy(monkeypatch):
     from starlette.requests import Request
 
     from security import _client_ip
+
     # Trust both the loopback and the 198.51.100.0/24 hop so we get
     # the original client at the leftmost position.
-    monkeypatch.setenv("VIFI_TRUSTED_PROXIES",
-                       "127.0.0.1/32, 198.51.100.0/24")
+    monkeypatch.setenv("VIFI_TRUSTED_PROXIES", "127.0.0.1/32, 198.51.100.0/24")
     scope = {
         "type": "http",
         "method": "GET",
@@ -365,6 +371,7 @@ def test_security_headers_attached(monkeypatch):
     from fastapi import FastAPI
 
     from security import SecurityHeadersMiddleware
+
     monkeypatch.setenv("VIFI_AUTH_MODE", "none")
     app = FastAPI()
 
@@ -388,11 +395,11 @@ def test_failed_auth_logs_structured(monkeypatch, caplog):
     app = _make_app()
     with caplog.at_level("WARNING", logger="vifi.security"):
         with TestClient(app) as c:
-            c.get("/predict",
-                  headers={"X-API-Key": "wrong-key-foobar",
-                           "User-Agent": "test-ua"})
-    auth_failures = [r for r in caplog.records
-                     if r.message == "auth_failed"]
+            c.get(
+                "/predict",
+                headers={"X-API-Key": "wrong-key-foobar", "User-Agent": "test-ua"},
+            )
+    auth_failures = [r for r in caplog.records if r.message == "auth_failed"]
     assert auth_failures
     rec = auth_failures[0]
     assert rec.event == "auth_failed"
@@ -406,6 +413,7 @@ def test_validate_config_rejects_bad_cors(monkeypatch):
     monkeypatch.setenv("VIFI_AUTH_MODE", "none")
     monkeypatch.setenv("VIFI_CORS_ORIGINS", "example.com")  # missing scheme
     from security import validate_config_or_raise
+
     with pytest.raises(RuntimeError, match="not a URL"):
         validate_config_or_raise()
 
@@ -414,23 +422,32 @@ def test_api_key_file_loads_active_keys(tmp_path, monkeypatch):
     """VIFI_API_KEYS_FILE merges with VIFI_API_KEYS; revoked + expired
     keys are filtered out (I062)."""
     from datetime import datetime, timedelta, timezone
+
     keys_file = tmp_path / "keys.json"
-    keys_file.write_text(json.dumps({
-        "vifi_active1": {"name": "alice", "scopes": ["read"], "revoked": False},
-        "vifi_revoked": {"name": "bob", "revoked": True},
-        "vifi_expired": {
-            "expires_at": (datetime.now(timezone.utc) - timedelta(days=1))
-                          .isoformat(),
-        },
-        "vifi_future": {
-            "expires_at": (datetime.now(timezone.utc) + timedelta(days=365))
-                          .isoformat(),
-        },
-    }))
-    import json as _json   # noqa
+    keys_file.write_text(
+        json.dumps(
+            {
+                "vifi_active1": {"name": "alice", "scopes": ["read"], "revoked": False},
+                "vifi_revoked": {"name": "bob", "revoked": True},
+                "vifi_expired": {
+                    "expires_at": (
+                        datetime.now(timezone.utc) - timedelta(days=1)
+                    ).isoformat(),
+                },
+                "vifi_future": {
+                    "expires_at": (
+                        datetime.now(timezone.utc) + timedelta(days=365)
+                    ).isoformat(),
+                },
+            }
+        )
+    )
+    import json as _json  # noqa
+
     monkeypatch.setenv("VIFI_API_KEYS_FILE", str(keys_file))
     monkeypatch.setenv("VIFI_API_KEYS", "vifi_env_key")
     from security import get_api_keys
+
     keys = get_api_keys()
     assert "vifi_active1" in keys
     assert "vifi_future" in keys
@@ -445,9 +462,17 @@ def test_public_paths_includes_only_metadata_endpoints():
     they must justify it -- the failure of this test is a forcing
     function for review."""
     expected = {
-        "/", "/health", "/readyz", "/roadmap",
-        "/api/v1/", "/api/v1/health", "/api/v1/readyz", "/api/v1/roadmap",
-        "/docs", "/redoc", "/openapi.json",
+        "/",
+        "/health",
+        "/readyz",
+        "/roadmap",
+        "/api/v1/",
+        "/api/v1/health",
+        "/api/v1/readyz",
+        "/api/v1/roadmap",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
     }
     assert set(PUBLIC_PATHS) == expected, (
         f"PUBLIC_PATHS changed -- review before merging.\n"

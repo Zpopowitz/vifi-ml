@@ -3,6 +3,7 @@
 Migrated from the now-deprecated test_output.py. Exercises the streaming
 ingestion utilities used by the live ESP32 CSI capture pipeline.
 """
+
 from __future__ import annotations
 
 import sys

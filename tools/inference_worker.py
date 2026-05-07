@@ -19,6 +19,7 @@ Pipeline matches `_csi_to_envelope` + `extract_features` from api.py
 feature vector -> XGBoost). Currently uses the synthetic model; switch
 to the real model with `--model real`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -100,8 +101,9 @@ def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
     return np.mean(picked / std, axis=1).astype(np.float32)
 
 
-def _resample(packets: list[_Packet], fs: float, duration_s: float
-              ) -> Optional[np.ndarray]:
+def _resample(
+    packets: list[_Packet], fs: float, duration_s: float
+) -> Optional[np.ndarray]:
     """Resample per-subcarrier amplitudes onto a uniform fs-Hz grid.
 
     Returns (T, n_sub) float32, or None if the window is too short or
@@ -128,6 +130,7 @@ def _resample(packets: list[_Packet], fs: float, duration_s: float
 @dataclass
 class _ModelBundle:
     """Loaded HR + optional RR model for the inference worker."""
+
     hr_model: object
     hr_ratio_idx: Optional[int]
     rr_model: object = None
@@ -152,8 +155,8 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
         model_dir = ROOT / "models"
     elif model == "real":
         import os
-        model_dir = Path(os.environ.get("VIFI_REAL_MODEL_DIR",
-                                        ROOT / "models_real"))
+
+        model_dir = Path(os.environ.get("VIFI_REAL_MODEL_DIR", ROOT / "models_real"))
     else:
         raise ValueError(f"unknown --model: {model!r}")
 
@@ -169,6 +172,7 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
     hr = XGBRegressor()
     hr.load_model(hr_path)
     import json
+
     meta = json.loads(meta_path.read_text())
     feature_names = list(meta.get("feature_names", []))
     hr_ratio_idx: Optional[int] = None
@@ -186,11 +190,19 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
     if rr_path.exists():
         rr_model = XGBRegressor()
         rr_model.load_model(rr_path)
-        log.info("loaded %s model from %s (HR + RR, %d features)",
-                 model, model_dir, len(feature_names))
+        log.info(
+            "loaded %s model from %s (HR + RR, %d features)",
+            model,
+            model_dir,
+            len(feature_names),
+        )
     else:
-        log.info("loaded %s model from %s (HR only, %d features)",
-                 model, model_dir, len(feature_names))
+        log.info(
+            "loaded %s model from %s (HR only, %d features)",
+            model,
+            model_dir,
+            len(feature_names),
+        )
     return _ModelBundle(
         hr_model=hr,
         hr_ratio_idx=hr_ratio_idx,
@@ -199,8 +211,9 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
     )
 
 
-def run_once(window: _Window, fs_resample: float, window_s: float,
-             bundle: _ModelBundle) -> Optional[dict]:
+def run_once(
+    window: _Window, fs_resample: float, window_s: float, bundle: _ModelBundle
+) -> Optional[dict]:
     """Run the bundle's models on the current window contents.
 
     Returns a dict with `hr_bpm` always (when there's enough data) and
@@ -231,8 +244,7 @@ def run_once(window: _Window, fs_resample: float, window_s: float,
     if bundle.has_rr:
         rr = float(bundle.rr_model.predict(feats)[0])
         rr_conf = 0.0
-        if bundle.rr_ratio_idx is not None \
-                and bundle.rr_ratio_idx < feats.shape[1]:
+        if bundle.rr_ratio_idx is not None and bundle.rr_ratio_idx < feats.shape[1]:
             rr_conf = float(np.clip(feats[0, bundle.rr_ratio_idx], 0.0, 1.0))
         out["rr_bpm"] = round(rr, 2)
         out["rr_confidence"] = round(rr_conf, 3)
@@ -254,16 +266,23 @@ def _consumer_name() -> str:
     if name:
         return name
     import socket
+
     return f"inference-{socket.gethostname()}"
 
 
-def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
-         fs_resample: float, bundle: _ModelBundle,
-         from_id: str = LATEST,
-         max_iterations: Optional[int] = None,
-         stop: Optional["threading.Event"] = None,
-         consumer_name: Optional[str] = None,
-         metrics: Optional[dict] = None) -> None:
+def loop(
+    bus: MessageBus,
+    patient_id: str,
+    window_s: float,
+    stride_s: float,
+    fs_resample: float,
+    bundle: _ModelBundle,
+    from_id: str = LATEST,
+    max_iterations: Optional[int] = None,
+    stop: Optional["threading.Event"] = None,
+    consumer_name: Optional[str] = None,
+    metrics: Optional[dict] = None,
+) -> None:
     """Subscribe -> buffer -> predict -> publish, with at-least-once
     consumer-group semantics (I083).
 
@@ -296,29 +315,39 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
     bus.create_group(in_topic, CONSUMER_GROUP, start_id=from_id)
 
     window = _Window(duration_s=window_s * 1.5)
-    pending_acks: list[str] = []   # msg_ids fed into the current window
+    pending_acks: list[str] = []  # msg_ids fed into the current window
     last_predict = 0.0
     iterations = 0
     log.info(
         "worker for patient_id=%r (group=%r consumer=%r): "
         "subscribing to %s, publishing to %s%s",
-        patient_id, CONSUMER_GROUP, consumer, in_topic, hr_topic,
+        patient_id,
+        CONSUMER_GROUP,
+        consumer,
+        in_topic,
+        hr_topic,
         f" + {rr_topic}" if bundle.has_rr else " (RR disabled, no rr_model)",
     )
 
-    while (max_iterations is None or iterations < max_iterations) \
-            and (stop is None or not stop.is_set()):
+    while (max_iterations is None or iterations < max_iterations) and (
+        stop is None or not stop.is_set()
+    ):
         iterations += 1
         msgs = bus.read_group(
-            CONSUMER_GROUP, consumer, [in_topic],
-            block_ms=int(stride_s * 1000), count=1000,
+            CONSUMER_GROUP,
+            consumer,
+            [in_topic],
+            block_ms=int(stride_s * 1000),
+            count=1000,
         )
         for m in msgs:
             try:
-                window.push(_Packet(
-                    ts_unix=float(m.payload["ts_unix"]),
-                    amps=np.asarray(m.payload["amps"], dtype=np.float32),
-                ))
+                window.push(
+                    _Packet(
+                        ts_unix=float(m.payload["ts_unix"]),
+                        amps=np.asarray(m.payload["amps"], dtype=np.float32),
+                    )
+                )
                 pending_acks.append(m.msg_id)
                 if metrics is not None:
                     metrics["packets_total"].labels(patient_id).inc()
@@ -327,17 +356,21 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                 # help. Route directly to DLQ (I086) and ACK so it
                 # doesn't clog the PEL. An operator can then inspect
                 # the DLQ to see why the producer is sending bad data.
-                log.warning("malformed CSI msg %s -> DLQ: %s",
-                            m.msg_id, exc)
+                log.warning("malformed CSI msg %s -> DLQ: %s", m.msg_id, exc)
                 from modules.bus import dlq as _dlq_topic
-                bus.publish(_dlq_topic(m.topic), {
-                    "original_topic": m.topic,
-                    "original_msg_id": m.msg_id,
-                    "original_payload": m.payload,
-                    "group": CONSUMER_GROUP,
-                    "reason": f"malformed: {type(exc).__name__}: {exc}",
-                    "delivery_count": 1,
-                }, ts_ms=m.ts_ms)
+
+                bus.publish(
+                    _dlq_topic(m.topic),
+                    {
+                        "original_topic": m.topic,
+                        "original_msg_id": m.msg_id,
+                        "original_payload": m.payload,
+                        "group": CONSUMER_GROUP,
+                        "reason": f"malformed: {type(exc).__name__}: {exc}",
+                        "delivery_count": 1,
+                    },
+                    ts_ms=m.ts_ms,
+                )
                 bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
                 if metrics is not None:
                     metrics["dlq_total"].labels(patient_id).inc()
@@ -346,8 +379,7 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
         if now - last_predict < stride_s:
             continue
         if metrics is not None:
-            with metrics["prediction_duration_seconds"].labels(
-                    patient_id).time():
+            with metrics["prediction_duration_seconds"].labels(patient_id).time():
                 pred = run_once(window, fs_resample, window_s, bundle)
         else:
             pred = run_once(window, fs_resample, window_s, bundle)
@@ -356,37 +388,44 @@ def loop(bus: MessageBus, patient_id: str, window_s: float, stride_s: float,
                 metrics["windows_too_short_total"].labels(patient_id).inc()
             continue
         if metrics is not None:
-            metrics["window_packets"].labels(patient_id).observe(
-                pred["n_packets"])
+            metrics["window_packets"].labels(patient_id).observe(pred["n_packets"])
             metrics["predictions_total"].labels(patient_id, "hr").inc()
             if "rr_bpm" in pred:
                 metrics["predictions_total"].labels(patient_id, "rr").inc()
         last_predict = now
         # ts_unix is the right edge of the prediction window.
         ts_unix = window._buf[-1].ts_unix if len(window) else now
-        bus.publish(hr_topic, {
-            "ts_unix": ts_unix,
-            "patient_id": patient_id,
-            "window_start_s": ts_unix - window_s,
-            "window_end_s": ts_unix,
-            "hr_bpm": pred["hr_bpm"],
-            "hr_confidence": pred["hr_confidence"],
-            "window_s": pred["window_s"],
-            "n_packets": pred["n_packets"],
-            "n_subcarriers": pred["n_subcarriers"],
-        }, ts_ms=int(ts_unix * 1000))
-        if "rr_bpm" in pred:
-            bus.publish(rr_topic, {
+        bus.publish(
+            hr_topic,
+            {
                 "ts_unix": ts_unix,
                 "patient_id": patient_id,
                 "window_start_s": ts_unix - window_s,
                 "window_end_s": ts_unix,
-                "rr_bpm": pred["rr_bpm"],
-                "rr_confidence": pred["rr_confidence"],
+                "hr_bpm": pred["hr_bpm"],
+                "hr_confidence": pred["hr_confidence"],
                 "window_s": pred["window_s"],
                 "n_packets": pred["n_packets"],
                 "n_subcarriers": pred["n_subcarriers"],
-            }, ts_ms=int(ts_unix * 1000))
+            },
+            ts_ms=int(ts_unix * 1000),
+        )
+        if "rr_bpm" in pred:
+            bus.publish(
+                rr_topic,
+                {
+                    "ts_unix": ts_unix,
+                    "patient_id": patient_id,
+                    "window_start_s": ts_unix - window_s,
+                    "window_end_s": ts_unix,
+                    "rr_bpm": pred["rr_bpm"],
+                    "rr_confidence": pred["rr_confidence"],
+                    "window_s": pred["window_s"],
+                    "n_packets": pred["n_packets"],
+                    "n_subcarriers": pred["n_subcarriers"],
+                },
+                ts_ms=int(ts_unix * 1000),
+            )
 
         # Prediction is durably published — drain the pending ACKs.
         # A crash before this point re-delivers the messages on restart.
@@ -400,17 +439,27 @@ def main() -> None:
         description="Live HR/RR inference worker (bus subscriber)",
     )
     p.add_argument("--patient-id", default="default")
-    p.add_argument("--window", type=float, default=10.0,
-                   help="prediction window in seconds")
-    p.add_argument("--stride", type=float, default=2.0,
-                   help="emit a prediction every N seconds")
-    p.add_argument("--fs-resample", type=float, default=100.0,
-                   help="resample rate for the envelope (Hz)")
-    p.add_argument("--model", choices=["synthetic", "real"],
-                   default="synthetic")
-    p.add_argument("--from-start", action="store_true",
-                   help=("start consuming from the beginning of the stream "
-                         "(replay). Default: only new packets after start."))
+    p.add_argument(
+        "--window", type=float, default=10.0, help="prediction window in seconds"
+    )
+    p.add_argument(
+        "--stride", type=float, default=2.0, help="emit a prediction every N seconds"
+    )
+    p.add_argument(
+        "--fs-resample",
+        type=float,
+        default=100.0,
+        help="resample rate for the envelope (Hz)",
+    )
+    p.add_argument("--model", choices=["synthetic", "real"], default="synthetic")
+    p.add_argument(
+        "--from-start",
+        action="store_true",
+        help=(
+            "start consuming from the beginning of the stream "
+            "(replay). Default: only new packets after start."
+        ),
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
@@ -431,6 +480,7 @@ def main() -> None:
     # deploys risk a partially-published prediction.
     import signal
     import threading
+
     stop_evt = threading.Event()
 
     def _on_signal(signum, _frame):

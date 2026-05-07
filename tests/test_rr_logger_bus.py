@@ -6,6 +6,7 @@ verify that --bus puts RR readings on rr.reference.<patient> with the
 expected schema, that errors are swallowed, and that optional belt
 force is included when supplied.
 """
+
 from __future__ import annotations
 
 import sys
@@ -22,6 +23,7 @@ from modules.bus import EARLIEST, InMemoryBus, rr_reference  # noqa: E402
 def _make_publisher(patient_id: str, bus: InMemoryBus):
     with patch("modules.bus.bus_from_env", return_value=bus):
         from rr_logger import _BusPublisher
+
         return _BusPublisher(patient_id)
 
 
@@ -61,6 +63,7 @@ def test_publish_errors_swallowed_so_recording_continues():
 
     with patch("modules.bus.bus_from_env", return_value=_BrokenBus()):
         from rr_logger import _BusPublisher
+
         pub = _BusPublisher("alice")
 
     for i in range(5):

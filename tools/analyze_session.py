@@ -27,6 +27,7 @@ Usage:
     python -m tools.analyze_session data/captures/founder/session1
     python -m tools.analyze_session <path> --include-warmup --no-plot
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,8 +65,7 @@ def _load_csv(path: Path) -> Optional[pd.DataFrame]:
     return df
 
 
-def _trim_rr_warmup(rr: pd.DataFrame, *,
-                    drop_suspect: bool = True) -> pd.DataFrame:
+def _trim_rr_warmup(rr: pd.DataFrame, *, drop_suspect: bool = True) -> pd.DataFrame:
     if rr.empty:
         return rr
     start = rr["t"].iloc[0]
@@ -117,8 +117,9 @@ def _fmt(v) -> str:
     return str(v)
 
 
-def _plot(out_path: Path, hr: Optional[pd.DataFrame],
-          rr: Optional[pd.DataFrame]) -> None:
+def _plot(
+    out_path: Path, hr: Optional[pd.DataFrame], rr: Optional[pd.DataFrame]
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -131,26 +132,34 @@ def _plot(out_path: Path, hr: Optional[pd.DataFrame],
         axes[0].set_title("Reference HR (Polar H10)")
         axes[0].grid(True, alpha=0.3)
     else:
-        axes[0].text(0.5, 0.5, "no HR data",
-                     transform=axes[0].transAxes, ha="center")
+        axes[0].text(0.5, 0.5, "no HR data", transform=axes[0].transAxes, ha="center")
     if rr is not None and not rr.empty:
-        axes[1].plot(rr["t"], rr["rr_bpm"], color="#00C39A",
-                     linewidth=1.5, marker=".", markersize=4)
+        axes[1].plot(
+            rr["t"],
+            rr["rr_bpm"],
+            color="#00C39A",
+            linewidth=1.5,
+            marker=".",
+            markersize=4,
+        )
         axes[1].set_ylabel("RR (brpm)")
         axes[1].set_title("Reference RR (Vernier GDX-RB)")
         axes[1].grid(True, alpha=0.3)
     else:
-        axes[1].text(0.5, 0.5, "no RR data",
-                     transform=axes[1].transAxes, ha="center")
+        axes[1].text(0.5, 0.5, "no RR data", transform=axes[1].transAxes, ha="center")
     axes[1].set_xlabel("Time")
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
 
 
-def analyze_session(session_dir: Path, *, include_warmup: bool = False,
-                    include_suspect: bool = False,
-                    plot: bool = True) -> int:
+def analyze_session(
+    session_dir: Path,
+    *,
+    include_warmup: bool = False,
+    include_suspect: bool = False,
+    plot: bool = True,
+) -> int:
     if not session_dir.is_dir():
         print(f"ERROR: not a directory: {session_dir}", file=sys.stderr)
         return 2
@@ -158,8 +167,7 @@ def analyze_session(session_dir: Path, *, include_warmup: bool = False,
     hr = _load_csv(session_dir / "hr_log.csv")
     rr = _load_csv(session_dir / "rr_log.csv")
     if hr is None and rr is None:
-        print(f"ERROR: no hr_log.csv or rr_log.csv in {session_dir}",
-              file=sys.stderr)
+        print(f"ERROR: no hr_log.csv or rr_log.csv in {session_dir}", file=sys.stderr)
         return 2
 
     rr_for_stats = rr
@@ -192,9 +200,11 @@ def analyze_session(session_dir: Path, *, include_warmup: bool = False,
         )
         paired = (merged["rr_bpm"].notna()).sum()
         coverage = paired / len(merged) if len(merged) else 0.0
-        print(f"Paired rows (HR row with RR within "
-              f"±{PAIR_TOLERANCE_SECONDS:.0f}s): {paired} / {len(merged)} "
-              f"({coverage * 100:.1f}%)")
+        print(
+            f"Paired rows (HR row with RR within "
+            f"±{PAIR_TOLERANCE_SECONDS:.0f}s): {paired} / {len(merged)} "
+            f"({coverage * 100:.1f}%)"
+        )
 
     duration_s = 0.0
     for df in (hr, rr):
@@ -209,34 +219,43 @@ def analyze_session(session_dir: Path, *, include_warmup: bool = False,
             _plot(out, hr, rr_for_stats)
             print(f"Plot:    {out}")
         except ImportError:
-            print("(matplotlib not installed; skipping plot)",
-                  file=sys.stderr)
+            print("(matplotlib not installed; skipping plot)", file=sys.stderr)
     return 0
 
 
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Summarize a paired-capture session "
-                    "(HR + RR CSVs). Prints stats + writes a PNG.",
+        "(HR + RR CSVs). Prints stats + writes a PNG.",
     )
-    p.add_argument("session_dir", type=Path,
-                   help="path to data/captures/<subject>/<session>/")
-    p.add_argument("--include-warmup", action="store_true",
-                   help="include the first 30 s of RR (GDX-RB warmup "
-                        "where rr_bpm == 0); excluded by default")
-    p.add_argument("--include-suspect", action="store_true",
-                   help=f"include rr_bpm < {MIN_PHYSIOLOGICAL_RR:.0f} "
-                        "(non-physiological readings from GDX-RB warmup "
-                        "transitions); excluded by default")
-    p.add_argument("--no-plot", action="store_true",
-                   help="skip the session_summary.png plot")
+    p.add_argument(
+        "session_dir", type=Path, help="path to data/captures/<subject>/<session>/"
+    )
+    p.add_argument(
+        "--include-warmup",
+        action="store_true",
+        help="include the first 30 s of RR (GDX-RB warmup "
+        "where rr_bpm == 0); excluded by default",
+    )
+    p.add_argument(
+        "--include-suspect",
+        action="store_true",
+        help=f"include rr_bpm < {MIN_PHYSIOLOGICAL_RR:.0f} "
+        "(non-physiological readings from GDX-RB warmup "
+        "transitions); excluded by default",
+    )
+    p.add_argument(
+        "--no-plot", action="store_true", help="skip the session_summary.png plot"
+    )
     args = p.parse_args()
-    sys.exit(analyze_session(
-        args.session_dir,
-        include_warmup=args.include_warmup,
-        include_suspect=args.include_suspect,
-        plot=not args.no_plot,
-    ))
+    sys.exit(
+        analyze_session(
+            args.session_dir,
+            include_warmup=args.include_warmup,
+            include_suspect=args.include_suspect,
+            plot=not args.no_plot,
+        )
+    )
 
 
 if __name__ == "__main__":

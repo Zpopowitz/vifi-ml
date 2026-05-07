@@ -35,6 +35,7 @@ Optional:
 Ctrl-C while running gracefully terminates all three subprocesses and
 preserves whatever was captured up to that point.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -123,8 +124,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
 
 
-def _stream_subprocess_output(name: str, proc: subprocess.Popen,
-                               combined_log_handle) -> None:
+def _stream_subprocess_output(
+    name: str, proc: subprocess.Popen, combined_log_handle
+) -> None:
     """Tail subprocess stdout into the combined log + console with a prefix."""
     if proc.stdout is None:
         return
@@ -149,8 +151,9 @@ def _spawn(name: str, cmd: list[str], cwd: Path) -> subprocess.Popen:
     )
 
 
-def _terminate_gracefully(name: str, proc: Optional[subprocess.Popen],
-                          timeout_s: float = 5.0) -> None:
+def _terminate_gracefully(
+    name: str, proc: Optional[subprocess.Popen], timeout_s: float = 5.0
+) -> None:
     if proc is None or proc.poll() is not None:
         return
     print(f"[orchestrator] stopping {name} (pid {proc.pid})...", flush=True)
@@ -197,35 +200,51 @@ def run_session(args: argparse.Namespace) -> int:
     if args.bus:
         bus_args = ["--bus", "--patient-id", args.subject_id]
         if not os.environ.get("VIFI_BUS_URL"):
-            print("[orchestrator] WARNING: --bus is on but VIFI_BUS_URL is "
-                  "unset; loggers will fall back to in-memory (process-local) "
-                  "bus, which other processes (inference worker, dashboard) "
-                  "won't see. Set VIFI_BUS_URL=redis://... before retrying.")
+            print(
+                "[orchestrator] WARNING: --bus is on but VIFI_BUS_URL is "
+                "unset; loggers will fall back to in-memory (process-local) "
+                "bus, which other processes (inference worker, dashboard) "
+                "won't see. Set VIFI_BUS_URL=redis://... before retrying."
+            )
 
     csi_cmd = [
-        sys.executable, "-u", str(ROOT / "tools" / "csi_capture.py"),
-        "--port", args.csi_port,
-        "--duration", str(args.duration),
-        "--out", str(capture_path),
+        sys.executable,
+        "-u",
+        str(ROOT / "tools" / "csi_capture.py"),
+        "--port",
+        args.csi_port,
+        "--duration",
+        str(args.duration),
+        "--out",
+        str(capture_path),
         *bus_args,
     ]
 
     h10_cmd = None
     if not args.no_h10:
         h10_cmd = [
-            sys.executable, "-u", str(ROOT / "hr_logger.py"),
-            "--address", args.h10_address,
-            "--duration", str(args.duration),
-            "--out", str(hr_log_path),
+            sys.executable,
+            "-u",
+            str(ROOT / "hr_logger.py"),
+            "--address",
+            args.h10_address,
+            "--duration",
+            str(args.duration),
+            "--out",
+            str(hr_log_path),
             *bus_args,
         ]
 
     rr_cmd = None
     if not args.no_rr:
         rr_cmd = [
-            sys.executable, "-u", str(ROOT / "rr_logger.py"),
-            "--duration", str(args.duration),
-            "--out", str(rr_log_path),
+            sys.executable,
+            "-u",
+            str(ROOT / "rr_logger.py"),
+            "--duration",
+            str(args.duration),
+            "--out",
+            str(rr_log_path),
             *bus_args,
         ]
 
@@ -233,15 +252,26 @@ def run_session(args: argparse.Namespace) -> int:
     audit_cmd: Optional[list[str]] = None
     if args.bus:
         inference_cmd = [
-            sys.executable, "-u", "-m", "tools.inference_worker",
-            "--patient-id", args.subject_id,
-            "--window", str(args.window),
-            "--stride", str(args.stride),
-            "--fs-resample", str(args.fs),
+            sys.executable,
+            "-u",
+            "-m",
+            "tools.inference_worker",
+            "--patient-id",
+            args.subject_id,
+            "--window",
+            str(args.window),
+            "--stride",
+            str(args.stride),
+            "--fs-resample",
+            str(args.fs),
         ]
         audit_cmd = [
-            sys.executable, "-u", "-m", "tools.audit_subscriber",
-            "--patient-id", args.subject_id,
+            sys.executable,
+            "-u",
+            "-m",
+            "tools.audit_subscriber",
+            "--patient-id",
+            args.subject_id,
         ]
 
     procs: dict[str, subprocess.Popen] = {}
@@ -252,8 +282,7 @@ def run_session(args: argparse.Namespace) -> int:
         if interrupted["flag"]:
             return
         interrupted["flag"] = True
-        print("\n[orchestrator] Ctrl-C received -- stopping all loggers...",
-              flush=True)
+        print("\n[orchestrator] Ctrl-C received -- stopping all loggers...", flush=True)
         for name, p in procs.items():
             _terminate_gracefully(name, p)
 
@@ -293,21 +322,25 @@ def run_session(args: argparse.Namespace) -> int:
                 t.start()
                 threads.append(t)
 
-            print(f"[orchestrator] all loggers started -- session "
-                  f"{args.duration:.0f}s. Ctrl-C to stop early.",
-                  flush=True)
+            print(
+                f"[orchestrator] all loggers started -- session "
+                f"{args.duration:.0f}s. Ctrl-C to stop early.",
+                flush=True,
+            )
             if args.bus:
-                print(f"[orchestrator] bus mode active (patient_id="
-                      f"{args.subject_id}). Open the dashboard at "
-                      f"http://localhost:8501 to watch predicted vs "
-                      f"reference in real time. After the session "
-                      f"finishes, run "
-                      f"`python -m tools.analyze_session "
-                      f"{session_dir}` for a summary + plot, or "
-                      f"`python -m tools.preflight ...` before the "
-                      f"next session to catch dumb hardware issues "
-                      f"early.",
-                      flush=True)
+                print(
+                    f"[orchestrator] bus mode active (patient_id="
+                    f"{args.subject_id}). Open the dashboard at "
+                    f"http://localhost:8501 to watch predicted vs "
+                    f"reference in real time. After the session "
+                    f"finishes, run "
+                    f"`python -m tools.analyze_session "
+                    f"{session_dir}` for a summary + plot, or "
+                    f"`python -m tools.preflight ...` before the "
+                    f"next session to catch dumb hardware issues "
+                    f"early.",
+                    flush=True,
+                )
 
             # Loggers (CSI/HR/RR) are bounded by --duration. Workers
             # (INFER/AUDIT) run forever -- wait only on the loggers,
@@ -318,8 +351,10 @@ def run_session(args: argparse.Namespace) -> int:
                 proc.wait()
                 rc = proc.returncode
                 if rc != 0 and not interrupted["flag"]:
-                    print(f"[orchestrator] WARNING: {name} exited with code {rc}",
-                          flush=True)
+                    print(
+                        f"[orchestrator] WARNING: {name} exited with code {rc}",
+                        flush=True,
+                    )
             for name in ("INFER", "AUDIT"):
                 if name in procs:
                     _terminate_gracefully(name, procs[name])
@@ -332,9 +367,11 @@ def run_session(args: argparse.Namespace) -> int:
     elapsed = time.time() - start_wall
     print(f"\n[orchestrator] session finished in {elapsed:.1f}s")
     print("[orchestrator] outputs:")
-    for name, p in [("CSI", capture_path),
-                    ("HR", hr_log_path if h10_cmd else None),
-                    ("RR", rr_log_path if rr_cmd else None)]:
+    for name, p in [
+        ("CSI", capture_path),
+        ("HR", hr_log_path if h10_cmd else None),
+        ("RR", rr_log_path if rr_cmd else None),
+    ]:
         if p is None:
             continue
         if p.exists() and p.stat().st_size > 0:
@@ -350,15 +387,22 @@ def run_session(args: argparse.Namespace) -> int:
     # Auto-run the report (calibration + monitoring metrics) if HR ground truth
     # exists and the user didn't disable it.
     if args.run_report and not args.no_h10 and not interrupted["flag"]:
-        if capture_path.exists() and capture_path.stat().st_size > 0 \
-                and hr_log_path.exists() and hr_log_path.stat().st_size > 0:
+        if (
+            capture_path.exists()
+            and capture_path.stat().st_size > 0
+            and hr_log_path.exists()
+            and hr_log_path.stat().st_size > 0
+        ):
             print()
             print("=" * 60)
-            print(f"[orchestrator] running auto-report with "
-                  f"--calibration-mode={args.calibration_mode}")
+            print(
+                f"[orchestrator] running auto-report with "
+                f"--calibration-mode={args.calibration_mode}"
+            )
             print("=" * 60)
             try:
                 from tools.first_capture_report import run_report  # noqa: E402
+
                 report_json = session_dir / "report.json"
                 run_report(
                     capture_path=capture_path,
@@ -375,9 +419,11 @@ def run_session(args: argparse.Namespace) -> int:
             except Exception as exc:
                 print(f"[orchestrator] auto-report failed: {exc}")
                 print("[orchestrator] you can re-run manually with:")
-                print(f"  python tools/first_capture_report.py "
-                      f"--capture {capture_path} --hr-log {hr_log_path} "
-                      f"--calibration-mode {args.calibration_mode}")
+                print(
+                    f"  python tools/first_capture_report.py "
+                    f"--capture {capture_path} --hr-log {hr_log_path} "
+                    f"--calibration-mode {args.calibration_mode}"
+                )
 
     return 0 if not interrupted["flag"] else 130
 
@@ -386,87 +432,159 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
 
     g_meta = p.add_argument_group("session metadata (required)")
-    g_meta.add_argument("--subject-id", required=True,
-                        help="subject identifier, e.g. 'founder' or 'subj02'")
-    g_meta.add_argument("--room-id", required=True,
-                        help="room identifier, e.g. 'quiet' or 'living_room'")
-    g_meta.add_argument("--posture", required=True,
-                        help=f"one of {sorted(POSTURES)}")
-    g_meta.add_argument("--post-cardio", action="store_true",
-                        help="mark as post-cardio (elevated baseline HR)")
-    g_meta.add_argument("--chair", default=None,
-                        help="optional chair label (A or B)")
-    g_meta.add_argument("--body-mass-lbs", type=float, default=None,
-                        help="recommended for cross-subject eval")
-    g_meta.add_argument("--notes", default=None,
-                        help="free-text notes for this session")
+    g_meta.add_argument(
+        "--subject-id",
+        required=True,
+        help="subject identifier, e.g. 'founder' or 'subj02'",
+    )
+    g_meta.add_argument(
+        "--room-id",
+        required=True,
+        help="room identifier, e.g. 'quiet' or 'living_room'",
+    )
+    g_meta.add_argument("--posture", required=True, help=f"one of {sorted(POSTURES)}")
+    g_meta.add_argument(
+        "--post-cardio",
+        action="store_true",
+        help="mark as post-cardio (elevated baseline HR)",
+    )
+    g_meta.add_argument("--chair", default=None, help="optional chair label (A or B)")
+    g_meta.add_argument(
+        "--body-mass-lbs",
+        type=float,
+        default=None,
+        help="recommended for cross-subject eval",
+    )
+    g_meta.add_argument(
+        "--notes", default=None, help="free-text notes for this session"
+    )
 
     g_geom = p.add_argument_group("geometry (optional, strongly recommended)")
-    g_geom.add_argument("--tx-rx-distance-m", type=float, default=None,
-                        help="distance between TX and RX antennas, in meters")
-    g_geom.add_argument("--subject-to-tx-distance-m", type=float,
-                        default=None,
-                        help="distance from subject to TX, in meters; "
-                             "subject-to-RX is implied by tx_rx_distance_m "
-                             "minus this when --subject-on-axis is set")
-    g_geom.add_argument("--subject-on-axis", type=lambda v:
-                        v.lower() in ("true", "yes", "1", "y"),
-                        default=None, metavar="TRUE|FALSE",
-                        help="True if subject sits on the TX-RX line; "
-                             "False if off-axis. Off-axis severely degrades "
-                             "CSI breathing detection.")
-    g_geom.add_argument("--antenna-type", default=None,
-                        choices=["pcb_trace", "external_dipole", "patch"],
-                        help="antenna model on the ESP32 RX board")
-    g_geom.add_argument("--antenna-height-cm", type=float, default=None,
-                        help="antenna height above floor, in cm "
-                             "(chest level ≈ 100-130 cm seated)")
+    g_geom.add_argument(
+        "--tx-rx-distance-m",
+        type=float,
+        default=None,
+        help="distance between TX and RX antennas, in meters",
+    )
+    g_geom.add_argument(
+        "--subject-to-tx-distance-m",
+        type=float,
+        default=None,
+        help="distance from subject to TX, in meters; "
+        "subject-to-RX is implied by tx_rx_distance_m "
+        "minus this when --subject-on-axis is set",
+    )
+    g_geom.add_argument(
+        "--subject-on-axis",
+        type=lambda v: v.lower() in ("true", "yes", "1", "y"),
+        default=None,
+        metavar="TRUE|FALSE",
+        help="True if subject sits on the TX-RX line; "
+        "False if off-axis. Off-axis severely degrades "
+        "CSI breathing detection.",
+    )
+    g_geom.add_argument(
+        "--antenna-type",
+        default=None,
+        choices=["pcb_trace", "external_dipole", "patch"],
+        help="antenna model on the ESP32 RX board",
+    )
+    g_geom.add_argument(
+        "--antenna-height-cm",
+        type=float,
+        default=None,
+        help="antenna height above floor, in cm (chest level ≈ 100-130 cm seated)",
+    )
 
     g_dur = p.add_argument_group("capture parameters")
-    g_dur.add_argument("--duration", type=float, default=120.0,
-                       help="recording duration in seconds (default 120)")
-    g_dur.add_argument("--data-root", type=Path,
-                       default=ROOT / "data" / "captures",
-                       help="base output directory (default data/captures/)")
+    g_dur.add_argument(
+        "--duration",
+        type=float,
+        default=120.0,
+        help="recording duration in seconds (default 120)",
+    )
+    g_dur.add_argument(
+        "--data-root",
+        type=Path,
+        default=ROOT / "data" / "captures",
+        help="base output directory (default data/captures/)",
+    )
 
     g_csi = p.add_argument_group("hardware")
-    g_csi.add_argument("--csi-port", required=True,
-                       help="serial port for ESP32-S3 (e.g. COM6 or /dev/ttyUSB0)")
-    g_csi.add_argument("--h10-address",
-                       help="Polar H10 BLE MAC address (or pass --no-h10)")
-    g_csi.add_argument("--no-h10", action="store_true",
-                       help="skip the Polar H10 logger")
-    g_csi.add_argument("--no-rr", action="store_true",
-                       help="skip the Vernier respiration belt logger")
+    g_csi.add_argument(
+        "--csi-port",
+        required=True,
+        help="serial port for ESP32-S3 (e.g. COM6 or /dev/ttyUSB0)",
+    )
+    g_csi.add_argument(
+        "--h10-address", help="Polar H10 BLE MAC address (or pass --no-h10)"
+    )
+    g_csi.add_argument(
+        "--no-h10", action="store_true", help="skip the Polar H10 logger"
+    )
+    g_csi.add_argument(
+        "--no-rr", action="store_true", help="skip the Vernier respiration belt logger"
+    )
 
     g_report = p.add_argument_group("auto-report after capture")
-    g_report.add_argument("--run-report", dest="run_report", action="store_true",
-                          default=True,
-                          help="auto-run first_capture_report after capture (default)")
-    g_report.add_argument("--no-report", dest="run_report", action="store_false",
-                          help="skip the auto-report step")
-    g_report.add_argument("--calibration-mode", choices=["none", "per_session"],
-                          default="per_session",
-                          help="calibration mode for the auto-report "
-                               "(default 'per_session': uses first 30s of capture "
-                               "as bias offset baseline)")
-    g_report.add_argument("--window", type=float, default=10.0,
-                          help="report window size in seconds (default 10)")
-    g_report.add_argument("--stride", type=float, default=5.0,
-                          help="report window stride in seconds (default 5)")
-    g_report.add_argument("--fs", type=float, default=100.0,
-                          help="resample rate for feature extraction (default 100)")
+    g_report.add_argument(
+        "--run-report",
+        dest="run_report",
+        action="store_true",
+        default=True,
+        help="auto-run first_capture_report after capture (default)",
+    )
+    g_report.add_argument(
+        "--no-report",
+        dest="run_report",
+        action="store_false",
+        help="skip the auto-report step",
+    )
+    g_report.add_argument(
+        "--calibration-mode",
+        choices=["none", "per_session"],
+        default="per_session",
+        help="calibration mode for the auto-report "
+        "(default 'per_session': uses first 30s of capture "
+        "as bias offset baseline)",
+    )
+    g_report.add_argument(
+        "--window",
+        type=float,
+        default=10.0,
+        help="report window size in seconds (default 10)",
+    )
+    g_report.add_argument(
+        "--stride",
+        type=float,
+        default=5.0,
+        help="report window stride in seconds (default 5)",
+    )
+    g_report.add_argument(
+        "--fs",
+        type=float,
+        default=100.0,
+        help="resample rate for feature extraction (default 100)",
+    )
 
     g_bus = p.add_argument_group("live bus mode")
-    g_bus.add_argument("--bus", action="store_true",
-                       help=("publish each capture stream to the ViFi "
-                             "message bus and spawn the inference worker "
-                             "+ audit subscriber. Set "
-                             "VIFI_BUS_URL=redis://... to share with the "
-                             "dashboard. Patient id = --subject-id."))
+    g_bus.add_argument(
+        "--bus",
+        action="store_true",
+        help=(
+            "publish each capture stream to the ViFi "
+            "message bus and spawn the inference worker "
+            "+ audit subscriber. Set "
+            "VIFI_BUS_URL=redis://... to share with the "
+            "dashboard. Patient id = --subject-id."
+        ),
+    )
 
-    p.add_argument("--dry-run", action="store_true",
-                   help="print the plan and exit without spawning anything")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the plan and exit without spawning anything",
+    )
     args = p.parse_args()
 
     sys.exit(run_session(args))

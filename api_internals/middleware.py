@@ -9,6 +9,7 @@ This is a pure-function extraction: no closure variables captured,
 no behavior change. The only reason it lived inside create_app was
 historical.
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI
@@ -38,8 +39,7 @@ def install_middleware(app: FastAPI) -> None:
         allow_origins=get_cors_origins(),
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["authorization", "x-api-key", "content-type",
-                       "x-request-id"],
+        allow_headers=["authorization", "x-api-key", "content-type", "x-request-id"],
     )
     app.add_middleware(AuthMiddleware)
     app.add_middleware(RateLimitMiddleware)

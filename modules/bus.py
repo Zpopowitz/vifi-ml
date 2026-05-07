@@ -23,6 +23,7 @@ Pick a backend with `bus_from_env()`, or instantiate directly.
 Message IDs follow Redis Streams' `<ts_ms>-<seq>` format so cursors are
 portable across backends.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ from typing import Any, Iterator, Optional, Protocol
 # ---------------------------------------------------------------------------
 # Topic helpers
 # ---------------------------------------------------------------------------
+
 
 def csi_raw(patient_id: str) -> str:
     return f"csi.raw.{patient_id}"
@@ -87,16 +89,17 @@ def all_topics(patient_id: str) -> list[str]:
 # Message + cursor types
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Message:
     topic: str
-    msg_id: str          # "<ts_ms>-<seq>"
+    msg_id: str  # "<ts_ms>-<seq>"
     ts_ms: int
     payload: dict[str, Any]
 
 
 # Cursor sentinels match Redis Streams XREAD semantics.
-LATEST = "$"   # only messages published after the read call
+LATEST = "$"  # only messages published after the read call
 EARLIEST = "0"  # everything from the start
 
 
@@ -118,6 +121,7 @@ def _id_gt(a: str, b: str) -> bool:
 # Bus protocol
 # ---------------------------------------------------------------------------
 
+
 class MessageBus(Protocol):
     """Common interface for Redis-backed and in-memory buses.
 
@@ -135,17 +139,23 @@ class MessageBus(Protocol):
         This is the API the inference + audit subscribers use.
     """
 
-    def publish(self, topic: str, payload: dict[str, Any],
-                ts_ms: Optional[int] = None) -> str: ...
+    def publish(
+        self, topic: str, payload: dict[str, Any], ts_ms: Optional[int] = None
+    ) -> str: ...
 
-    def read(self, cursors: dict[str, str], block_ms: int = 1000,
-             count: int = 100) -> list[Message]:
+    def read(
+        self, cursors: dict[str, str], block_ms: int = 1000, count: int = 100
+    ) -> list[Message]:
         """Cursor-tracking read. See class docstring."""
         ...
 
-    def history(self, topic: str, since_ms: Optional[int] = None,
-                until_ms: Optional[int] = None,
-                count: int = 1000) -> list[Message]: ...
+    def history(
+        self,
+        topic: str,
+        since_ms: Optional[int] = None,
+        until_ms: Optional[int] = None,
+        count: int = 1000,
+    ) -> list[Message]: ...
 
     def list_topics(self, prefix: Optional[str] = None) -> list[str]:
         """All topics that have received at least one message.
@@ -171,8 +181,7 @@ class MessageBus(Protocol):
 
     # ---- Consumer-group API (I083) ----
 
-    def create_group(self, topic: str, group: str,
-                     start_id: str = LATEST) -> None:
+    def create_group(self, topic: str, group: str, start_id: str = LATEST) -> None:
         """Create a consumer group on `topic` starting at `start_id`.
 
         Idempotent: an existing group with the same name is a no-op.
@@ -182,9 +191,15 @@ class MessageBus(Protocol):
         """
         ...
 
-    def read_group(self, group: str, consumer: str, topics: list[str],
-                   block_ms: int = 1000, count: int = 100,
-                   include_pending: bool = True) -> list[Message]:
+    def read_group(
+        self,
+        group: str,
+        consumer: str,
+        topics: list[str],
+        block_ms: int = 1000,
+        count: int = 100,
+        include_pending: bool = True,
+    ) -> list[Message]:
         """Read up to `count` undelivered messages for (group, consumer).
 
         First call after a restart with `include_pending=True` returns
@@ -219,8 +234,9 @@ class MessageBus(Protocol):
         ...
 
 
-def route_to_dlq(bus: MessageBus, group: str, msg: Message,
-                 reason: str, max_deliveries: int = 5) -> bool:
+def route_to_dlq(
+    bus: MessageBus, group: str, msg: Message, reason: str, max_deliveries: int = 5
+) -> bool:
     """Route a poison-pill message to its DLQ topic and ACK the original.
 
     Caller pattern (in inference_worker / audit_subscriber):
@@ -260,9 +276,13 @@ def route_to_dlq(bus: MessageBus, group: str, msg: Message,
     return True
 
 
-def subscribe(bus: MessageBus, topics: list[str], from_id: str = LATEST,
-              block_ms: int = 1000,
-              stop: Optional[threading.Event] = None) -> Iterator[Message]:
+def subscribe(
+    bus: MessageBus,
+    topics: list[str],
+    from_id: str = LATEST,
+    block_ms: int = 1000,
+    stop: Optional[threading.Event] = None,
+) -> Iterator[Message]:
     """Convenience generator wrapping `bus.read` with cursor bookkeeping.
 
     Yields messages indefinitely until `stop` is set (or the caller breaks
@@ -279,6 +299,7 @@ def subscribe(bus: MessageBus, topics: list[str], from_id: str = LATEST,
 # ---------------------------------------------------------------------------
 # In-memory backend (tests, single-process dev)
 # ---------------------------------------------------------------------------
+
 
 class InMemoryBus:
     """Process-local pub/sub. Thread-safe, append-only, bounded.
@@ -309,8 +330,9 @@ class InMemoryBus:
         # Redis XPENDING `times_delivered`; reset on ACK).
         self._delivery: dict[tuple[str, str, str], int] = {}
 
-    def publish(self, topic: str, payload: dict[str, Any],
-                ts_ms: Optional[int] = None) -> str:
+    def publish(
+        self, topic: str, payload: dict[str, Any], ts_ms: Optional[int] = None
+    ) -> str:
         ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
         with self._cond:
             seq = self._seq_within_ms.get(ts, 0)
@@ -333,8 +355,9 @@ class InMemoryBus:
         msgs = self._topics.get(topic, [])
         return msgs[-1].msg_id if msgs else EARLIEST
 
-    def read(self, cursors: dict[str, str], block_ms: int = 1000,
-             count: int = 100) -> list[Message]:
+    def read(
+        self, cursors: dict[str, str], block_ms: int = 1000, count: int = 100
+    ) -> list[Message]:
         deadline = time.monotonic() + block_ms / 1000.0
         with self._cond:
             resolved = {t: self._resolve_cursor(t, c) for t, c in cursors.items()}
@@ -356,9 +379,13 @@ class InMemoryBus:
                     return []
                 self._cond.wait(timeout=remaining)
 
-    def history(self, topic: str, since_ms: Optional[int] = None,
-                until_ms: Optional[int] = None,
-                count: int = 1000) -> list[Message]:
+    def history(
+        self,
+        topic: str,
+        since_ms: Optional[int] = None,
+        until_ms: Optional[int] = None,
+        count: int = 1000,
+    ) -> list[Message]:
         with self._lock:
             msgs = list(self._topics.get(topic, []))
         if since_ms is not None:
@@ -390,8 +417,7 @@ class InMemoryBus:
 
     # ---- Consumer-group API (I083) ----
 
-    def create_group(self, topic: str, group: str,
-                     start_id: str = LATEST) -> None:
+    def create_group(self, topic: str, group: str, start_id: str = LATEST) -> None:
         with self._lock:
             key = (topic, group)
             if key in self._groups:
@@ -405,9 +431,15 @@ class InMemoryBus:
             else:
                 self._groups[key] = start_id
 
-    def read_group(self, group: str, consumer: str, topics: list[str],
-                   block_ms: int = 1000, count: int = 100,
-                   include_pending: bool = True) -> list[Message]:
+    def read_group(
+        self,
+        group: str,
+        consumer: str,
+        topics: list[str],
+        block_ms: int = 1000,
+        count: int = 100,
+        include_pending: bool = True,
+    ) -> list[Message]:
         deadline = time.monotonic() + block_ms / 1000.0
         with self._cond:
             # Auto-create group on first read (matches Redis MKSTREAM semantics).
@@ -426,9 +458,7 @@ class InMemoryBus:
                             out.append(m)
                             # Replay = another delivery; bump counter.
                             dkey = (t, group, m.msg_id)
-                            self._delivery[dkey] = (
-                                self._delivery.get(dkey, 1) + 1
-                            )
+                            self._delivery[dkey] = self._delivery.get(dkey, 1) + 1
                             if len(out) >= count:
                                 break
                         if len(out) >= count:
@@ -444,13 +474,12 @@ class InMemoryBus:
                             out.append(m)
                             self._groups[(t, group)] = m.msg_id
                             self._pending.setdefault(
-                                (t, group, consumer), [],
+                                (t, group, consumer),
+                                [],
                             ).append(m)
                             # First delivery of this msg_id to (group).
                             dkey = (t, group, m.msg_id)
-                            self._delivery[dkey] = (
-                                self._delivery.get(dkey, 0) + 1
-                            )
+                            self._delivery[dkey] = self._delivery.get(dkey, 0) + 1
                             if len(out) >= count:
                                 break
                     if len(out) >= count:
@@ -481,7 +510,8 @@ class InMemoryBus:
     def pending_count(self, group: str, topic: str) -> int:
         with self._lock:
             return sum(
-                len(msgs) for pkey, msgs in self._pending.items()
+                len(msgs)
+                for pkey, msgs in self._pending.items()
                 if pkey[0] == topic and pkey[1] == group
             )
 
@@ -500,6 +530,7 @@ class InMemoryBus:
 # Redis Streams backend (production)
 # ---------------------------------------------------------------------------
 
+
 class RedisStreamBus:
     """Redis Streams-backed bus.
 
@@ -513,10 +544,14 @@ class RedisStreamBus:
     per patient stream.
     """
 
-    def __init__(self, url: str = "redis://localhost:6379/0",
-                 maxlen: Optional[int] = None,
-                 *, max_retries: int = 3,
-                 retry_base_s: float = 0.2) -> None:
+    def __init__(
+        self,
+        url: str = "redis://localhost:6379/0",
+        maxlen: Optional[int] = None,
+        *,
+        max_retries: int = 3,
+        retry_base_s: float = 0.2,
+    ) -> None:
         """`maxlen` (approximate, with `~`) trims old messages once the
         stream exceeds the cap. ~10% overshoot is acceptable for the
         throughput win — see SECURITY.md "MAXLEN trimming."
@@ -531,9 +566,13 @@ class RedisStreamBus:
                 "`pip install redis==5.0.8`."
             ) from exc
         from redis import Redis  # type: ignore[import-not-found]
-        self._client = Redis.from_url(url, decode_responses=True,
-                                       socket_keepalive=True,
-                                       socket_connect_timeout=5.0)
+
+        self._client = Redis.from_url(
+            url,
+            decode_responses=True,
+            socket_keepalive=True,
+            socket_connect_timeout=5.0,
+        )
         self._maxlen = maxlen
         self._max_retries = int(max_retries)
         self._retry_base_s = float(retry_base_s)
@@ -546,6 +585,7 @@ class RedisStreamBus:
             ConnectionError as RedisConnError,
             TimeoutError as RedisTimeout,
         )
+
         last_exc = None
         for attempt in range(self._max_retries + 1):
             try:
@@ -555,13 +595,14 @@ class RedisStreamBus:
                 if attempt >= self._max_retries:
                     break
                 # Exponential backoff with full jitter.
-                base = self._retry_base_s * (2 ** attempt)
+                base = self._retry_base_s * (2**attempt)
                 time.sleep(random.uniform(0.0, base))
         # Surface the last error so the caller can decide.
         raise last_exc  # type: ignore[misc]
 
-    def publish(self, topic: str, payload: dict[str, Any],
-                ts_ms: Optional[int] = None) -> str:
+    def publish(
+        self, topic: str, payload: dict[str, Any], ts_ms: Optional[int] = None
+    ) -> str:
         # Redis Streams fields must be flat str/bytes; we JSON-encode the
         # whole payload under one field for round-trip simplicity.
         fields = {"json": json.dumps(payload, separators=(",", ":"))}
@@ -573,13 +614,17 @@ class RedisStreamBus:
             kwargs["approximate"] = True
         return str(self._retry(self._client.xadd, topic, fields, **kwargs))
 
-    def read(self, cursors: dict[str, str], block_ms: int = 1000,
-             count: int = 100) -> list[Message]:
+    def read(
+        self, cursors: dict[str, str], block_ms: int = 1000, count: int = 100
+    ) -> list[Message]:
         # XREAD's "$" means "only new messages from now"; passing through
         # as-is matches our LATEST sentinel.
         streams = dict(cursors)
         result = self._retry(
-            self._client.xread, streams, count=count, block=block_ms,
+            self._client.xread,
+            streams,
+            count=count,
+            block=block_ms,
         )
         out: list[Message] = []
         if not result:
@@ -588,15 +633,23 @@ class RedisStreamBus:
             for msg_id, fields in entries:
                 ts_ms, _, _ = str(msg_id).partition("-")
                 payload = json.loads(fields.get("json", "{}"))
-                out.append(Message(
-                    topic=str(topic), msg_id=str(msg_id),
-                    ts_ms=int(ts_ms), payload=payload,
-                ))
+                out.append(
+                    Message(
+                        topic=str(topic),
+                        msg_id=str(msg_id),
+                        ts_ms=int(ts_ms),
+                        payload=payload,
+                    )
+                )
         return out
 
-    def history(self, topic: str, since_ms: Optional[int] = None,
-                until_ms: Optional[int] = None,
-                count: int = 1000) -> list[Message]:
+    def history(
+        self,
+        topic: str,
+        since_ms: Optional[int] = None,
+        until_ms: Optional[int] = None,
+        count: int = 1000,
+    ) -> list[Message]:
         start = f"{since_ms}-0" if since_ms is not None else "-"
         end = f"{until_ms}-0" if until_ms is not None else "+"
         entries = self._client.xrange(topic, min=start, max=end, count=count)
@@ -604,10 +657,14 @@ class RedisStreamBus:
         for msg_id, fields in entries:
             ts_ms, _, _ = str(msg_id).partition("-")
             payload = json.loads(fields.get("json", "{}"))
-            out.append(Message(
-                topic=topic, msg_id=str(msg_id),
-                ts_ms=int(ts_ms), payload=payload,
-            ))
+            out.append(
+                Message(
+                    topic=topic,
+                    msg_id=str(msg_id),
+                    ts_ms=int(ts_ms),
+                    payload=payload,
+                )
+            )
         return out
 
     def list_topics(self, prefix: Optional[str] = None) -> list[str]:
@@ -618,8 +675,9 @@ class RedisStreamBus:
         pattern = f"{prefix}*" if prefix else "*"
         out: list[str] = []
         try:
-            for key in self._retry(self._client.scan_iter, match=pattern,
-                                    _type="stream", count=200):
+            for key in self._retry(
+                self._client.scan_iter, match=pattern, _type="stream", count=200
+            ):
                 out.append(str(key))
         except Exception:
             return []
@@ -640,18 +698,20 @@ class RedisStreamBus:
 
     # ---- Consumer-group API (I083) ----
 
-    def create_group(self, topic: str, group: str,
-                     start_id: str = LATEST) -> None:
+    def create_group(self, topic: str, group: str, start_id: str = LATEST) -> None:
         # Map our sentinels to Redis's: LATEST → "$" (skip backlog),
         # EARLIEST → "0".
-        redis_id = "$" if start_id == LATEST else (
-            "0" if start_id == EARLIEST else start_id
+        redis_id = (
+            "$" if start_id == LATEST else ("0" if start_id == EARLIEST else start_id)
         )
         try:
             # mkstream=True so we don't error on a stream that hasn't
             # been written to yet.
             self._retry(
-                self._client.xgroup_create, topic, group, id=redis_id,
+                self._client.xgroup_create,
+                topic,
+                group,
+                id=redis_id,
                 mkstream=True,
             )
         except Exception as exc:
@@ -661,28 +721,45 @@ class RedisStreamBus:
                 return
             raise
 
-    def read_group(self, group: str, consumer: str, topics: list[str],
-                   block_ms: int = 1000, count: int = 100,
-                   include_pending: bool = True) -> list[Message]:
+    def read_group(
+        self,
+        group: str,
+        consumer: str,
+        topics: list[str],
+        block_ms: int = 1000,
+        count: int = 100,
+        include_pending: bool = True,
+    ) -> list[Message]:
         if include_pending:
             # First pass: read any messages already delivered to THIS
             # consumer that haven't been ACKed yet (Redis ID "0").
             streams = {t: "0" for t in topics}
-            pending = self._read_group_call(group, consumer, streams,
-                                             block_ms=0, count=count)
+            pending = self._read_group_call(
+                group, consumer, streams, block_ms=0, count=count
+            )
             if pending:
                 return pending
         # Then: new messages (Redis ID ">").
         streams = {t: ">" for t in topics}
-        return self._read_group_call(group, consumer, streams,
-                                      block_ms=block_ms, count=count)
+        return self._read_group_call(
+            group, consumer, streams, block_ms=block_ms, count=count
+        )
 
-    def _read_group_call(self, group: str, consumer: str,
-                         streams: dict[str, str],
-                         block_ms: int, count: int) -> list[Message]:
+    def _read_group_call(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[str, str],
+        block_ms: int,
+        count: int,
+    ) -> list[Message]:
         result = self._retry(
-            self._client.xreadgroup, group, consumer, streams,
-            count=count, block=block_ms,
+            self._client.xreadgroup,
+            group,
+            consumer,
+            streams,
+            count=count,
+            block=block_ms,
         )
         out: list[Message] = []
         if not result:
@@ -691,10 +768,14 @@ class RedisStreamBus:
             for msg_id, fields in entries:
                 ts_ms, _, _ = str(msg_id).partition("-")
                 payload = json.loads(fields.get("json", "{}"))
-                out.append(Message(
-                    topic=str(topic), msg_id=str(msg_id),
-                    ts_ms=int(ts_ms), payload=payload,
-                ))
+                out.append(
+                    Message(
+                        topic=str(topic),
+                        msg_id=str(msg_id),
+                        ts_ms=int(ts_ms),
+                        payload=payload,
+                    )
+                )
         return out
 
     def ack(self, group: str, topic: str, msg_id: str) -> None:
@@ -716,7 +797,11 @@ class RedisStreamBus:
             # returns a list of (id, consumer, idle_ms, deliveries).
             entries = self._retry(
                 self._client.xpending_range,
-                topic, group, min=msg_id, max=msg_id, count=1,
+                topic,
+                group,
+                min=msg_id,
+                max=msg_id,
+                count=1,
             )
             if not entries:
                 return 0
@@ -724,8 +809,9 @@ class RedisStreamBus:
         except Exception:
             return 0
 
-    def claim(self, group: str, topic: str, consumer: str,
-              msg_id: str, min_idle_ms: int = 0) -> Optional[Message]:
+    def claim(
+        self, group: str, topic: str, consumer: str, msg_id: str, min_idle_ms: int = 0
+    ) -> Optional[Message]:
         """Claim ownership of a pending message via XCLAIM.
 
         Used by DLQ routing: if a message has been delivered too many
@@ -734,7 +820,11 @@ class RedisStreamBus:
         """
         try:
             entries = self._retry(
-                self._client.xclaim, topic, group, consumer, min_idle_ms,
+                self._client.xclaim,
+                topic,
+                group,
+                consumer,
+                min_idle_ms,
                 [msg_id],
             )
             if not entries:
@@ -742,8 +832,9 @@ class RedisStreamBus:
             ret_id, fields = entries[0]
             ts_ms_str, _, _ = str(ret_id).partition("-")
             payload = json.loads(fields.get("json", "{}"))
-            return Message(topic=topic, msg_id=str(ret_id),
-                           ts_ms=int(ts_ms_str), payload=payload)
+            return Message(
+                topic=topic, msg_id=str(ret_id), ts_ms=int(ts_ms_str), payload=payload
+            )
         except Exception:
             return None
 
@@ -751,6 +842,7 @@ class RedisStreamBus:
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def bus_from_env() -> MessageBus:
     """Build a bus from `VIFI_BUS_URL`.

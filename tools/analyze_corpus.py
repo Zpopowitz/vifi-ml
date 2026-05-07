@@ -18,6 +18,7 @@ Usage:
     python -m tools.analyze_corpus data/captures/founder
     python -m tools.analyze_corpus data/captures/founder --no-csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,12 +40,12 @@ from tools.analyze_session import (  # noqa: E402
 
 # Quality thresholds — sessions failing these get flagged in
 # `has_warnings`. Tune based on what's tolerable for the model.
-MIN_PAIR_COVERAGE = 0.5     # below this, the cross-stream signal is sparse
+MIN_PAIR_COVERAGE = 0.5  # below this, the cross-stream signal is sparse
 # 100 s covers the original 2-min paired captures that produced the
 # 4.15 bpm RESULTS.md headline. Anything shorter is genuinely too
 # brief for stable feature extraction.
 MIN_DURATION_S = 100.0
-MAX_HR_STD = 10.0           # higher than this usually means BLE dropouts
+MAX_HR_STD = 10.0  # higher than this usually means BLE dropouts
 
 
 def _looks_like_session(p: Path) -> bool:
@@ -52,8 +53,7 @@ def _looks_like_session(p: Path) -> bool:
     expected CSVs."""
     if not p.is_dir():
         return False
-    return ((p / "hr_log.csv").exists() or
-            (p / "rr_log.csv").exists())
+    return (p / "hr_log.csv").exists() or (p / "rr_log.csv").exists()
 
 
 def _stats_for_session(session_dir: Path) -> Optional[dict]:
@@ -85,8 +85,7 @@ def _stats_for_session(session_dir: Path) -> Optional[dict]:
             direction="nearest",
         )
         if len(merged):
-            pair_coverage = float(merged["rr_bpm"].notna().sum() /
-                                  len(merged))
+            pair_coverage = float(merged["rr_bpm"].notna().sum() / len(merged))
 
     n_hr = int(hr.shape[0]) if hr is not None else 0
     n_rr = int(rr_clean.shape[0]) if rr_clean is not None else 0
@@ -98,10 +97,11 @@ def _stats_for_session(session_dir: Path) -> Optional[dict]:
     warnings: list[str] = []
     # Only flag pair-coverage when both streams are present;
     # one-stream sessions get NaN, never flagged.
-    if (pair_coverage == pair_coverage  # not-NaN
-            and pair_coverage < MIN_PAIR_COVERAGE):
-        warnings.append(
-            f"low_pairing({pair_coverage * 100:.0f}%)")
+    if (
+        pair_coverage == pair_coverage  # not-NaN
+        and pair_coverage < MIN_PAIR_COVERAGE
+    ):
+        warnings.append(f"low_pairing({pair_coverage * 100:.0f}%)")
     if duration_s < MIN_DURATION_S:
         warnings.append(f"short({duration_s:.0f}s)")
     if std_hr > MAX_HR_STD:
@@ -134,8 +134,7 @@ def _print_table(rows: list[dict], cols: list[str]) -> None:
     if not rows:
         print("  (no sessions found)")
         return
-    widths = {c: max(len(c), max(len(_fmt(r[c])) for r in rows))
-              for c in cols}
+    widths = {c: max(len(c), max(len(_fmt(r[c])) for r in rows)) for c in cols}
     line = " | ".join(c.ljust(widths[c]) for c in cols)
     sep = "-+-".join("-" * widths[c] for c in cols)
     print(line)
@@ -149,11 +148,9 @@ def analyze_corpus(subject_dir: Path, *, write_csv: bool = True) -> int:
         print(f"ERROR: not a directory: {subject_dir}", file=sys.stderr)
         return 2
 
-    session_dirs = sorted(p for p in subject_dir.iterdir()
-                          if _looks_like_session(p))
+    session_dirs = sorted(p for p in subject_dir.iterdir() if _looks_like_session(p))
     if not session_dirs:
-        print(f"ERROR: no sessions found under {subject_dir}",
-              file=sys.stderr)
+        print(f"ERROR: no sessions found under {subject_dir}", file=sys.stderr)
         return 2
 
     rows: list[dict] = []
@@ -166,9 +163,18 @@ def analyze_corpus(subject_dir: Path, *, write_csv: bool = True) -> int:
     print(f"Sessions found: {len(rows)}")
     print()
 
-    table_cols = ["session", "n_hr", "n_rr", "mean_hr", "mean_rr",
-                  "std_hr", "std_rr", "pair_coverage", "duration_s",
-                  "has_warnings"]
+    table_cols = [
+        "session",
+        "n_hr",
+        "n_rr",
+        "mean_hr",
+        "mean_rr",
+        "std_hr",
+        "std_rr",
+        "pair_coverage",
+        "duration_s",
+        "has_warnings",
+    ]
     _print_table(rows, table_cols)
 
     # Corpus-level rollup.
@@ -177,18 +183,20 @@ def analyze_corpus(subject_dir: Path, *, write_csv: bool = True) -> int:
         print()
         print(f"Usable sessions (no warnings): {len(usable)} / {len(rows)}")
         if usable:
-            mhr = [r["mean_hr"] for r in usable
-                   if r["mean_hr"] == r["mean_hr"]]
-            mrr = [r["mean_rr"] for r in usable
-                   if r["mean_rr"] == r["mean_rr"]]
+            mhr = [r["mean_hr"] for r in usable if r["mean_hr"] == r["mean_hr"]]
+            mrr = [r["mean_rr"] for r in usable if r["mean_rr"] == r["mean_rr"]]
             if mhr:
-                print(f"Cross-session mean HR: "
-                      f"{sum(mhr) / len(mhr):.1f} bpm "
-                      f"(n={len(mhr)})")
+                print(
+                    f"Cross-session mean HR: "
+                    f"{sum(mhr) / len(mhr):.1f} bpm "
+                    f"(n={len(mhr)})"
+                )
             if mrr:
-                print(f"Cross-session mean RR: "
-                      f"{sum(mrr) / len(mrr):.1f} brpm "
-                      f"(n={len(mrr)})")
+                print(
+                    f"Cross-session mean RR: "
+                    f"{sum(mrr) / len(mrr):.1f} brpm "
+                    f"(n={len(mrr)})"
+                )
 
     if write_csv:
         out = subject_dir / "corpus_summary.csv"
@@ -200,16 +208,14 @@ def analyze_corpus(subject_dir: Path, *, write_csv: bool = True) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Roll up session stats across a subject's "
-                    "paired-capture corpus.",
+        description="Roll up session stats across a subject's paired-capture corpus.",
     )
-    p.add_argument("subject_dir", type=Path,
-                   help="path to data/captures/<subject>/")
-    p.add_argument("--no-csv", action="store_true",
-                   help="skip writing corpus_summary.csv")
+    p.add_argument("subject_dir", type=Path, help="path to data/captures/<subject>/")
+    p.add_argument(
+        "--no-csv", action="store_true", help="skip writing corpus_summary.csv"
+    )
     args = p.parse_args()
-    sys.exit(analyze_corpus(args.subject_dir,
-                            write_csv=not args.no_csv))
+    sys.exit(analyze_corpus(args.subject_dir, write_csv=not args.no_csv))
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ DSP correctness notes (see /root/.claude/plans/i-want-you-to-warm-gizmo.md):
   raise rather than producing NaN (I039).
 - Top-K, edge-guard, and band edges live in `config.py` (I007, I008, I012).
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,9 +53,12 @@ def _design_bandpass(fs: float, low: float, high: float, order: int = 4):
     return butter(order, [low_n, high_n], btype="bandpass", output="sos")
 
 
-def bandpass_filter(x: np.ndarray, fs: float,
-                    low: float = DEFAULT_BAND[0],
-                    high: float = DEFAULT_BAND[1]) -> np.ndarray:
+def bandpass_filter(
+    x: np.ndarray,
+    fs: float,
+    low: float = DEFAULT_BAND[0],
+    high: float = DEFAULT_BAND[1],
+) -> np.ndarray:
     """Zero-phase Butterworth bandpass on a 1-D real signal."""
     sos = _design_bandpass(fs, low, high)
     return sosfiltfilt(sos, x).astype(np.float32)
@@ -76,7 +80,7 @@ def _parabolic_interp(spec: np.ndarray, idx: int, df: float, f0: float) -> float
     if idx <= 0 or idx >= len(spec) - 1:
         return f0
     y0, y1, y2 = spec[idx - 1], spec[idx], spec[idx + 1]
-    denom = (y0 - 2.0 * y1 + y2)
+    denom = y0 - 2.0 * y1 + y2
     # Inverted parabola (y1 not a local max) — formula would mis-point.
     # Also catches near-degenerate cases.
     if denom >= -1e-12:
@@ -95,9 +99,9 @@ def _parabolic_interp(spec: np.ndarray, idx: int, df: float, f0: float) -> float
     return refined
 
 
-def _peak_freq_in_band(spec: np.ndarray, freqs: np.ndarray,
-                       band: tuple[float, float],
-                       *, label: str = "") -> tuple[float, float]:
+def _peak_freq_in_band(
+    spec: np.ndarray, freqs: np.ndarray, band: tuple[float, float], *, label: str = ""
+) -> tuple[float, float]:
     """Find the dominant peak inside `band`. Returns (freq_hz, magnitude).
 
     If no FFT bin falls inside the band (e.g., misconfigured fs vs
@@ -109,7 +113,9 @@ def _peak_freq_in_band(spec: np.ndarray, freqs: np.ndarray,
     if not np.any(mask):
         log.warning(
             "no FFT bin in %s band [%s, %s] (freqs spans [%.3f, %.3f])",
-            label or "??", band[0], band[1],
+            label or "??",
+            band[0],
+            band[1],
             float(freqs[0]) if len(freqs) else 0.0,
             float(freqs[-1]) if len(freqs) else 0.0,
         )
@@ -186,20 +192,34 @@ def extract_features(iq: np.ndarray, fs: float = 100.0) -> np.ndarray:
     f_peak = float(np.max(np.abs(filt)))
     zero_crossings = float(np.sum(np.diff(np.signbit(filt)))) / n
 
-    feats = np.array([
-        rr_hz, rr_ratio, hr_hz, hr_ratio,
-        f_std, f_mean_abs, f_peak,
-        zero_crossings, np.log1p(band_energy),
-    ], dtype=np.float32)
+    feats = np.array(
+        [
+            rr_hz,
+            rr_ratio,
+            hr_hz,
+            hr_ratio,
+            f_std,
+            f_mean_abs,
+            f_peak,
+            zero_crossings,
+            np.log1p(band_energy),
+        ],
+        dtype=np.float32,
+    )
     _assert_finite(feats, name="extract_features output")
     return feats
 
 
 FEATURE_NAMES = [
-    "rr_peak_hz", "rr_peak_ratio",
-    "hr_peak_hz", "hr_peak_ratio",
-    "env_std", "env_mean_abs", "env_peak",
-    "zero_crossings", "log_band_energy",
+    "rr_peak_hz",
+    "rr_peak_ratio",
+    "hr_peak_hz",
+    "hr_peak_ratio",
+    "env_std",
+    "env_mean_abs",
+    "env_peak",
+    "zero_crossings",
+    "log_band_energy",
 ]
 
 # Feature-set version. Bumped whenever the feature vector composition
@@ -221,6 +241,7 @@ FEATURE_SET_VERSION_V2 = "v2_amp_phase"
 # ---------------------------------------------------------------------------
 # Phase-domain calibration (PhaseBeat-style CFO/SFO removal)
 # ---------------------------------------------------------------------------
+
 
 def _unwrap_per_packet(raw_phase: np.ndarray) -> np.ndarray:
     """Per-packet phase unwrap. Pulled out for reuse + testability (I009)."""
@@ -300,6 +321,7 @@ def estimate_cfo_hz(complex_csi: np.ndarray, fs: float) -> float:
 # v2 feature extraction (amplitude + phase)
 # ---------------------------------------------------------------------------
 
+
 def _build_envelope_from_complex(complex_csi: np.ndarray) -> np.ndarray:
     """Variance-rank top-K subcarriers, normalize, average. Centralized
     here so amplitude + phase paths share a single implementation."""
@@ -312,9 +334,11 @@ def _build_envelope_from_complex(complex_csi: np.ndarray) -> np.ndarray:
     return np.mean(picked / std, axis=1).astype(np.float32)
 
 
-def extract_features_v2(complex_csi_window: np.ndarray,
-                        amplitude_envelope: np.ndarray | None = None,
-                        fs: float = 100.0) -> np.ndarray:
+def extract_features_v2(
+    complex_csi_window: np.ndarray,
+    amplitude_envelope: np.ndarray | None = None,
+    fs: float = 100.0,
+) -> np.ndarray:
     """Extract 14-dim v2 feature vector from a complex CSI window."""
     if amplitude_envelope is None:
         amplitude_envelope = _build_envelope_from_complex(complex_csi_window)
@@ -342,7 +366,10 @@ def extract_features_v2(complex_csi_window: np.ndarray,
         spec_p = np.abs(np.fft.rfft(windowed_p, n=n_fft))
         freqs_p = np.fft.rfftfreq(n_fft, d=1.0 / fs)
         phase_peak_hz, phase_peak_mag = _peak_freq_in_band(
-            spec_p, freqs_p, HR_BAND_HZ, label="phase HR",
+            spec_p,
+            freqs_p,
+            HR_BAND_HZ,
+            label="phase HR",
         )
         band_mask = (freqs_p >= FILTER_BAND_HZ[0]) & (freqs_p <= FILTER_BAND_HZ[1])
         band_energy = float(np.sum(spec_p[band_mask] ** 2)) + 1e-9
@@ -359,22 +386,36 @@ def extract_features_v2(complex_csi_window: np.ndarray,
         nmin = min(amplitude_envelope.shape[0], phase_envelope.shape[0])
         amp_aligned = amplitude_envelope[:nmin]
         phase_envelope = phase_envelope[:nmin]
-    if len(amp_aligned) >= 4 and np.std(amp_aligned) > 1e-9 and np.std(phase_envelope) > 1e-9:
+    if (
+        len(amp_aligned) >= 4
+        and np.std(amp_aligned) > 1e-9
+        and np.std(phase_envelope) > 1e-9
+    ):
         phase_amp_coherence = float(abs(np.corrcoef(amp_aligned, phase_envelope)[0, 1]))
     else:
         phase_amp_coherence = 0.0
 
-    amp_energy = float(np.sum(amplitude_envelope ** 2)) + 1e-9
-    phase_energy = float(np.sum(phase_envelope ** 2)) + 1e-9
+    amp_energy = float(np.sum(amplitude_envelope**2)) + 1e-9
+    phase_energy = float(np.sum(phase_envelope**2)) + 1e-9
     phase_energy_ratio = float(np.log1p(phase_energy / amp_energy))
 
     cfo_hz = estimate_cfo_hz(complex_csi_window, fs=fs)
 
-    feats = np.concatenate([
-        amp_feats,
-        np.array([phase_peak_hz, phase_peak_ratio, phase_amp_coherence,
-                  phase_energy_ratio, cfo_hz], dtype=np.float32),
-    ]).astype(np.float32)
+    feats = np.concatenate(
+        [
+            amp_feats,
+            np.array(
+                [
+                    phase_peak_hz,
+                    phase_peak_ratio,
+                    phase_amp_coherence,
+                    phase_energy_ratio,
+                    cfo_hz,
+                ],
+                dtype=np.float32,
+            ),
+        ]
+    ).astype(np.float32)
     _assert_finite(feats, name="extract_features_v2 output")
     return feats
 
@@ -401,6 +442,11 @@ if __name__ == "__main__":
     feats = preprocess_dataset(d["iq"], fs=float(d["fs"]))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(out, features=feats, hr_bpm=d["hr_bpm"], rr_bpm=d["rr_bpm"],
-                        feature_names=np.array(FEATURE_NAMES))
+    np.savez_compressed(
+        out,
+        features=feats,
+        hr_bpm=d["hr_bpm"],
+        rr_bpm=d["rr_bpm"],
+        feature_names=np.array(FEATURE_NAMES),
+    )
     print(f"features: {feats.shape} -> {out}")

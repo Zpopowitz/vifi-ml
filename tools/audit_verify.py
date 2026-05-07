@@ -13,6 +13,7 @@ Usage:
     VIFI_AUDIT_CHAIN_KEY=<hex> python -m tools.audit_verify
     VIFI_AUDIT_CHAIN_KEY=<hex> python -m tools.audit_verify --file path
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,11 +33,17 @@ log = logging.getLogger("vifi.audit_verify")
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--audit-dir", type=Path,
-                   default=Path(os.environ.get("VIFI_AUDIT_DIR",
-                                               "data/audit")))
-    p.add_argument("--file", type=Path, default=None,
-                   help="verify a single file instead of the whole dir")
+    p.add_argument(
+        "--audit-dir",
+        type=Path,
+        default=Path(os.environ.get("VIFI_AUDIT_DIR", "data/audit")),
+    )
+    p.add_argument(
+        "--file",
+        type=Path,
+        default=None,
+        help="verify a single file instead of the whole dir",
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 

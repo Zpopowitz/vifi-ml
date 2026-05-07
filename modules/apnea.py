@@ -20,6 +20,7 @@ Prior art: ApneaApp (UW, 2015) achieved ~95% sensitivity on WiFi CSI.
 
 Status: NOT IMPLEMENTED.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,8 +37,9 @@ class ApneaEvent:
     confidence: float
 
 
-def detect_apnea(resp_envelope: np.ndarray, fs: float,
-                 min_duration_s: float = 10.0) -> list[ApneaEvent]:
+def detect_apnea(
+    resp_envelope: np.ndarray, fs: float, min_duration_s: float = 10.0
+) -> list[ApneaEvent]:
     """Detect apnea events in a respiratory envelope.
 
     Parameters

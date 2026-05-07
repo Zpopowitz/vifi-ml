@@ -11,6 +11,7 @@ When the data does exist, this test guarantees that any future change to
 the calibration / fingerprinting / hysteresis logic doesn't quietly break
 the multi-subject safety claim.
 """
+
 from __future__ import annotations
 
 import json

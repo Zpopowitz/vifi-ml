@@ -1,4 +1,5 @@
 """Tests for pseudonymize.py."""
+
 from __future__ import annotations
 
 import sys
@@ -13,6 +14,7 @@ if str(ROOT) not in sys.path:
 # Re-import the module fresh in each test so the module-level
 # `_warned_no_salt` flag doesn't leak across tests.
 
+
 @pytest.fixture(autouse=True)
 def _reset_pseudonymize_module():
     if "pseudonymize" in sys.modules:
@@ -24,6 +26,7 @@ def _reset_pseudonymize_module():
 
 def _import():
     import pseudonymize  # noqa: WPS433
+
     return pseudonymize
 
 

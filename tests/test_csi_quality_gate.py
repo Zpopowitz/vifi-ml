@@ -8,6 +8,7 @@ Reference: the founder corpus's session4 had actual_packet_rate_hz
 7.23 bpm vs 2.6 bpm. This tool would have flagged it before it
 landed in the training corpus.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,22 +24,32 @@ if str(ROOT) not in sys.path:
 from tools.csi_quality_gate import gate
 
 
-def _write_meta(session_dir: Path, *,
-                packet_rate_hz: float = 75.0,
-                duration_s: float = 120.0,
-                n_csi_lines: int = 9000) -> None:
+def _write_meta(
+    session_dir: Path,
+    *,
+    packet_rate_hz: float = 75.0,
+    duration_s: float = 120.0,
+    n_csi_lines: int = 9000,
+) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "capture.txt.meta.json").write_text(json.dumps({
-        "actual_packet_rate_hz": packet_rate_hz,
-        "actual_seconds": duration_s,
-        "n_csi_lines": n_csi_lines,
-        "capture_duration_s": duration_s,
-    }))
+    (session_dir / "capture.txt.meta.json").write_text(
+        json.dumps(
+            {
+                "actual_packet_rate_hz": packet_rate_hz,
+                "actual_seconds": duration_s,
+                "n_csi_lines": n_csi_lines,
+                "capture_duration_s": duration_s,
+            }
+        )
+    )
 
 
-def _write_session(session_dir: Path, *,
-                   subject_on_axis: bool | None = True,
-                   tx_rx_distance_m: float = 2.0) -> None:
+def _write_session(
+    session_dir: Path,
+    *,
+    subject_on_axis: bool | None = True,
+    tx_rx_distance_m: float = 2.0,
+) -> None:
     md = {
         "subject_id": "founder",
         "room_id": "home",
@@ -54,6 +65,7 @@ def _write_session(session_dir: Path, *,
 # ---------------------------------------------------------------------------
 # Verdict matrix
 # ---------------------------------------------------------------------------
+
 
 def test_missing_session_dir_is_FAIL(tmp_path):
     report = gate(tmp_path / "nope")
@@ -138,6 +150,7 @@ def test_session_json_without_on_axis_fails_under_strict(tmp_path):
 
 def test_exit_codes_map_to_verdicts():
     from tools.csi_quality_gate import _exit_code
+
     assert _exit_code("OK") == 0
     assert _exit_code("WARN") == 1
     assert _exit_code("FAIL") == 2
@@ -147,6 +160,7 @@ def test_exit_codes_map_to_verdicts():
 # Real-corpus regression: session4 should fail at default thresholds
 # (the motivating use case).
 # ---------------------------------------------------------------------------
+
 
 def test_session4_regression(tmp_path):
     """Mimic founder/session4 (66.8 Hz, 120 s, no session.json).

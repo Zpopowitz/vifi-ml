@@ -1,4 +1,5 @@
 """Tests for M2 preprocessing pipeline."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -17,8 +18,8 @@ from preprocess import (
 def test_bandpass_attenuates_out_of_band():
     fs = 100.0
     t = np.arange(0, 10, 1 / fs)
-    in_band = np.sin(2 * np.pi * 1.0 * t)        # 60 bpm
-    out_band = np.sin(2 * np.pi * 10.0 * t)      # 600 bpm (well above)
+    in_band = np.sin(2 * np.pi * 1.0 * t)  # 60 bpm
+    out_band = np.sin(2 * np.pi * 10.0 * t)  # 600 bpm (well above)
     mixed = in_band + out_band
     filtered = bandpass_filter(mixed, fs, *DEFAULT_BAND)
     # RMS of filtered should be close to the in-band RMS
@@ -36,9 +37,9 @@ def test_feature_vector_shape_and_finite():
 
 def test_rr_feature_tracks_label():
     """Dominant RR-band peak should land near the true respiratory rate."""
-    iq, meta = generate_sample(duration_s=30.0, fs=100.0,
-                               hr_bpm=72.0, rr_bpm=20.0,
-                               snr_db=30.0, seed=3)
+    iq, meta = generate_sample(
+        duration_s=30.0, fs=100.0, hr_bpm=72.0, rr_bpm=20.0, snr_db=30.0, seed=3
+    )
     feats = extract_features(iq, fs=100.0)
     rr_hz = feats[FEATURE_NAMES.index("rr_peak_hz")]
     expected = meta.rr_bpm / 60.0

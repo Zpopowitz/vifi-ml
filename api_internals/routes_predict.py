@@ -18,6 +18,7 @@ Helper `_predict_iq` was previously a closure inside create_app;
 hoisting it to a free function with `synthetic_bundle` as the first
 arg keeps each route's body terse.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -47,18 +48,23 @@ from preprocess import extract_features
 from security import require_scope
 
 
-def _predict_iq(synthetic_bundle: SyntheticModelBundle,
-                iq: np.ndarray, fs: float) -> PredictResponse:
+def _predict_iq(
+    synthetic_bundle: SyntheticModelBundle, iq: np.ndarray, fs: float
+) -> PredictResponse:
     synthetic_bundle.load()  # raises 503 if missing
     feats = extract_features(iq, fs=fs).reshape(1, -1)
     hr = float(synthetic_bundle.hr.predict(feats)[0])
     rr = float(synthetic_bundle.rr.predict(feats)[0])
-    hr_conf = (_confidence_from_feature(feats[0],
-                                        synthetic_bundle.hr_ratio_idx)
-               if synthetic_bundle.hr_ratio_idx is not None else 0.0)
-    rr_conf = (_confidence_from_feature(feats[0],
-                                        synthetic_bundle.rr_ratio_idx)
-               if synthetic_bundle.rr_ratio_idx is not None else 0.0)
+    hr_conf = (
+        _confidence_from_feature(feats[0], synthetic_bundle.hr_ratio_idx)
+        if synthetic_bundle.hr_ratio_idx is not None
+        else 0.0
+    )
+    rr_conf = (
+        _confidence_from_feature(feats[0], synthetic_bundle.rr_ratio_idx)
+        if synthetic_bundle.rr_ratio_idx is not None
+        else 0.0
+    )
     return PredictResponse(
         hr_bpm=round(hr, 2),
         rr_bpm=round(rr, 2),
@@ -69,60 +75,78 @@ def _predict_iq(synthetic_bundle: SyntheticModelBundle,
     )
 
 
-def register_predict_routes(app: FastAPI,
-                            synthetic_bundle: SyntheticModelBundle,
-                            real_bundle: RealModelBundle) -> None:
+def register_predict_routes(
+    app: FastAPI, synthetic_bundle: SyntheticModelBundle, real_bundle: RealModelBundle
+) -> None:
     """Wire /predict, /predict/demo, /predict/csi, /predict/capture,
     /identify onto `app`. Bundles are captured by reference so
     lazy-loading state stays consistent with /health + /readyz."""
 
-    @app.post("/predict", response_model=PredictResponse,
-              dependencies=[Depends(require_scope("read:hr"))])
+    @app.post(
+        "/predict",
+        response_model=PredictResponse,
+        dependencies=[Depends(require_scope("read:hr"))],
+    )
     def predict(req: IQRequest) -> PredictResponse:
         try:
             iq = np.asarray(req.iq_real, dtype=np.float32) + 1j * np.asarray(
                 req.iq_imag, dtype=np.float32
             )
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail=f"invalid IQ payload: {exc}")
+            raise HTTPException(status_code=400, detail=f"invalid IQ payload: {exc}")
         return _predict_iq(synthetic_bundle, iq, req.fs)
 
-    @app.post("/predict/demo", response_model=PredictResponse,
-              dependencies=[Depends(require_scope("read:hr"))])
+    @app.post(
+        "/predict/demo",
+        response_model=PredictResponse,
+        dependencies=[Depends(require_scope("read:hr"))],
+    )
     def predict_demo(req: DemoRequest = DemoRequest()) -> PredictResponse:
         iq, _meta = generate_sample(
-            duration_s=req.duration_s, fs=req.fs,
-            hr_bpm=req.hr_bpm, rr_bpm=req.rr_bpm,
-            snr_db=req.snr_db, seed=req.seed,
+            duration_s=req.duration_s,
+            fs=req.fs,
+            hr_bpm=req.hr_bpm,
+            rr_bpm=req.rr_bpm,
+            snr_db=req.snr_db,
+            seed=req.seed,
         )
         return _predict_iq(synthetic_bundle, iq, req.fs)
 
-    @app.post("/predict/csi", response_model=PredictResponse,
-              dependencies=[Depends(require_scope("read:hr"))])
+    @app.post(
+        "/predict/csi",
+        response_model=PredictResponse,
+        dependencies=[Depends(require_scope("read:hr"))],
+    )
     def predict_csi(req: CSIRequest) -> PredictResponse:
         try:
             csi = np.asarray(req.csi_amp, dtype=np.float32)
         except Exception as exc:
-            raise HTTPException(status_code=400,
-                                detail=f"invalid csi_amp: {exc}")
+            raise HTTPException(status_code=400, detail=f"invalid csi_amp: {exc}")
         if req.subcarrier_mask is not None and csi.ndim == 2:
             mask = np.asarray(req.subcarrier_mask, dtype=bool)
             if mask.shape[0] != csi.shape[1]:
-                raise HTTPException(status_code=400,
-                                    detail="subcarrier_mask shape mismatch")
+                raise HTTPException(
+                    status_code=400, detail="subcarrier_mask shape mismatch"
+                )
             csi = csi[:, mask]
             if csi.shape[1] == 0:
-                raise HTTPException(status_code=400,
-                                    detail="mask excluded all subcarriers")
+                raise HTTPException(
+                    status_code=400, detail="mask excluded all subcarriers"
+                )
         return _predict_iq(synthetic_bundle, _csi_to_envelope(csi), req.fs)
 
-    @app.post("/predict/capture", response_model=CaptureResponse,
-              dependencies=[Depends(require_scope("read:hr"))])
+    @app.post(
+        "/predict/capture",
+        response_model=CaptureResponse,
+        dependencies=[Depends(require_scope("read:hr"))],
+    )
     def predict_capture(req: CaptureRequest) -> CaptureResponse:
         return _predict_capture(real_bundle, req)
 
-    @app.post("/identify", response_model=SubjectMatch,
-              dependencies=[Depends(require_scope("read:identity"))])
+    @app.post(
+        "/identify",
+        response_model=SubjectMatch,
+        dependencies=[Depends(require_scope("read:identity"))],
+    )
     def identify_subject(req: IdentifyRequest) -> SubjectMatch:
         return _identify_only(real_bundle, req)

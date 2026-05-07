@@ -8,6 +8,7 @@ Public API:
     generate_sample(duration_s, fs, hr_bpm, rr_bpm, snr_db, seed) -> (iq, meta)
     generate_dataset(n_samples, out_path=None, ...) -> dict with arrays
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,9 +24,9 @@ HR_MIN_BPM, HR_MAX_BPM = 60.0, 100.0
 RR_MIN_BPM, RR_MAX_BPM = 12.0, 30.0
 
 # Default signal params
-DEFAULT_FS = 100.0          # Hz
-DEFAULT_DURATION = 10.0     # seconds
-DEFAULT_CARRIER = 5.0       # synthetic baseband reference
+DEFAULT_FS = 100.0  # Hz
+DEFAULT_DURATION = 10.0  # seconds
+DEFAULT_CARRIER = 5.0  # synthetic baseband reference
 DEFAULT_SNR_DB = 20.0
 
 
@@ -69,8 +70,11 @@ def generate_sample(
     rr_phase = rng.uniform(0, 2 * np.pi)
     hr_phase = rng.uniform(0, 2 * np.pi)
 
-    envelope = 1.0 + rr_amp * np.sin(2 * np.pi * rr_hz * t + rr_phase) \
-                   + hr_amp * np.sin(2 * np.pi * hr_hz * t + hr_phase)
+    envelope = (
+        1.0
+        + rr_amp * np.sin(2 * np.pi * rr_hz * t + rr_phase)
+        + hr_amp * np.sin(2 * np.pi * hr_hz * t + hr_phase)
+    )
 
     # Baseband "carrier" with random phase for multipath-like IQ.
     carrier_phase = rng.uniform(0, 2 * np.pi)
@@ -82,11 +86,14 @@ def generate_sample(
     sig_power = np.mean(np.abs(signal) ** 2)
     snr_lin = 10 ** (snr_db / 10.0)
     noise_power = sig_power / snr_lin
-    noise = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * np.sqrt(noise_power / 2.0)
+    noise = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * np.sqrt(
+        noise_power / 2.0
+    )
 
     iq = (signal + noise).astype(np.complex64)
-    meta = SampleMeta(hr_bpm=hr_bpm, rr_bpm=rr_bpm, fs=fs,
-                      duration_s=duration_s, snr_db=snr_db)
+    meta = SampleMeta(
+        hr_bpm=hr_bpm, rr_bpm=rr_bpm, fs=fs, duration_s=duration_s, snr_db=snr_db
+    )
     return iq, meta
 
 
@@ -110,7 +117,10 @@ def generate_dataset(
         sample_snr = float(rng.uniform(*snr_db_range))
         sub_seed = int(rng.integers(0, 2**31 - 1))
         x, meta = generate_sample(
-            duration_s=duration_s, fs=fs, snr_db=sample_snr, seed=sub_seed,
+            duration_s=duration_s,
+            fs=fs,
+            snr_db=sample_snr,
+            seed=sub_seed,
         )
         iq[i] = x
         hr[i] = meta.hr_bpm
@@ -143,8 +153,11 @@ def main() -> None:
     args = parser.parse_args()
 
     ds = generate_dataset(
-        n_samples=args.n_samples, duration_s=args.duration, fs=args.fs,
-        seed=args.seed, out_path=args.out,
+        n_samples=args.n_samples,
+        duration_s=args.duration,
+        fs=args.fs,
+        seed=args.seed,
+        out_path=args.out,
     )
     summary = {
         "n_samples": int(ds["iq"].shape[0]),

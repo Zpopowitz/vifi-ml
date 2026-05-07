@@ -1,4 +1,5 @@
 """Tests for weekend-prep tools and the presence module."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +12,7 @@ from modules import presence
 from tools.parse_csi_capture import parse_capture_file
 
 # ------------------------------------------------------------------- presence
+
 
 def test_presence_score_positive_on_vitals_signal():
     iq, _ = generate_sample(hr_bpm=72.0, rr_bpm=18.0, snr_db=25.0, seed=1)
@@ -48,16 +50,17 @@ def test_presence_calibrate_threshold_is_positive():
 
 # ------------------------------------------------------------------ parser
 
+
 def test_parse_capture_file(tmp_path: Path):
     fake = tmp_path / "fake_capture.txt"
     # Two CSI lines with IDF-style timestamps
     fake.write_text(
-        'I (100) wifi: scan ok\n'
-        'I (1000) csi: CSI_DATA,STA,aa:bb,-42,11,1,6,1,1,0,0,1,0,128,0,0,0,1,'
+        "I (100) wifi: scan ok\n"
+        "I (1000) csi: CSI_DATA,STA,aa:bb,-42,11,1,6,1,1,0,0,1,0,128,0,0,0,1,"
         '"[10 -2 -4 5 8 -9]"\n'
-        'I (1010) csi: CSI_DATA,STA,aa:bb,-42,11,1,6,1,1,0,0,1,0,128,0,0,0,1,'
+        "I (1010) csi: CSI_DATA,STA,aa:bb,-42,11,1,6,1,1,0,0,1,0,128,0,0,0,1,"
         '"[11 -1 -3 6 9 -8]"\n'
-        'W (1020) warning: garbage not a csi line\n'
+        "W (1020) warning: garbage not a csi line\n"
     )
     amps, ts = parse_capture_file(fake)
     assert amps.shape == (2, 3)

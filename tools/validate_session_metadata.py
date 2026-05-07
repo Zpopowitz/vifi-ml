@@ -19,6 +19,7 @@ Usage:
     python tools/validate_session_metadata.py --strict
     python tools/validate_session_metadata.py --fix
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,8 +37,11 @@ RECOMMENDED_FIELDS = {"chair", "body_mass_lbs", "notes", "protocol_version"}
 # in cross-session evaluation. The eval harness can stratify MAE by
 # distance / on-axis when these are present.
 GEOMETRY_FIELDS = {
-    "tx_rx_distance_m", "subject_to_tx_distance_m", "subject_on_axis",
-    "antenna_type", "antenna_height_cm",
+    "tx_rx_distance_m",
+    "subject_to_tx_distance_m",
+    "subject_on_axis",
+    "antenna_type",
+    "antenna_height_cm",
 }
 
 POSTURES = {"seated", "lying_supine", "lying_lateral", "standing", "none", "other"}
@@ -67,31 +71,38 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
         if not isinstance(meta.get("room_id"), str) or not meta["room_id"]:
             errors.append("room_id must be non-empty string")
         if meta.get("posture") not in POSTURES:
-            errors.append(f"posture must be one of {POSTURES}, got {meta.get('posture')!r}")
+            errors.append(
+                f"posture must be one of {POSTURES}, got {meta.get('posture')!r}"
+            )
         if not isinstance(meta.get("post_cardio"), bool):
-            errors.append(f"post_cardio must be bool, got {type(meta.get('post_cardio')).__name__}")
+            errors.append(
+                f"post_cardio must be bool, got {type(meta.get('post_cardio')).__name__}"
+            )
 
     if "chair" in meta and meta["chair"] not in CHAIRS:
-        errors.append(f"chair must be one of {CHAIRS} or omitted, got {meta['chair']!r}")
+        errors.append(
+            f"chair must be one of {CHAIRS} or omitted, got {meta['chair']!r}"
+        )
     if "body_mass_lbs" in meta and meta["body_mass_lbs"] is not None:
         bm = meta["body_mass_lbs"]
         if not isinstance(bm, (int, float)) or bm < 50 or bm > 500:
             errors.append(f"body_mass_lbs out of plausible range (50-500): {bm}")
 
-    for f in ("tx_rx_distance_m", "subject_to_tx_distance_m",
-              "antenna_height_cm"):
+    for f in ("tx_rx_distance_m", "subject_to_tx_distance_m", "antenna_height_cm"):
         if f in meta and meta[f] is not None:
             v = meta[f]
             if not isinstance(v, (int, float)) or v <= 0 or v > 1000:
                 errors.append(f"{f} must be positive number <=1000, got {v!r}")
-    if "subject_on_axis" in meta and not isinstance(
-            meta["subject_on_axis"], bool):
+    if "subject_on_axis" in meta and not isinstance(meta["subject_on_axis"], bool):
         errors.append(
             "subject_on_axis must be bool, got "
-            f"{type(meta['subject_on_axis']).__name__}")
+            f"{type(meta['subject_on_axis']).__name__}"
+        )
     if "antenna_type" in meta and meta["antenna_type"] not in ANTENNA_TYPES:
-        errors.append(f"antenna_type must be one of {sorted(ANTENNA_TYPES)}, "
-                      f"got {meta['antenna_type']!r}")
+        errors.append(
+            f"antenna_type must be one of {sorted(ANTENNA_TYPES)}, "
+            f"got {meta['antenna_type']!r}"
+        )
 
     if strict:
         for field in RECOMMENDED_FIELDS:
@@ -99,8 +110,7 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
                 errors.append(f"missing recommended field (--strict): {field}")
         for field in GEOMETRY_FIELDS:
             if field not in meta:
-                errors.append(
-                    f"missing recommended geometry field (--strict): {field}")
+                errors.append(f"missing recommended geometry field (--strict): {field}")
 
     return len(errors) == 0, errors
 
@@ -114,10 +124,14 @@ def _find_all_session_files(data_root: Path) -> list[Path]:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--strict", action="store_true",
-                   help="error on missing recommended fields too")
-    p.add_argument("--fix", action="store_true",
-                   help="auto-add missing protocol_version='v1' to existing files")
+    p.add_argument(
+        "--strict", action="store_true", help="error on missing recommended fields too"
+    )
+    p.add_argument(
+        "--fix",
+        action="store_true",
+        help="auto-add missing protocol_version='v1' to existing files",
+    )
     args = p.parse_args()
 
     files = _find_all_session_files(ROOT)

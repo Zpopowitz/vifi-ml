@@ -15,6 +15,7 @@ Public API:
     detect_presence(csi_window, fs, threshold=None) -> bool
     presence_score(csi_window, fs) -> float  (larger = more motion)
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,8 +25,9 @@ from scipy.signal import butter, sosfiltfilt
 PRESENCE_BAND_HZ = (0.1, 3.0)
 
 
-def _bandpass_sos(fs: float, band: tuple[float, float] = PRESENCE_BAND_HZ,
-                  order: int = 4):
+def _bandpass_sos(
+    fs: float, band: tuple[float, float] = PRESENCE_BAND_HZ, order: int = 4
+):
     nyq = 0.5 * fs
     low = max(band[0] / nyq, 1e-4)
     high = min(band[1] / nyq, 0.999)
@@ -66,8 +68,9 @@ def presence_score(csi_window: np.ndarray, fs: float = 100.0) -> float:
     return float(np.var(filtered))
 
 
-def calibrate_threshold(empty_room_csi: np.ndarray, fs: float = 100.0,
-                        margin: float = 5.0) -> float:
+def calibrate_threshold(
+    empty_room_csi: np.ndarray, fs: float = 100.0, margin: float = 5.0
+) -> float:
     """Pick a presence threshold from an empty-room calibration capture.
 
     Records the empty-room in-band variance and returns
@@ -82,8 +85,9 @@ def calibrate_threshold(empty_room_csi: np.ndarray, fs: float = 100.0,
     return margin * empty_score
 
 
-def detect_presence(csi_window: np.ndarray, fs: float = 100.0,
-                    threshold: float | None = None) -> bool:
+def detect_presence(
+    csi_window: np.ndarray, fs: float = 100.0, threshold: float | None = None
+) -> bool:
     """Return True if the window contains human-scale motion.
 
     If threshold is None, uses a reasonable default (0.01) derived from

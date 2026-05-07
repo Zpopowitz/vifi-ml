@@ -13,6 +13,7 @@ a pressure-sensor floor mat (~$200 hobbyist / $20K+ clinical-grade).
 
 Status: NOT IMPLEMENTED.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ import numpy as np
 class GaitMetrics:
     speed_m_per_s: float
     cadence_steps_per_min: float
-    stride_regularity: float   # 0..1, higher = more regular
+    stride_regularity: float  # 0..1, higher = more regular
     n_steps: int
 
 

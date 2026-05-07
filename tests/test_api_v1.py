@@ -4,6 +4,7 @@ The WebSocket no longer returns a not_implemented stub; it fans out
 hr.predicted + hr.reference messages from the bus to the client. See
 tests/test_api_stream.py for behavioural coverage.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -16,6 +16,7 @@ Requirements:
     pip install pyserial
     (already installed; esptool depends on it)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,18 +37,25 @@ except ImportError:
 
 def _require_serial() -> None:
     if serial is None:
-        print("ERROR: pyserial not installed. Run: pip install pyserial",
-              file=sys.stderr)
+        print(
+            "ERROR: pyserial not installed. Run: pip install pyserial", file=sys.stderr
+        )
         sys.exit(1)
+
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def capture(port: str, baud: int, duration_s: float, out_path: Path,
-            quiet: bool = False,
-            bus_publisher: Optional["_BusPublisher"] = None) -> int:
+def capture(
+    port: str,
+    baud: int,
+    duration_s: float,
+    out_path: Path,
+    quiet: bool = False,
+    bus_publisher: Optional["_BusPublisher"] = None,
+) -> int:
     """Read serial output for `duration_s` seconds, write to out_path.
 
     Also writes a sidecar `<out_path>.meta.json` with the actual packet
@@ -102,15 +110,17 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
                     if nl < 0:
                         break
                     line = bytes(line_buf[:nl]).decode(errors="ignore")
-                    del line_buf[:nl + 1]
+                    del line_buf[: nl + 1]
                     bus_publisher.publish_line(line)
 
             # Status line every 10 seconds.
             now = time.time()
             if not quiet and now - last_status >= 10.0:
                 remaining = max(0.0, deadline - now)
-                print(f"  {bytes_written / 1024:7.0f} KB written, "
-                      f"{csi_count:5d} CSI lines, {remaining:3.0f}s left")
+                print(
+                    f"  {bytes_written / 1024:7.0f} KB written, "
+                    f"{csi_count:5d} CSI lines, {remaining:3.0f}s left"
+                )
                 last_status = now
 
     elapsed = time.time() - started
@@ -132,11 +142,12 @@ def capture(port: str, baud: int, duration_s: float, out_path: Path,
     meta_path = Path(str(out_path) + ".meta.json")
     meta_path.write_text(json.dumps(meta, indent=2))
 
-    print(f"Done. Wrote {bytes_written / 1024:.1f} KB "
-          f"({line_count} lines, {csi_count} CSI_DATA rows) "
-          f"to {out_path} in {elapsed:.1f}s")
-    print(f"      actual packet rate: {pkt_rate:.1f} Hz "
-          f"(metadata: {meta_path})")
+    print(
+        f"Done. Wrote {bytes_written / 1024:.1f} KB "
+        f"({line_count} lines, {csi_count} CSI_DATA rows) "
+        f"to {out_path} in {elapsed:.1f}s"
+    )
+    print(f"      actual packet rate: {pkt_rate:.1f} Hz (metadata: {meta_path})")
     return bytes_written
 
 
@@ -150,6 +161,7 @@ class _BusPublisher:
     def __init__(self, patient_id: str) -> None:
         from modules.bus import bus_from_env, csi_raw
         from tools.esp32_csi_collector import parse_csi_line
+
         self.bus = bus_from_env()
         self.topic = csi_raw(patient_id)
         self.patient_id = patient_id
@@ -192,16 +204,23 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Timed serial CSI capture")
     p.add_argument("--port", required=True, help="serial port (e.g. COM6)")
     p.add_argument("--baud", type=int, default=921600, help="baud rate")
-    p.add_argument("--duration", type=float, default=120.0,
-                   help="capture duration in seconds")
+    p.add_argument(
+        "--duration", type=float, default=120.0, help="capture duration in seconds"
+    )
     p.add_argument("--out", type=Path, default=Path("capture.txt"))
     p.add_argument("--quiet", action="store_true", help="suppress status lines")
-    p.add_argument("--bus", action="store_true",
-                   help=("also publish each parsed CSI_DATA line to "
-                         "csi.raw.<patient_id> on the ViFi message bus "
-                         "(set VIFI_BUS_URL=redis://...)"))
-    p.add_argument("--patient-id", default="default",
-                   help="patient id for bus topic namespacing")
+    p.add_argument(
+        "--bus",
+        action="store_true",
+        help=(
+            "also publish each parsed CSI_DATA line to "
+            "csi.raw.<patient_id> on the ViFi message bus "
+            "(set VIFI_BUS_URL=redis://...)"
+        ),
+    )
+    p.add_argument(
+        "--patient-id", default="default", help="patient id for bus topic namespacing"
+    )
     args = p.parse_args()
 
     publisher: Optional[_BusPublisher] = None
@@ -210,8 +229,14 @@ def main() -> None:
         print(f"Publishing CSI to bus topic: {publisher.topic}")
 
     try:
-        n = capture(args.port, args.baud, args.duration, args.out,
-                    args.quiet, bus_publisher=publisher)
+        n = capture(
+            args.port,
+            args.baud,
+            args.duration,
+            args.out,
+            args.quiet,
+            bus_publisher=publisher,
+        )
     finally:
         if publisher is not None:
             print(f"Published {publisher._published} CSI rows to bus")

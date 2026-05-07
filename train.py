@@ -25,6 +25,7 @@ Artifacts saved to `models/`:
                                    training-set distribution stats,
                                    seed, code version, hyperparameters)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -111,20 +112,25 @@ def _build_model(hp: HyperParams, *, seed: int) -> XGBRegressor:
     )
 
 
-def _distribution_stats(y_hr: np.ndarray, y_rr: np.ndarray,
-                        n_subjects: int = 1) -> dict:
+def _distribution_stats(
+    y_hr: np.ndarray, y_rr: np.ndarray, n_subjects: int = 1
+) -> dict:
     """Training-data distribution stats saved to metadata so an operator
     can tell whether their use case is in-distribution (I032)."""
     return {
         "n_subjects": int(n_subjects),
         "hr_bpm": {
-            "min": float(np.min(y_hr)), "max": float(np.max(y_hr)),
-            "mean": float(np.mean(y_hr)), "p05": float(np.percentile(y_hr, 5)),
+            "min": float(np.min(y_hr)),
+            "max": float(np.max(y_hr)),
+            "mean": float(np.mean(y_hr)),
+            "p05": float(np.percentile(y_hr, 5)),
             "p95": float(np.percentile(y_hr, 95)),
         },
         "rr_bpm": {
-            "min": float(np.min(y_rr)), "max": float(np.max(y_rr)),
-            "mean": float(np.mean(y_rr)), "p05": float(np.percentile(y_rr, 5)),
+            "min": float(np.min(y_rr)),
+            "max": float(np.max(y_rr)),
+            "mean": float(np.mean(y_rr)),
+            "p05": float(np.percentile(y_rr, 5)),
             "p95": float(np.percentile(y_rr, 95)),
         },
         "source": "synthetic",
@@ -158,12 +164,20 @@ def train(
 
     # 1) Carve off the held-out test set first.
     X_tv, X_te, hr_tv, hr_te, rr_tv, rr_te = train_test_split(
-        X, y_hr, y_rr, test_size=test_frac, random_state=seed,
+        X,
+        y_hr,
+        y_rr,
+        test_size=test_frac,
+        random_state=seed,
     )
     # 2) Then split train vs. val for early stopping.
     val_within_tv = val_frac / (1.0 - test_frac)
     X_tr, X_va, hr_tr, hr_va, rr_tr, rr_va = train_test_split(
-        X_tv, hr_tv, rr_tv, test_size=val_within_tv, random_state=seed,
+        X_tv,
+        hr_tv,
+        rr_tv,
+        test_size=val_within_tv,
+        random_state=seed,
     )
 
     hr_model = _build_model(hyperparams, seed=seed)
@@ -178,9 +192,7 @@ def train(
     rr_err_va = np.abs(rr_pred_va - rr_va)
     hr_acc_va = float(np.mean(hr_err_va <= HR_TOL_BPM))
     rr_acc_va = float(np.mean(rr_err_va <= RR_TOL_BPM))
-    combined_va = float(np.mean(
-        (hr_err_va <= HR_TOL_BPM) & (rr_err_va <= RR_TOL_BPM)
-    ))
+    combined_va = float(np.mean((hr_err_va <= HR_TOL_BPM) & (rr_err_va <= RR_TOL_BPM)))
 
     # Held-out test (never seen during fit or early stopping).
     hr_pred_te = hr_model.predict(X_te)
@@ -201,27 +213,32 @@ def train(
         rr_mae_test=float(np.mean(rr_err_te)),
         hr_acc_test=float(np.mean(hr_err_te <= HR_TOL_BPM)),
         rr_acc_test=float(np.mean(rr_err_te <= RR_TOL_BPM)),
-        combined_acc_test=float(np.mean(
-            (hr_err_te <= HR_TOL_BPM) & (rr_err_te <= RR_TOL_BPM)
-        )),
+        combined_acc_test=float(
+            np.mean((hr_err_te <= HR_TOL_BPM) & (rr_err_te <= RR_TOL_BPM))
+        ),
     )
 
     model_dir.mkdir(parents=True, exist_ok=True)
     hr_model.save_model(model_dir / "hr_model.json")
     rr_model.save_model(model_dir / "rr_model.json")
-    (model_dir / "metadata.json").write_text(json.dumps({
-        "feature_names": FEATURE_NAMES,
-        "feature_set_version": FEATURE_SET_VERSION,
-        "code_version": VIFI_VERSION,
-        "seed": int(seed),
-        "hr_tol_bpm": HR_TOL_BPM,
-        "rr_tol_bpm": RR_TOL_BPM,
-        "fs": float(ds["fs"]),
-        "duration_s": float(ds["duration_s"]),
-        "hyperparameters": hyperparams.to_dict(),
-        "training_distribution": _distribution_stats(y_hr, y_rr),
-        "metrics": asdict(report),
-    }, indent=2))
+    (model_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "feature_names": FEATURE_NAMES,
+                "feature_set_version": FEATURE_SET_VERSION,
+                "code_version": VIFI_VERSION,
+                "seed": int(seed),
+                "hr_tol_bpm": HR_TOL_BPM,
+                "rr_tol_bpm": RR_TOL_BPM,
+                "fs": float(ds["fs"]),
+                "duration_s": float(ds["duration_s"]),
+                "hyperparameters": hyperparams.to_dict(),
+                "training_distribution": _distribution_stats(y_hr, y_rr),
+                "metrics": asdict(report),
+            },
+            indent=2,
+        )
+    )
 
     return report
 
@@ -229,10 +246,18 @@ def train(
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("-n", "--n-samples", type=int, default=3000)
-    p.add_argument("--val-frac", type=float, default=0.15,
-                   help="Validation fraction (used for early stopping).")
-    p.add_argument("--test-frac", type=float, default=0.15,
-                   help="Held-out test fraction (never seen during training).")
+    p.add_argument(
+        "--val-frac",
+        type=float,
+        default=0.15,
+        help="Validation fraction (used for early stopping).",
+    )
+    p.add_argument(
+        "--test-frac",
+        type=float,
+        default=0.15,
+        help="Held-out test fraction (never seen during training).",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--model-dir", type=str, default=str(MODEL_DIR))
     args = p.parse_args()
@@ -249,9 +274,7 @@ def main() -> None:
     # Catches a regression that overfits to the validation set.
     floor = 0.90
     if report.combined_acc < floor:
-        raise SystemExit(
-            f"FAIL: combined_acc(val)={report.combined_acc:.3f} < {floor}"
-        )
+        raise SystemExit(f"FAIL: combined_acc(val)={report.combined_acc:.3f} < {floor}")
     if report.combined_acc_test < floor:
         raise SystemExit(
             f"FAIL: combined_acc(test)={report.combined_acc_test:.3f} < {floor}"

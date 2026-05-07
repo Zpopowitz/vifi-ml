@@ -9,6 +9,7 @@ Two layers:
    prediction emits, when a window is too short, and when a
    malformed CSI message is routed to the DLQ.
 """
+
 from __future__ import annotations
 
 import sys
@@ -26,11 +27,13 @@ if str(ROOT) not in sys.path:
 # observability.install_worker_metrics
 # ---------------------------------------------------------------------------
 
+
 def test_install_worker_metrics_disabled_returns_none(monkeypatch):
     monkeypatch.delenv("VIFI_METRICS_ENABLED", raising=False)
     if "observability" in sys.modules:
         del sys.modules["observability"]
     from observability import install_worker_metrics
+
     registry, metrics = install_worker_metrics()
     assert registry is None
     assert metrics is None
@@ -43,12 +46,17 @@ def test_install_worker_metrics_creates_expected_counters(monkeypatch):
     if "observability" in sys.modules:
         del sys.modules["observability"]
     from observability import install_worker_metrics
+
     _registry, metrics = install_worker_metrics()
     if metrics is None:
         pytest.skip("prometheus_client not installed in this env")
     expected = {
-        "packets_total", "predictions_total", "windows_too_short_total",
-        "dlq_total", "prediction_duration_seconds", "window_packets",
+        "packets_total",
+        "predictions_total",
+        "windows_too_short_total",
+        "dlq_total",
+        "prediction_duration_seconds",
+        "window_packets",
     }
     assert expected <= set(metrics)
 
@@ -56,6 +64,7 @@ def test_install_worker_metrics_creates_expected_counters(monkeypatch):
 # ---------------------------------------------------------------------------
 # inference_worker.loop with a metrics dict
 # ---------------------------------------------------------------------------
+
 
 class _FakeMetric:
     """Minimal Counter / Histogram stand-in that records calls."""
@@ -118,10 +127,14 @@ def test_metrics_increment_on_successful_prediction():
     _publish_synthetic_csi(bus, patient, n_sub=8)
     metrics = _stub_metrics()
     loop(
-        bus=bus, patient_id=patient,
-        window_s=10.0, stride_s=0.0, fs_resample=10.0,
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
         bundle=_hr_only_bundle(hr=88.0),
-        from_id=EARLIEST, max_iterations=2,
+        from_id=EARLIEST,
+        max_iterations=2,
         metrics=metrics,
     )
     # At least one packet was ingested and at least one HR prediction
@@ -153,14 +166,20 @@ def test_metrics_count_dlq_on_malformed_message():
             return np.array([70.0])
 
     bundle = _ModelBundle(
-        hr_model=_NopHR(), hr_ratio_idx=None,
-        rr_model=None, rr_ratio_idx=None,
+        hr_model=_NopHR(),
+        hr_ratio_idx=None,
+        rr_model=None,
+        rr_ratio_idx=None,
     )
     loop(
-        bus=bus, patient_id=patient,
-        window_s=10.0, stride_s=0.0, fs_resample=10.0,
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
         bundle=bundle,
-        from_id=EARLIEST, max_iterations=1,
+        from_id=EARLIEST,
+        max_iterations=1,
         metrics=metrics,
     )
     # The DLQ counter incremented; packets_total did not (the bad
@@ -182,10 +201,14 @@ def test_loop_runs_without_metrics_arg():
     bus = InMemoryBus()
     _publish_synthetic_csi(bus, "carol", n_sub=8)
     loop(
-        bus=bus, patient_id="carol",
-        window_s=10.0, stride_s=0.0, fs_resample=10.0,
+        bus=bus,
+        patient_id="carol",
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
         bundle=_hr_only_bundle(hr=72.0),
-        from_id=EARLIEST, max_iterations=2,
+        from_id=EARLIEST,
+        max_iterations=2,
     )
     # Just verify it didn't crash.
 

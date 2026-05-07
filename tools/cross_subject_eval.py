@@ -27,6 +27,7 @@ Usage:
 
 Run it monthly. Log the result. Never tweak the config.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -118,12 +119,14 @@ def train_one_fold(train_pairs, model_dir, feature_version, seed):
         while t + WINDOW_S <= t_end:
             mask = (ts_unix >= t) & (ts_unix < t + WINDOW_S)
             if mask.sum() < 50:
-                t += STRIDE_S; continue
+                t += STRIDE_S
+                continue
             win_ts = ts_unix[mask]
             win_amps = amps[mask]
             grid = np.arange(win_ts[0], win_ts[-1], 1.0 / RESAMPLE_FS)
             if grid.size < 64:
-                t += STRIDE_S; continue
+                t += STRIDE_S
+                continue
             resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
             for s in range(win_amps.shape[1]):
                 resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
@@ -136,11 +139,16 @@ def train_one_fold(train_pairs, model_dir, feature_version, seed):
 
             if feature_version == "v2":
                 win_cplx = complex_csi[mask]
-                resampled_cplx = np.empty((grid.size, win_cplx.shape[1]), dtype=np.complex64)
+                resampled_cplx = np.empty(
+                    (grid.size, win_cplx.shape[1]), dtype=np.complex64
+                )
                 for s in range(win_cplx.shape[1]):
-                    resampled_cplx[:, s] = (np.interp(grid, win_ts, win_cplx[:, s].real)
-                                             + 1j * np.interp(grid, win_ts, win_cplx[:, s].imag))
-                f = extract_features_v2(resampled_cplx, amplitude_envelope=envelope, fs=RESAMPLE_FS)
+                    resampled_cplx[:, s] = np.interp(
+                        grid, win_ts, win_cplx[:, s].real
+                    ) + 1j * np.interp(grid, win_ts, win_cplx[:, s].imag)
+                f = extract_features_v2(
+                    resampled_cplx, amplitude_envelope=envelope, fs=RESAMPLE_FS
+                )
             else:
                 f = extract_features(envelope, fs=RESAMPLE_FS)
             session_feats.append(f)
@@ -160,9 +168,13 @@ def train_one_fold(train_pairs, model_dir, feature_version, seed):
     y = np.asarray(labels_all, dtype=np.float32)
 
     model = XGBRegressor(
-        n_estimators=400, max_depth=5, learning_rate=0.08,
-        subsample=0.9, colsample_bytree=0.9,
-        objective="reg:squarederror", tree_method="hist",
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        objective="reg:squarederror",
+        tree_method="hist",
         random_state=seed,
     )
     model.fit(X, y, verbose=False)
@@ -198,12 +210,14 @@ def evaluate_session(models, eval_pair, feature_version, expected_dim):
     while t + WINDOW_S <= t_end:
         mask = (ts_unix >= t) & (ts_unix < t + WINDOW_S)
         if mask.sum() < 50:
-            t += STRIDE_S; continue
+            t += STRIDE_S
+            continue
         win_ts = ts_unix[mask]
         win_amps = amps[mask]
         grid = np.arange(win_ts[0], win_ts[-1], 1.0 / RESAMPLE_FS)
         if grid.size < 64:
-            t += STRIDE_S; continue
+            t += STRIDE_S
+            continue
         resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
         for s in range(win_amps.shape[1]):
             resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
@@ -216,17 +230,23 @@ def evaluate_session(models, eval_pair, feature_version, expected_dim):
 
         if feature_version == "v2":
             win_cplx = complex_csi[mask]
-            resampled_cplx = np.empty((grid.size, win_cplx.shape[1]), dtype=np.complex64)
+            resampled_cplx = np.empty(
+                (grid.size, win_cplx.shape[1]), dtype=np.complex64
+            )
             for s in range(win_cplx.shape[1]):
-                resampled_cplx[:, s] = (np.interp(grid, win_ts, win_cplx[:, s].real)
-                                         + 1j * np.interp(grid, win_ts, win_cplx[:, s].imag))
-            feats = extract_features_v2(resampled_cplx, amplitude_envelope=envelope, fs=RESAMPLE_FS)
+                resampled_cplx[:, s] = np.interp(
+                    grid, win_ts, win_cplx[:, s].real
+                ) + 1j * np.interp(grid, win_ts, win_cplx[:, s].imag)
+            feats = extract_features_v2(
+                resampled_cplx, amplitude_envelope=envelope, fs=RESAMPLE_FS
+            )
         else:
             feats = extract_features(envelope, fs=RESAMPLE_FS)
 
         if (t - t0) < CALIBRATION_S:
             cal_pool.append(feats)
-            t += STRIDE_S; continue
+            t += STRIDE_S
+            continue
         if cal_vec is None:
             if not cal_pool:
                 cal_vec = np.zeros(expected_dim, dtype=np.float32)
@@ -241,8 +261,13 @@ def evaluate_session(models, eval_pair, feature_version, expected_dim):
         t += STRIDE_S
 
     if not errors:
-        return {"mae": None, "bias": None, "within_5": None, "n_windows": 0,
-                "notes": "no eval windows scored (capture too short or too noisy)"}
+        return {
+            "mae": None,
+            "bias": None,
+            "within_5": None,
+            "n_windows": 0,
+            "notes": "no eval windows scored (capture too short or too noisy)",
+        }
     err = np.array(errors)
     return {
         "mae": float(np.mean(np.abs(err))),
@@ -255,28 +280,46 @@ def evaluate_session(models, eval_pair, feature_version, expected_dim):
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--feature-version", choices=["v1", "v2"], default="v1",
-                   help="v1=amplitude only (current shipped); v2=adds phase features")
-    p.add_argument("--out", type=Path, default=None,
-                   help="write results JSON to this path (in addition to stdout)")
-    p.add_argument("--ensemble", type=int, default=1,
-                   help="number of seeds to ensemble (1 = no ensemble; recommended: 5)")
+    p.add_argument(
+        "--feature-version",
+        choices=["v1", "v2"],
+        default="v1",
+        help="v1=amplitude only (current shipped); v2=adds phase features",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="write results JSON to this path (in addition to stdout)",
+    )
+    p.add_argument(
+        "--ensemble",
+        type=int,
+        default=1,
+        help="number of seeds to ensemble (1 = no ensemble; recommended: 5)",
+    )
     args = p.parse_args()
 
-    print(f"[~] cross_subject_eval feature_version={args.feature_version} ensemble={args.ensemble}")
-    print(f"[~] FROZEN CONFIG: window={WINDOW_S}s stride={STRIDE_S}s "
-          f"resample={RESAMPLE_FS}Hz calibration={CALIBRATION_S}s")
+    print(
+        f"[~] cross_subject_eval feature_version={args.feature_version} ensemble={args.ensemble}"
+    )
+    print(
+        f"[~] FROZEN CONFIG: window={WINDOW_S}s stride={STRIDE_S}s "
+        f"resample={RESAMPLE_FS}Hz calibration={CALIBRATION_S}s"
+    )
 
     subjects = discover_subjects(ROOT)
     if len(subjects) < 2:
-        print(f"[!] need >=2 subjects with paired captures; found {len(subjects)}: "
-              f"{list(subjects.keys())}")
+        print(
+            f"[!] need >=2 subjects with paired captures; found {len(subjects)}: "
+            f"{list(subjects.keys())}"
+        )
         sys.exit(1)
     print(f"[+] discovered {len(subjects)} subjects: {list(subjects.keys())}")
     for s, sessions in subjects.items():
         print(f"      {s}: {len(sessions)} sessions")
 
-    seeds = ENSEMBLE_SEEDS[:args.ensemble]
+    seeds = ENSEMBLE_SEEDS[: args.ensemble]
 
     per_session_results: list[dict] = []
 
@@ -297,26 +340,36 @@ def main() -> None:
                 continue
 
             print(f"\n[fold] subject={held_subject} held={held_session.name}")
-            print(f"       train on {len(train_pairs)} sessions; "
-                  f"ensemble={len(seeds)} seeds")
+            print(
+                f"       train on {len(train_pairs)} sessions; "
+                f"ensemble={len(seeds)} seeds"
+            )
 
             models = []
             feature_dim = None
             for seed in seeds:
-                model, dim = train_one_fold(train_pairs, None, args.feature_version, seed)
+                model, dim = train_one_fold(
+                    train_pairs, None, args.feature_version, seed
+                )
                 models.append(model)
                 feature_dim = dim
 
             eval_pair = (held_session / "capture.txt", held_session / "hr_log.csv")
-            result = evaluate_session(models, eval_pair, args.feature_version, feature_dim)
-            per_session_results.append({
-                "subject_id": held_subject,
-                "session": held_session.name,
-                **result,
-            })
+            result = evaluate_session(
+                models, eval_pair, args.feature_version, feature_dim
+            )
+            per_session_results.append(
+                {
+                    "subject_id": held_subject,
+                    "session": held_session.name,
+                    **result,
+                }
+            )
             if result["mae"] is not None:
-                print(f"       MAE: {result['mae']:.2f} bpm   bias: {result['bias']:+.2f}   "
-                      f"within +/-5: {result['within_5']*100:.1f}%   n: {result['n_windows']}")
+                print(
+                    f"       MAE: {result['mae']:.2f} bpm   bias: {result['bias']:+.2f}   "
+                    f"within +/-5: {result['within_5'] * 100:.1f}%   n: {result['n_windows']}"
+                )
             else:
                 print(f"       SKIPPED: {result['notes']}")
 
@@ -340,10 +393,12 @@ def main() -> None:
     print("=" * 60)
     print(f"  feature_version:  {args.feature_version}")
     print(f"  ensemble seeds:   {len(seeds)}")
-    print(f"  evaluated:        {len(valid)} sessions across {len(per_subject_mae)} subjects")
+    print(
+        f"  evaluated:        {len(valid)} sessions across {len(per_subject_mae)} subjects"
+    )
     print(f"  cross-subject MAE: {overall_mae:.2f} bpm")
     print(f"  cross-subject bias: {overall_bias:+.2f} bpm")
-    print(f"  within +/-5 bpm:    {overall_within*100:.1f}%")
+    print(f"  within +/-5 bpm:    {overall_within * 100:.1f}%")
     print()
     print("  Per-subject mean MAE:")
     for s, mae in per_subject_mae.items():
@@ -352,19 +407,26 @@ def main() -> None:
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps({
-            "feature_version": args.feature_version,
-            "ensemble_seeds": seeds,
-            "frozen_config": {
-                "window_s": WINDOW_S, "stride_s": STRIDE_S,
-                "resample_fs": RESAMPLE_FS, "calibration_s": CALIBRATION_S,
-            },
-            "overall_mae": overall_mae,
-            "overall_bias": overall_bias,
-            "within_5": overall_within,
-            "per_subject_mae": per_subject_mae,
-            "per_session": per_session_results,
-        }, indent=2))
+        args.out.write_text(
+            json.dumps(
+                {
+                    "feature_version": args.feature_version,
+                    "ensemble_seeds": seeds,
+                    "frozen_config": {
+                        "window_s": WINDOW_S,
+                        "stride_s": STRIDE_S,
+                        "resample_fs": RESAMPLE_FS,
+                        "calibration_s": CALIBRATION_S,
+                    },
+                    "overall_mae": overall_mae,
+                    "overall_bias": overall_bias,
+                    "within_5": overall_within,
+                    "per_subject_mae": per_subject_mae,
+                    "per_session": per_session_results,
+                },
+                indent=2,
+            )
+        )
         print(f"\nwrote {args.out}")
 
 

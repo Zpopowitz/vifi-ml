@@ -3,6 +3,7 @@
 The build itself (`docker build`) is exercised by `deploy.sh` / CI;
 here we lint the Dockerfile + dashboard to catch regressions cheaply.
 """
+
 from __future__ import annotations
 
 import ast
@@ -29,10 +30,20 @@ def test_dockerfile_copies_every_runtime_module():
     be COPY-ed into the runtime image. Forgetting one is a silent
     container build success followed by a runtime ModuleNotFoundError."""
     df = (ROOT / "Dockerfile").read_text()
-    for mod in ("api.py", "audit.py", "calibration.py", "config.py",
-                "data_gen.py", "observability.py", "preprocess.py",
-                "pseudonymize.py", "quality.py", "security.py",
-                "train.py", "__version__.py"):
+    for mod in (
+        "api.py",
+        "audit.py",
+        "calibration.py",
+        "config.py",
+        "data_gen.py",
+        "observability.py",
+        "preprocess.py",
+        "pseudonymize.py",
+        "quality.py",
+        "security.py",
+        "train.py",
+        "__version__.py",
+    ):
         assert mod in df, (
             f"Dockerfile is missing COPY {mod}. Add it next to its "
             f"siblings in the runtime stage."
@@ -47,9 +58,17 @@ def test_dockerfile_copies_every_runtime_module():
 
 def test_requirements_pins_core_libs():
     req = (ROOT / "requirements.txt").read_text().lower()
-    for pkg in ("numpy", "scipy", "scikit-learn", "xgboost",
-                "fastapi", "uvicorn", "pydantic", "pandas",
-                "cryptography"):
+    for pkg in (
+        "numpy",
+        "scipy",
+        "scikit-learn",
+        "xgboost",
+        "fastapi",
+        "uvicorn",
+        "pydantic",
+        "pandas",
+        "cryptography",
+    ):
         assert pkg in req, f"missing {pkg} in requirements.txt"
 
 
@@ -98,7 +117,7 @@ def test_dashboard_room_dropdown_replaces_text_input():
     html = (ROOT / "dashboard" / "index.html").read_text()
     js = (ROOT / "dashboard" / "app.js").read_text()
     # Top-bar uses a <select id="patient-id">
-    assert '<select' in html and 'id="patient-id"' in html
+    assert "<select" in html and 'id="patient-id"' in html
     # JS hits /api/v1/rooms to populate it.
     assert "/api/v1/rooms" in js
     # Refresh button + handler exist.

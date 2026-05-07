@@ -7,6 +7,7 @@ The endpoint must:
   * Cache for 5 s so SPA polling doesn't hammer Redis.
   * Fail gracefully (empty list + error key) when bus is unreachable.
 """
+
 from __future__ import annotations
 
 import sys
@@ -30,9 +31,11 @@ def client_with_inmemory_bus(monkeypatch):
     monkeypatch.setenv("VIFI_BUS_URL", "memory://test")
 
     import modules.bus as bus_module
+
     monkeypatch.setattr(bus_module, "bus_from_env", lambda: shared)
 
     from api import create_app
+
     app = create_app(Path("models"))
     return TestClient(app), shared
 
@@ -58,7 +61,9 @@ def test_rooms_aggregates_by_patient_id(client_with_inmemory_bus):
 
     by_id = {room["patient_id"]: room for room in rooms}
     assert sorted(by_id["alice"]["topics_with_data"]) == [
-        "csi.raw", "hr.predicted", "rr.reference",
+        "csi.raw",
+        "hr.predicted",
+        "rr.reference",
     ]
     assert sorted(by_id["bob"]["topics_with_data"]) == ["hr.predicted"]
     assert by_id["alice"]["last_seen_ms"] == 1200

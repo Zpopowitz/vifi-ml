@@ -4,6 +4,7 @@ We don't open a real serial port; we drive the line-by-line publish
 helper directly to confirm CSI_DATA lines parse and publish to the
 bus, while non-CSI lines (e.g. boot logs) are ignored.
 """
+
 from __future__ import annotations
 
 import sys
@@ -20,6 +21,7 @@ from modules.bus import EARLIEST, InMemoryBus, csi_raw  # noqa: E402
 def _make_publisher(patient_id: str, bus: InMemoryBus):
     with patch("modules.bus.bus_from_env", return_value=bus):
         from tools.csi_capture import _BusPublisher
+
         return _BusPublisher(patient_id)
 
 
@@ -54,6 +56,7 @@ def test_non_csi_line_does_not_publish():
 def test_publish_errors_dont_block_subsequent_publishes():
     """Even if the bus is broken, we should keep parsing lines so the
     serial->file path keeps running."""
+
     class _BrokenBus:
         def __init__(self):
             self.tries = 0
@@ -68,6 +71,7 @@ def test_publish_errors_dont_block_subsequent_publishes():
     broken = _BrokenBus()
     with patch("modules.bus.bus_from_env", return_value=broken):
         from tools.csi_capture import _BusPublisher
+
         pub = _BusPublisher("alice")
 
     for _ in range(3):

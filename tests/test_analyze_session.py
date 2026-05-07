@@ -3,6 +3,7 @@
 Synthetic CSVs only — no real captures needed. Every test writes
 into a tmp_path to keep the repo's data/captures/ untouched.
 """
+
 from __future__ import annotations
 
 import sys
@@ -26,17 +27,21 @@ def _write_hr(dirpath: Path, n: int = 60, hr_value: float = 75.0) -> None:
     pd.DataFrame(rows).to_csv(dirpath / "hr_log.csv", index=False)
 
 
-def _write_rr(dirpath: Path, n: int = 60,
-              warmup_zeros: int = 30,
-              rr_value: float = 14.0) -> None:
+def _write_rr(
+    dirpath: Path, n: int = 60, warmup_zeros: int = 30, rr_value: float = 14.0
+) -> None:
     rows = []
     t0 = 1_700_000_000.0
     for i in range(n):
         v = 0.0 if i < warmup_zeros else rr_value + (i % 4) * 0.5
-        rows.append({"timestamp_unix": t0 + i,
-                     "rr_bpm": v,
-                     "rr_source": "onboard",
-                     "force_n": 7.5})
+        rows.append(
+            {
+                "timestamp_unix": t0 + i,
+                "rr_bpm": v,
+                "rr_source": "onboard",
+                "force_n": 7.5,
+            }
+        )
     pd.DataFrame(rows).to_csv(dirpath / "rr_log.csv", index=False)
 
 

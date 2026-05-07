@@ -6,6 +6,7 @@ and assert the structural invariants we care about: every service
 points at the same Redis URL, depends on Redis, and uses a real
 image / build context.
 """
+
 from __future__ import annotations
 
 import sys
@@ -71,9 +72,7 @@ def test_api_exposes_8000_and_8501(compose):
     alias for the old Streamlit dashboard URL — same container now."""
     api = compose["services"]["api"]
     ports = api["ports"]
-    assert any("8000" in p for p in ports), (
-        f"api must expose 8000; got {ports}"
-    )
+    assert any("8000" in p for p in ports), f"api must expose 8000; got {ports}"
     assert any("8501" in p for p in ports), (
         f"api must alias 8501 → 8000 for dashboard URL compat; got {ports}"
     )
@@ -188,9 +187,13 @@ def test_api_healthcheck_uses_health_endpoint(compose):
 # ---------------------------------------------------------------------------
 
 SECURITY_ENVS = (
-    "VIFI_AUTH_MODE", "VIFI_API_KEYS", "VIFI_CORS_ORIGINS",
-    "VIFI_RATE_LIMIT", "VIFI_REVEAL_ERRORS",
-    "VIFI_PSEUDO_SALT", "VIFI_REQUIRE_PSEUDO",
+    "VIFI_AUTH_MODE",
+    "VIFI_API_KEYS",
+    "VIFI_CORS_ORIGINS",
+    "VIFI_RATE_LIMIT",
+    "VIFI_REVEAL_ERRORS",
+    "VIFI_PSEUDO_SALT",
+    "VIFI_REQUIRE_PSEUDO",
     "VIFI_AUDIT_ENCRYPTION_KEY",
 )
 
@@ -236,9 +239,7 @@ def test_caddyfile_exists():
 def test_env_example_documents_every_security_env():
     env_example = (ROOT / ".env.example").read_text()
     for var in SECURITY_ENVS + ("VIFI_REDIS_PASSWORD", "VIFI_DOMAIN"):
-        assert var in env_example, (
-            f".env.example must document {var}"
-        )
+        assert var in env_example, f".env.example must document {var}"
 
 
 def test_env_is_gitignored():

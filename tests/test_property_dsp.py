@@ -8,6 +8,7 @@ hold for ANY valid input:
   - Peaks land inside their respective bands
   - extract_features is deterministic (same input -> same output)
 """
+
 from __future__ import annotations
 
 import sys
@@ -55,8 +56,9 @@ def test_extract_features_deterministic(seed):
 
 
 @given(
-    scale=st.floats(min_value=1e-3, max_value=1e3,
-                    allow_nan=False, allow_infinity=False),
+    scale=st.floats(
+        min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False
+    ),
     seed=st.integers(min_value=0, max_value=2**31 - 1),
 )
 @settings(max_examples=20, deadline=None)

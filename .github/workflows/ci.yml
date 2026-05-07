@@ -27,9 +27,10 @@ jobs:
           pip install ruff==0.6.9
       - name: Ruff check
         run: ruff check .
-      # `ruff format --check` is opt-in via `make format` until the
-      # existing 70-file style sweep lands as its own PR. Tracked in
-      # docs/DEFERRED_ITEMS.md.
+      - name: Ruff format check
+        # The 86-file style sweep landed in PR-B-format; from this
+        # commit onward the formatter is enforced in CI.
+        run: ruff format --check .
 
   type:
     name: Type check (mypy on strict modules)

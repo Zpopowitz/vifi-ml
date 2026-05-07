@@ -45,6 +45,7 @@ Generate keys:
     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     openssl rand -hex 32     # for VIFI_AUDIT_CHAIN_KEY
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -130,11 +131,9 @@ def hash_capture(capture_text: str) -> str:
     return h.hexdigest()[:16]
 
 
-def chain_step(prev_digest: bytes, record_bytes: bytes,
-               chain_key: bytes) -> str:
+def chain_step(prev_digest: bytes, record_bytes: bytes, chain_key: bytes) -> str:
     """Compute next chain digest. Exposed for `tools/audit_verify.py`."""
-    return hmac.new(chain_key, prev_digest + record_bytes,
-                    hashlib.sha256).hexdigest()
+    return hmac.new(chain_key, prev_digest + record_bytes, hashlib.sha256).hexdigest()
 
 
 class AuditLogWriter:
@@ -145,11 +144,14 @@ class AuditLogWriter:
     files in test directories.
     """
 
-    def __init__(self, audit_dir: Optional[Path] = None,
-                 now_fn=None,
-                 fernet=None,
-                 chain_key: Optional[bytes] = None,
-                 fsync: Optional[bool] = None):
+    def __init__(
+        self,
+        audit_dir: Optional[Path] = None,
+        now_fn=None,
+        fernet=None,
+        chain_key: Optional[bytes] = None,
+        fsync: Optional[bool] = None,
+    ):
         if audit_dir is None:
             env = os.environ.get("VIFI_AUDIT_DIR")
             audit_dir = Path(env) if env else DEFAULT_AUDIT_DIR
@@ -221,7 +223,9 @@ class AuditLogWriter:
         # Verifiers know this convention.
         if self._chain_key is not None:
             self._last_digest = hmac.new(
-                self._chain_key, _CHAIN_ROOT, hashlib.sha256,
+                self._chain_key,
+                _CHAIN_ROOT,
+                hashlib.sha256,
             ).digest()
 
     def write(self, record: dict[str, Any]) -> None:
@@ -251,10 +255,14 @@ class AuditLogWriter:
         # HMAC chain — append digest, then write.
         if self._chain_key is not None and self._last_digest is not None:
             payload_bytes = json.dumps(
-                envelope, separators=(",", ":"), sort_keys=True,
+                envelope,
+                separators=(",", ":"),
+                sort_keys=True,
             ).encode("utf-8")
             digest = chain_step(
-                self._last_digest, payload_bytes, self._chain_key,
+                self._last_digest,
+                payload_bytes,
+                self._chain_key,
             )
             envelope["chain_digest"] = digest
             self._last_digest = bytes.fromhex(digest)
@@ -279,8 +287,11 @@ class AuditLogWriter:
         """
         out = dict(record)
         for field in _SUBJECT_FIELDS:
-            if field in out and out[field] is not None \
-                    and not is_pseudonymous(out[field]):
+            if (
+                field in out
+                and out[field] is not None
+                and not is_pseudonymous(out[field])
+            ):
                 out[field] = pseudonymize(out[field])
         return out
 
@@ -302,8 +313,8 @@ class AuditLogWriter:
 # Verification: replay a JSONL file and verify the HMAC chain.
 # ---------------------------------------------------------------------------
 
-def verify_chain(path: Path, chain_key: Optional[bytes] = None
-                 ) -> tuple[bool, str]:
+
+def verify_chain(path: Path, chain_key: Optional[bytes] = None) -> tuple[bool, str]:
     """Re-compute the chain over a JSONL file and verify each digest.
 
     Returns (ok, message). Returns (True, "skipped") if the file
@@ -336,10 +347,11 @@ def verify_chain(path: Path, chain_key: Optional[bytes] = None
                 # was disabled when written). Skip.
                 continue
             n_chained += 1
-            verify_envelope = {k: v for k, v in envelope.items()
-                               if k != "chain_digest"}
+            verify_envelope = {k: v for k, v in envelope.items() if k != "chain_digest"}
             payload_bytes = json.dumps(
-                verify_envelope, separators=(",", ":"), sort_keys=True,
+                verify_envelope,
+                separators=(",", ":"),
+                sort_keys=True,
             ).encode("utf-8")
             expected = chain_step(last_digest, payload_bytes, chain_key)
             if not hmac.compare_digest(expected, saved_digest):

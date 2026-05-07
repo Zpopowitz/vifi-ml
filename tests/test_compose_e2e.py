@@ -14,6 +14,7 @@ Skipped automatically when:
 Marked `pytest.mark.e2e` so CI can run it as a separate job after
 the docker-build step has warmed the image cache.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,7 +41,9 @@ def _docker_available() -> bool:
     try:
         out = subprocess.run(
             ["docker", "compose", "version"],
-            capture_output=True, timeout=10, check=False,
+            capture_output=True,
+            timeout=10,
+            check=False,
         )
         if out.returncode != 0:
             return False
@@ -49,7 +52,9 @@ def _docker_available() -> bool:
     # Daemon reachable?
     try:
         info = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=10,
+            ["docker", "info"],
+            capture_output=True,
+            timeout=10,
             check=False,
         )
         return info.returncode == 0
@@ -87,28 +92,42 @@ def compose_stack():
     moving data without us hand-crafting CSI packets)."""
     base = ["docker", "compose", "--profile", "dev"]
     # Best-effort cleanup of any leftover stack from a prior run.
-    subprocess.run([*base, "down", "-v", "--remove-orphans"],
-                   capture_output=True, timeout=60, check=False)
-    up = subprocess.run([*base, "up", "-d"],
-                        capture_output=True, timeout=300, check=False)
+    subprocess.run(
+        [*base, "down", "-v", "--remove-orphans"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    up = subprocess.run(
+        [*base, "up", "-d"], capture_output=True, timeout=300, check=False
+    )
     if up.returncode != 0:
         pytest.skip(f"compose up failed: {up.stderr.decode(errors='replace')[:500]}")
     deadline = time.time() + HEALTH_TIMEOUT_S
     healthy = _wait_for_health(deadline)
     if not healthy:
         # Capture logs for the failure summary.
-        logs = subprocess.run([*base, "logs", "--tail=80"],
-                              capture_output=True, timeout=20, check=False)
-        subprocess.run([*base, "down", "-v", "--remove-orphans"],
-                       capture_output=True, timeout=60, check=False)
+        logs = subprocess.run(
+            [*base, "logs", "--tail=80"], capture_output=True, timeout=20, check=False
+        )
+        subprocess.run(
+            [*base, "down", "-v", "--remove-orphans"],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
         pytest.fail(
             "api never returned 200 on /health within "
             f"{HEALTH_TIMEOUT_S:.0f}s. Last logs:\n"
             f"{logs.stdout.decode(errors='replace')[:2000]}"
         )
     yield
-    subprocess.run([*base, "down", "-v", "--remove-orphans"],
-                   capture_output=True, timeout=60, check=False)
+    subprocess.run(
+        [*base, "down", "-v", "--remove-orphans"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
 
 
 def test_health_endpoint_responds(compose_stack):

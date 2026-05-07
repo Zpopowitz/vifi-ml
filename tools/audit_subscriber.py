@@ -22,6 +22,7 @@ Multi-patient (comma-separated):
 The audit directory follows VIFI_AUDIT_DIR (default `data/audit/`),
 same as audit.AuditLogWriter.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,15 +60,19 @@ def _consumer_name() -> str:
     if name:
         return name
     import socket
+
     return f"audit-{socket.gethostname()}"
 
 
-def run(bus: MessageBus, patient_ids: Iterable[str],
-        audit_dir: Optional[Path] = None,
-        from_id: str = LATEST,
-        stop: Optional[threading.Event] = None,
-        block_ms: int = 1000,
-        consumer_name: Optional[str] = None) -> AuditLogWriter:
+def run(
+    bus: MessageBus,
+    patient_ids: Iterable[str],
+    audit_dir: Optional[Path] = None,
+    from_id: str = LATEST,
+    stop: Optional[threading.Event] = None,
+    block_ms: int = 1000,
+    consumer_name: Optional[str] = None,
+) -> AuditLogWriter:
     """Subscribe to every topic for each patient; write each msg to JSONL.
 
     Uses consumer-group semantics (I083): writes happen at-least-once.
@@ -94,22 +99,30 @@ def run(bus: MessageBus, patient_ids: Iterable[str],
 
     log.info(
         "subscribing to %d topics (group=%r consumer=%r): %s",
-        len(topics), CONSUMER_GROUP, consumer, topics,
+        len(topics),
+        CONSUMER_GROUP,
+        consumer,
+        topics,
     )
 
     try:
         while stop is None or not stop.is_set():
             msgs = bus.read_group(
-                CONSUMER_GROUP, consumer, topics,
-                block_ms=block_ms, count=100,
+                CONSUMER_GROUP,
+                consumer,
+                topics,
+                block_ms=block_ms,
+                count=100,
             )
             for m in msgs:
-                writer.write({
-                    "topic": m.topic,
-                    "msg_id": m.msg_id,
-                    "ts_ms": m.ts_ms,
-                    "payload": m.payload,
-                })
+                writer.write(
+                    {
+                        "topic": m.topic,
+                        "msg_id": m.msg_id,
+                        "ts_ms": m.ts_ms,
+                        "payload": m.payload,
+                    }
+                )
                 # ACK after the write (and its fsync, if enabled) is
                 # durably persisted. A crash before ACK re-delivers
                 # the msg → duplicate audit record on restart.
@@ -121,8 +134,9 @@ def run(bus: MessageBus, patient_ids: Iterable[str],
     return writer
 
 
-def drain_existing(bus: MessageBus, patient_ids: Iterable[str],
-                   audit_dir: Optional[Path] = None) -> AuditLogWriter:
+def drain_existing(
+    bus: MessageBus, patient_ids: Iterable[str], audit_dir: Optional[Path] = None
+) -> AuditLogWriter:
     """One-shot: write every existing message on every patient's topics
     to the audit log, then return. Useful for backfilling audit logs
     after a restart, or for tests.
@@ -138,12 +152,14 @@ def drain_existing(bus: MessageBus, patient_ids: Iterable[str],
             break
         for m in msgs:
             cursors[m.topic] = m.msg_id
-            writer.write({
-                "topic": m.topic,
-                "msg_id": m.msg_id,
-                "ts_ms": m.ts_ms,
-                "payload": m.payload,
-            })
+            writer.write(
+                {
+                    "topic": m.topic,
+                    "msg_id": m.msg_id,
+                    "ts_ms": m.ts_ms,
+                    "payload": m.payload,
+                }
+            )
     return writer
 
 
@@ -153,14 +169,19 @@ def main() -> None:
     )
     grp = p.add_mutually_exclusive_group(required=True)
     grp.add_argument("--patient-id", help="single patient id")
-    grp.add_argument("--patient-ids",
-                     help="comma-separated list of patient ids")
-    p.add_argument("--audit-dir", type=Path, default=None,
-                   help="override VIFI_AUDIT_DIR")
-    p.add_argument("--from-start", action="store_true",
-                   help=("replay every message from the beginning of the "
-                         "stream (catches up on missed messages); default "
-                         "is new messages only"))
+    grp.add_argument("--patient-ids", help="comma-separated list of patient ids")
+    p.add_argument(
+        "--audit-dir", type=Path, default=None, help="override VIFI_AUDIT_DIR"
+    )
+    p.add_argument(
+        "--from-start",
+        action="store_true",
+        help=(
+            "replay every message from the beginning of the "
+            "stream (catches up on missed messages); default "
+            "is new messages only"
+        ),
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 

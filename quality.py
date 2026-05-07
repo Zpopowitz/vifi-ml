@@ -26,6 +26,7 @@ Usage:
     d2 = detector.score(features_window)  # squared Mahalanobis distance
     is_ood = d2 > detector.threshold
 """
+
 from __future__ import annotations
 
 import json
@@ -43,6 +44,7 @@ DEFAULT_TAIL_PROBABILITY = 0.01  # threshold = chi-square 99th percentile
 @dataclass
 class MahalanobisDetector:
     """Squared Mahalanobis distance to a fitted feature distribution."""
+
     mean: np.ndarray
     inv_covariance: np.ndarray
     threshold: float
@@ -52,10 +54,12 @@ class MahalanobisDetector:
     tail_probability: float = DEFAULT_TAIL_PROBABILITY
 
     @classmethod
-    def fit(cls, features: np.ndarray,
-            regularization: float = DEFAULT_REGULARIZATION,
-            tail_probability: float = DEFAULT_TAIL_PROBABILITY,
-            ) -> "MahalanobisDetector":
+    def fit(
+        cls,
+        features: np.ndarray,
+        regularization: float = DEFAULT_REGULARIZATION,
+        tail_probability: float = DEFAULT_TAIL_PROBABILITY,
+    ) -> "MahalanobisDetector":
         """Fit on (N, F) training feature matrix.
 
         regularization adds lambda*I to the empirical covariance so the
@@ -119,7 +123,7 @@ class MahalanobisDetector:
             x = features.astype(np.float64) - self.mean.astype(np.float64)
             # Equivalent to einsum('ni,ij,nj->n', x, inv, x) but more readable.
             tmp = x @ self.inv_covariance.astype(np.float64)
-            return np.einsum('ni,ni->n', tmp, x).astype(np.float64)
+            return np.einsum("ni,ni->n", tmp, x).astype(np.float64)
         raise ValueError(f"features must be 1-D or 2-D, got {features.shape}")
 
     def is_ood(self, features: np.ndarray) -> np.ndarray | bool:

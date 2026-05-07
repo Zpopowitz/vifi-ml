@@ -1,4 +1,5 @@
 """Tests for M1 synthetic data generator."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -45,8 +46,9 @@ def test_dataset_1000_samples():
 
 def test_spectral_peak_matches_rr():
     """RR modulation dominates; its frequency should appear in the envelope FFT."""
-    iq, meta = generate_sample(duration_s=30.0, fs=100.0, hr_bpm=75.0,
-                               rr_bpm=18.0, snr_db=30.0, seed=1)
+    iq, meta = generate_sample(
+        duration_s=30.0, fs=100.0, hr_bpm=75.0, rr_bpm=18.0, snr_db=30.0, seed=1
+    )
     env = np.abs(iq) - np.mean(np.abs(iq))
     spec = np.abs(np.fft.rfft(env))
     freqs = np.fft.rfftfreq(len(env), d=1.0 / 100.0)

@@ -41,6 +41,7 @@ On Windows the symlink dance still works under WSL2; for native
 Windows operators a hardlink fallback would be needed (out of
 scope — production runs on Linux).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -70,8 +71,7 @@ def _compute_version_id(metadata: dict) -> str:
     metadata produces the same sha; any change to feature set,
     seed, n_train, or training pairs bumps it.
     """
-    blob = json.dumps(metadata, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
+    blob = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:12]
 
 
@@ -102,12 +102,14 @@ def list_versions(base: Path) -> list[VersionInfo]:
             meta = json.loads(meta_path.read_text())
         except json.JSONDecodeError:
             continue
-        versions.append(VersionInfo(
-            sha=entry.name,
-            path=entry,
-            metadata=meta,
-            ctime=entry.stat().st_ctime,
-        ))
+        versions.append(
+            VersionInfo(
+                sha=entry.name,
+                path=entry,
+                metadata=meta,
+                ctime=entry.stat().st_ctime,
+            )
+        )
     versions.sort(key=lambda v: v.ctime)
     return versions
 
@@ -163,8 +165,7 @@ def promote(source: Path, base: Path) -> str:
         raise FileNotFoundError(f"source dir not found: {source}")
     meta_path = source / "metadata.json"
     if not meta_path.exists():
-        raise FileNotFoundError(
-            f"source must contain metadata.json: {source}")
+        raise FileNotFoundError(f"source must contain metadata.json: {source}")
     metadata = json.loads(meta_path.read_text())
     sha = _compute_version_id(metadata)
     dest = base / sha
@@ -184,12 +185,11 @@ def rollback(target: str, base: Path) -> str:
     """Retarget `<base>/current` to an existing historical version."""
     candidate = base / target
     if not candidate.is_dir():
-        raise FileNotFoundError(
-            f"version {target} not found under {base}")
+        raise FileNotFoundError(f"version {target} not found under {base}")
     if not (candidate / "metadata.json").exists():
         raise FileNotFoundError(
-            f"{candidate} is not a valid model version "
-            "(no metadata.json)")
+            f"{candidate} is not a valid model version (no metadata.json)"
+        )
     _atomic_symlink(base, target)
     return target
 
@@ -198,10 +198,10 @@ def rollback(target: str, base: Path) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _summarize(v: VersionInfo, *, is_current: bool) -> str:
     md = v.metadata
-    when = time.strftime("%Y-%m-%d %H:%M",
-                         time.localtime(v.ctime))
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.ctime))
     metrics = md.get("metrics", {})
     mae = metrics.get("hr_mae")
     n_train = md.get("n_train", "?")
@@ -209,9 +209,11 @@ def _summarize(v: VersionInfo, *, is_current: bool) -> str:
     cal = md.get("calibration_mode", "?")
     marker = " *" if is_current else "  "
     mae_str = f"{mae:.2f}" if isinstance(mae, (int, float)) else "?"
-    return (f"{marker} {v.sha}  {when}  "
-            f"n_train={n_train}  n_val={n_val}  "
-            f"cal={cal}  hr_mae={mae_str}")
+    return (
+        f"{marker} {v.sha}  {when}  "
+        f"n_train={n_train}  n_val={n_val}  "
+        f"cal={cal}  hr_mae={mae_str}"
+    )
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -274,15 +276,18 @@ def main() -> None:
 
     p_promote = sub.add_parser("promote", help="copy source into versioned slot")
     p_promote.add_argument("base")
-    p_promote.add_argument("--source", required=True,
-                           help="working dir with hr_model.json + "
-                                "mahalanobis.json + metadata.json")
+    p_promote.add_argument(
+        "--source",
+        required=True,
+        help="working dir with hr_model.json + mahalanobis.json + metadata.json",
+    )
     p_promote.set_defaults(func=_cmd_promote)
 
     p_rb = sub.add_parser("rollback", help="point current at a prior version")
     p_rb.add_argument("base")
-    p_rb.add_argument("--target", required=True,
-                      help="sha of the version to roll back to")
+    p_rb.add_argument(
+        "--target", required=True, help="sha of the version to roll back to"
+    )
     p_rb.set_defaults(func=_cmd_rollback)
 
     args = p.parse_args()

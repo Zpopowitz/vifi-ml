@@ -1,4 +1,5 @@
 """Tests for M3 training pipeline. Requires >= 0.92 combined validation accuracy."""
+
 from __future__ import annotations
 
 from pathlib import Path

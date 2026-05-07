@@ -7,6 +7,7 @@ trained XGBoost model on disk. Verifies:
   - malformed messages are dropped without crashing the loop
   - stride_s is respected
 """
+
 from __future__ import annotations
 
 import sys
@@ -39,6 +40,7 @@ from tools.inference_worker import (  # noqa: E402
 # _Window: rolling time-bounded buffer
 # ---------------------------------------------------------------------------
 
+
 def test_window_evicts_packets_older_than_duration():
     w = _Window(duration_s=2.0)
     for i in range(5):
@@ -52,11 +54,11 @@ def test_window_evicts_packets_older_than_duration():
 # Resampling
 # ---------------------------------------------------------------------------
 
+
 def test_resample_returns_none_for_too_few_packets():
     w = _Window(duration_s=10.0)
     for i in range(5):
-        w.push(_Packet(ts_unix=float(i),
-                       amps=np.ones(4, dtype=np.float32)))
+        w.push(_Packet(ts_unix=float(i), amps=np.ones(4, dtype=np.float32)))
     assert _resample(w.snapshot(), fs=100.0, duration_s=10.0) is None
 
 
@@ -64,8 +66,10 @@ def test_resample_drops_packets_with_inconsistent_subcarrier_counts():
     # 50 packets at n_sub=4 + one outlier at n_sub=8. Need >=32 grid
     # samples so we use fs=20, duration=2 -> 40 samples.
     pkts = [
-        _Packet(ts_unix=float(i) * 0.05,  # 20 Hz
-                amps=np.ones(4, dtype=np.float32))
+        _Packet(
+            ts_unix=float(i) * 0.05,  # 20 Hz
+            amps=np.ones(4, dtype=np.float32),
+        )
         for i in range(50)
     ]
     pkts.append(_Packet(ts_unix=2.6, amps=np.ones(8, dtype=np.float32)))  # outlier
@@ -78,6 +82,7 @@ def test_resample_drops_packets_with_inconsistent_subcarrier_counts():
 # ---------------------------------------------------------------------------
 # run_once with stub model
 # ---------------------------------------------------------------------------
+
 
 class _StubModel:
     """Returns a fixed HR prediction; matches XGBRegressor.predict shape."""
@@ -97,13 +102,16 @@ def _hr_only_bundle(hr: float = 72.5) -> _ModelBundle:
 
 def _hr_rr_bundle(hr: float = 72.5, rr: float = 18.0) -> _ModelBundle:
     return _ModelBundle(
-        hr_model=_StubModel(hr=hr), hr_ratio_idx=None,
-        rr_model=_StubModel(hr=rr), rr_ratio_idx=None,
+        hr_model=_StubModel(hr=hr),
+        hr_ratio_idx=None,
+        rr_model=_StubModel(hr=rr),
+        rr_ratio_idx=None,
     )
 
 
-def _fill_window(w: _Window, fs: float = 100.0, duration_s: float = 10.0,
-                 n_sub: int = 16) -> None:
+def _fill_window(
+    w: _Window, fs: float = 100.0, duration_s: float = 10.0, n_sub: int = 16
+) -> None:
     """Drop a synthetic 1 Hz sinusoid into the window so feature
     extraction has signal to work with."""
     dt = 1.0 / fs
@@ -116,8 +124,7 @@ def _fill_window(w: _Window, fs: float = 100.0, duration_s: float = 10.0,
 
 def test_run_once_returns_none_on_empty_window():
     w = _Window(duration_s=10.0)
-    out = run_once(w, fs_resample=100.0, window_s=10.0,
-                   bundle=_hr_only_bundle())
+    out = run_once(w, fs_resample=100.0, window_s=10.0, bundle=_hr_only_bundle())
     assert out is None
 
 
@@ -147,21 +154,30 @@ def test_run_once_predicts_both_hr_and_rr_when_bundle_has_rr():
 # Full loop: pre-publish packets, run with max_iterations
 # ---------------------------------------------------------------------------
 
-def _publish_synthetic_csi(bus: InMemoryBus, patient: str,
-                           n_packets: int = 101, fs: float = 10.0,
-                           n_sub: int = 8, base_ts: float = 1_000_000.0
-                           ) -> None:
+
+def _publish_synthetic_csi(
+    bus: InMemoryBus,
+    patient: str,
+    n_packets: int = 101,
+    fs: float = 10.0,
+    n_sub: int = 8,
+    base_ts: float = 1_000_000.0,
+) -> None:
     for i in range(n_packets):
         t = base_ts + i / fs
         env = np.sin(2 * np.pi * 1.2 * (i / fs))
         gains = np.linspace(0.5, 1.5, n_sub)
         amps = (env * gains).astype(np.float32)
-        bus.publish(csi_raw(patient), {
-            "ts_unix": t,
-            "amps": amps.tolist(),
-            "n_subcarriers": n_sub,
-            "patient_id": patient,
-        }, ts_ms=int(t * 1000))
+        bus.publish(
+            csi_raw(patient),
+            {
+                "ts_unix": t,
+                "amps": amps.tolist(),
+                "n_subcarriers": n_sub,
+                "patient_id": patient,
+            },
+            ts_ms=int(t * 1000),
+        )
 
 
 def test_loop_consumes_csi_and_publishes_hr_predictions():
@@ -225,8 +241,9 @@ def test_loop_drops_malformed_messages_without_crashing():
     bus = InMemoryBus()
     patient = "alice"
     bus.publish(csi_raw(patient), {"ts_unix": 1.0}, ts_ms=1000)
-    bus.publish(csi_raw(patient), {"ts_unix": "not a number",
-                                    "amps": [1.0, 2.0]}, ts_ms=1001)
+    bus.publish(
+        csi_raw(patient), {"ts_unix": "not a number", "amps": [1.0, 2.0]}, ts_ms=1001
+    )
 
     loop(
         bus=bus,

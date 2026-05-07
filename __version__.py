@@ -8,6 +8,7 @@ Bump rules (semver):
 - MINOR: new endpoints, new bus topics, new model versions
 - PATCH: bug fixes, doc updates, internal refactors
 """
+
 from __future__ import annotations
 
 __version__ = "0.2.0"

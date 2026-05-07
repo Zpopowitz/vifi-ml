@@ -8,6 +8,7 @@ start. Either one alone is a footgun:
 
 VIFI_ALLOW_INSECURE_AUDIT=1 lets dev environments override.
 """
+
 from __future__ import annotations
 
 import sys

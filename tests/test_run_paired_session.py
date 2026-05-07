@@ -5,6 +5,7 @@ spawning is intentionally NOT tested here -- those run real serial /
 BLE devices that don't exist in CI. We test the wrapper logic that
 builds the session.json + decides what to spawn, not the spawning itself.
 """
+
 from __future__ import annotations
 
 import json
@@ -70,9 +71,14 @@ def test_metadata_includes_required_fields():
 
 
 def test_metadata_propagates_optional_fields():
-    meta = build_session_metadata(_base_args(
-        chair="A", body_mass_lbs=180.5, notes="test session", post_cardio=True,
-    ))
+    meta = build_session_metadata(
+        _base_args(
+            chair="A",
+            body_mass_lbs=180.5,
+            notes="test session",
+            post_cardio=True,
+        )
+    )
     assert meta["chair"] == "A"
     assert meta["body_mass_lbs"] == 180.5
     assert meta["notes"] == "test session"
@@ -124,8 +130,7 @@ def test_dry_run_does_not_create_session_dir(tmp_path):
 
 
 def test_dry_run_with_no_h10_works_when_explicit(tmp_path):
-    args = _base_args(h10_address=None, no_h10=True,
-                       data_root=tmp_path, dry_run=True)
+    args = _base_args(h10_address=None, no_h10=True, data_root=tmp_path, dry_run=True)
     rc = run_session(args)
     assert rc == 0
 
@@ -133,36 +138,47 @@ def test_dry_run_with_no_h10_works_when_explicit(tmp_path):
 def test_metadata_satisfies_locked_schema():
     """Cross-check that the orchestrator's metadata matches what
     tools/validate_session_metadata.py expects."""
-    meta = build_session_metadata(_base_args(
-        chair="A", body_mass_lbs=200.0, notes="", post_cardio=False,
-    ))
+    meta = build_session_metadata(
+        _base_args(
+            chair="A",
+            body_mass_lbs=200.0,
+            notes="",
+            post_cardio=False,
+        )
+    )
     REQUIRED = {"subject_id", "room_id", "posture", "post_cardio"}
     RECOMMENDED = {"chair", "body_mass_lbs", "notes", "protocol_version"}
     for k in REQUIRED:
         assert k in meta and meta[k] is not None or k == "post_cardio"
     for k in RECOMMENDED:
         assert k in meta
-    POSTURES = {"seated", "lying_supine", "lying_lateral",
-                "standing", "none", "other"}
+    POSTURES = {"seated", "lying_supine", "lying_lateral", "standing", "none", "other"}
     assert meta["posture"] in POSTURES
 
 
 def test_geometry_fields_omitted_when_unset():
     """Geometry fields are optional; old workflows must keep working."""
     meta = build_session_metadata(_base_args())
-    for f in ("tx_rx_distance_m", "subject_to_tx_distance_m",
-              "subject_on_axis", "antenna_type", "antenna_height_cm"):
+    for f in (
+        "tx_rx_distance_m",
+        "subject_to_tx_distance_m",
+        "subject_on_axis",
+        "antenna_type",
+        "antenna_height_cm",
+    ):
         assert f not in meta
 
 
 def test_geometry_fields_propagated_when_set():
-    meta = build_session_metadata(_base_args(
-        tx_rx_distance_m=2.0,
-        subject_to_tx_distance_m=1.0,
-        subject_on_axis=True,
-        antenna_type="external_dipole",
-        antenna_height_cm=110.0,
-    ))
+    meta = build_session_metadata(
+        _base_args(
+            tx_rx_distance_m=2.0,
+            subject_to_tx_distance_m=1.0,
+            subject_on_axis=True,
+            antenna_type="external_dipole",
+            antenna_height_cm=110.0,
+        )
+    )
     assert meta["tx_rx_distance_m"] == 2.0
     assert meta["subject_to_tx_distance_m"] == 1.0
     assert meta["subject_on_axis"] is True
@@ -172,11 +188,15 @@ def test_geometry_fields_propagated_when_set():
 
 def test_geometry_fields_validate_in_locked_schema(tmp_path):
     """Validator accepts well-formed geometry fields and rejects junk."""
-    good = build_session_metadata(_base_args(
-        tx_rx_distance_m=2.0, subject_to_tx_distance_m=1.0,
-        subject_on_axis=True, antenna_type="external_dipole",
-        antenna_height_cm=110.0,
-    ))
+    good = build_session_metadata(
+        _base_args(
+            tx_rx_distance_m=2.0,
+            subject_to_tx_distance_m=1.0,
+            subject_on_axis=True,
+            antenna_type="external_dipole",
+            antenna_height_cm=110.0,
+        )
+    )
     p = tmp_path / "good.json"
     p.write_text(json.dumps(good))
     ok, errors = _validate_one(p)

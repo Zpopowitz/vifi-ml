@@ -33,6 +33,7 @@ Usage:
     python -m tools.csi_quality_gate <session_dir> --strict-geometry
     python -m tools.csi_quality_gate <session_dir> --min-packet-rate-hz 60
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,7 +65,7 @@ class QualityReport:
     n_csi_lines: Optional[int] = None
     subject_on_axis: Optional[bool] = None
     tx_rx_distance_m: Optional[float] = None
-    verdict: str = "OK"          # OK | WARN | FAIL
+    verdict: str = "OK"  # OK | WARN | FAIL
     notes: list[str] = field(default_factory=list)
 
 
@@ -76,12 +77,10 @@ def _bump(report: QualityReport, level: str, msg: str) -> None:
     report.notes.append(f"[{level}] {msg}")
 
 
-def _load_capture_meta(session_dir: Path,
-                       report: QualityReport) -> None:
+def _load_capture_meta(session_dir: Path, report: QualityReport) -> None:
     meta_path = session_dir / "capture.txt.meta.json"
     if not meta_path.exists():
-        _bump(report, "FAIL",
-              f"capture.txt.meta.json missing under {session_dir}")
+        _bump(report, "FAIL", f"capture.txt.meta.json missing under {session_dir}")
         return
     try:
         meta = json.loads(meta_path.read_text())
@@ -100,8 +99,7 @@ def _load_capture_meta(session_dir: Path,
         report.n_csi_lines = n_csi
 
 
-def _load_session_meta(session_dir: Path,
-                       report: QualityReport) -> None:
+def _load_session_meta(session_dir: Path, report: QualityReport) -> None:
     """session.json is optional (older captures may lack it)."""
     sj = session_dir / "session.json"
     if not sj.exists():
@@ -119,57 +117,69 @@ def _load_session_meta(session_dir: Path,
         report.tx_rx_distance_m = float(rx)
 
 
-def _check_packet_rate(report: QualityReport,
-                       min_packet_rate_hz: float) -> None:
+def _check_packet_rate(report: QualityReport, min_packet_rate_hz: float) -> None:
     if report.packet_rate_hz is None:
         _bump(report, "WARN", "packet rate unknown (meta missing the field)")
         return
     if report.packet_rate_hz < min_packet_rate_hz:
-        _bump(report, "FAIL",
-              f"packet rate {report.packet_rate_hz:.1f} Hz < "
-              f"min {min_packet_rate_hz:.1f} Hz")
+        _bump(
+            report,
+            "FAIL",
+            f"packet rate {report.packet_rate_hz:.1f} Hz < "
+            f"min {min_packet_rate_hz:.1f} Hz",
+        )
     elif report.packet_rate_hz < min_packet_rate_hz * 1.2:
         # Within 20% of the floor — flag as borderline.
-        _bump(report, "WARN",
-              f"packet rate {report.packet_rate_hz:.1f} Hz is "
-              f"close to floor (within 20%)")
+        _bump(
+            report,
+            "WARN",
+            f"packet rate {report.packet_rate_hz:.1f} Hz is "
+            f"close to floor (within 20%)",
+        )
 
 
-def _check_duration(report: QualityReport,
-                    min_duration_s: float) -> None:
+def _check_duration(report: QualityReport, min_duration_s: float) -> None:
     if report.duration_s is None:
-        _bump(report, "WARN",
-              "capture duration unknown (meta missing the field)")
+        _bump(report, "WARN", "capture duration unknown (meta missing the field)")
         return
     if report.duration_s < min_duration_s:
-        _bump(report, "FAIL",
-              f"capture {report.duration_s:.0f} s < "
-              f"min {min_duration_s:.0f} s")
+        _bump(
+            report,
+            "FAIL",
+            f"capture {report.duration_s:.0f} s < min {min_duration_s:.0f} s",
+        )
 
 
 def _check_geometry(report: QualityReport, *, strict: bool) -> None:
     if report.session_meta is None:
         if strict:
-            _bump(report, "FAIL",
-                  "session.json missing (no geometry metadata)")
+            _bump(report, "FAIL", "session.json missing (no geometry metadata)")
         else:
-            _bump(report, "WARN",
-                  "session.json missing — geometry not enforced")
+            _bump(report, "WARN", "session.json missing — geometry not enforced")
         return
     if report.subject_on_axis is False:
-        _bump(report, "FAIL",
-              "subject_on_axis = false — model trained on midpoint "
-              "geometry won't generalize")
+        _bump(
+            report,
+            "FAIL",
+            "subject_on_axis = false — model trained on midpoint "
+            "geometry won't generalize",
+        )
     elif report.subject_on_axis is None and strict:
-        _bump(report, "FAIL",
-              "subject_on_axis missing (--strict-geometry); record "
-              "with run_paired_session.py --subject-on-axis true")
+        _bump(
+            report,
+            "FAIL",
+            "subject_on_axis missing (--strict-geometry); record "
+            "with run_paired_session.py --subject-on-axis true",
+        )
 
 
-def gate(session_dir: Path, *,
-         min_packet_rate_hz: float = DEFAULT_MIN_PACKET_RATE_HZ,
-         min_duration_s: float = DEFAULT_MIN_DURATION_S,
-         strict_geometry: bool = False) -> QualityReport:
+def gate(
+    session_dir: Path,
+    *,
+    min_packet_rate_hz: float = DEFAULT_MIN_PACKET_RATE_HZ,
+    min_duration_s: float = DEFAULT_MIN_DURATION_S,
+    strict_geometry: bool = False,
+) -> QualityReport:
     report = QualityReport(session_dir=session_dir)
     if not session_dir.is_dir():
         _bump(report, "FAIL", f"not a directory: {session_dir}")
@@ -188,19 +198,25 @@ def _exit_code(verdict: str) -> int:
 
 def _print_report(report: QualityReport, *, quiet: bool) -> None:
     if quiet:
-        print(f"csi_quality verdict={report.verdict} "
-              f"rate_hz={report.packet_rate_hz} "
-              f"duration_s={report.duration_s} "
-              f"on_axis={report.subject_on_axis}")
+        print(
+            f"csi_quality verdict={report.verdict} "
+            f"rate_hz={report.packet_rate_hz} "
+            f"duration_s={report.duration_s} "
+            f"on_axis={report.subject_on_axis}"
+        )
         return
     print(f"CSI quality gate for {report.session_dir}")
     print(f"  Verdict: {report.verdict}")
-    print(f"  Packet rate: "
-          f"{report.packet_rate_hz:.1f} Hz" if report.packet_rate_hz
-          else "  Packet rate: (unknown)")
-    print(f"  Duration: "
-          f"{report.duration_s:.0f} s" if report.duration_s
-          else "  Duration: (unknown)")
+    print(
+        f"  Packet rate: {report.packet_rate_hz:.1f} Hz"
+        if report.packet_rate_hz
+        else "  Packet rate: (unknown)"
+    )
+    print(
+        f"  Duration: {report.duration_s:.0f} s"
+        if report.duration_s
+        else "  Duration: (unknown)"
+    )
     if report.session_meta is not None:
         print(f"  Subject on axis: {report.subject_on_axis}")
         if report.tx_rx_distance_m is not None:
@@ -214,23 +230,33 @@ def _print_report(report: QualityReport, *, quiet: bool) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Pre-training quality gate for a CSI session. "
-                    "Exits 0=OK, 1=WARN, 2=FAIL.",
+        "Exits 0=OK, 1=WARN, 2=FAIL.",
     )
-    p.add_argument("session_dir", type=Path,
-                   help="path to data/captures/<subject>/<session>/")
-    p.add_argument("--min-packet-rate-hz", type=float,
-                   default=DEFAULT_MIN_PACKET_RATE_HZ,
-                   help=f"reject below this rate "
-                        f"(default {DEFAULT_MIN_PACKET_RATE_HZ:.0f})")
-    p.add_argument("--min-duration-s", type=float,
-                   default=DEFAULT_MIN_DURATION_S,
-                   help=f"reject shorter captures "
-                        f"(default {DEFAULT_MIN_DURATION_S:.0f})")
-    p.add_argument("--strict-geometry", action="store_true",
-                   help="require session.json with subject_on_axis "
-                        "set; FAIL if missing")
-    p.add_argument("--quiet", action="store_true",
-                   help="single-line summary suitable for cron / CI")
+    p.add_argument(
+        "session_dir", type=Path, help="path to data/captures/<subject>/<session>/"
+    )
+    p.add_argument(
+        "--min-packet-rate-hz",
+        type=float,
+        default=DEFAULT_MIN_PACKET_RATE_HZ,
+        help=f"reject below this rate (default {DEFAULT_MIN_PACKET_RATE_HZ:.0f})",
+    )
+    p.add_argument(
+        "--min-duration-s",
+        type=float,
+        default=DEFAULT_MIN_DURATION_S,
+        help=f"reject shorter captures (default {DEFAULT_MIN_DURATION_S:.0f})",
+    )
+    p.add_argument(
+        "--strict-geometry",
+        action="store_true",
+        help="require session.json with subject_on_axis set; FAIL if missing",
+    )
+    p.add_argument(
+        "--quiet",
+        action="store_true",
+        help="single-line summary suitable for cron / CI",
+    )
     args = p.parse_args()
     report = gate(
         args.session_dir,

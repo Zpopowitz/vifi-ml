@@ -27,6 +27,7 @@ Usage:
 Fallback demo (no hardware):
     python esp32_csi_collector.py --simulate --api http://localhost:8000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,8 +57,8 @@ CSI_LINE_RE = re.compile(r"CSI_DATA,.*?\[(?P<csi>[\-0-9, ]+)\]")
 
 @dataclass
 class Packet:
-    timestamp: float          # monotonic seconds
-    amps: np.ndarray          # (n_subcarriers,) float32
+    timestamp: float  # monotonic seconds
+    amps: np.ndarray  # (n_subcarriers,) float32
 
 
 def parse_csi_line(line: str) -> Optional[Packet]:
@@ -101,8 +102,9 @@ class RingBuffer:
             return list(self._buf)
 
 
-def resample_to_grid(packets: list[Packet], fs: float,
-                     duration_s: float) -> Optional[np.ndarray]:
+def resample_to_grid(
+    packets: list[Packet], fs: float, duration_s: float
+) -> Optional[np.ndarray]:
     """Resample per-subcarrier amplitudes onto a uniform fs-Hz grid.
 
     Returns None if we have too few packets or inconsistent subcarrier counts.
@@ -135,6 +137,7 @@ class _BusPublisher:
 
     def __init__(self, patient_id: str) -> None:
         from modules.bus import bus_from_env, csi_raw
+
         self.bus = bus_from_env()
         self.topic = csi_raw(patient_id)
         self.patient_id = patient_id
@@ -166,8 +169,12 @@ class _BusPublisher:
             pass
 
 
-def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
-                 bus_publisher: Optional[_BusPublisher] = None) -> None:
+def udp_listener(
+    port: str | int,
+    buf: RingBuffer,
+    stop: threading.Event,
+    bus_publisher: Optional[_BusPublisher] = None,
+) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     # Larger receive buffer (I102) — kernel default ~200 KB silently
@@ -176,8 +183,7 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
     except OSError as exc:
-        log.warning("could not enlarge UDP RCVBUF (%s); using kernel default",
-                    exc)
+        log.warning("could not enlarge UDP RCVBUF (%s); using kernel default", exc)
     # 0.0.0.0 is intentional: this listener receives UDP from the
     # ESP32 across the LAN; binding to 127.0.0.1 would silently
     # drop every real packet. The host firewall is the right place
@@ -192,7 +198,8 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
         except socket.timeout:
             continue
         except OSError as exc:
-            log.error("udp socket error: %s", exc); break
+            log.error("udp socket error: %s", exc)
+            break
         text = data.decode(errors="ignore")
         for line in text.splitlines():
             pkt = parse_csi_line(line)
@@ -206,10 +213,14 @@ def udp_listener(port: str | int, buf: RingBuffer, stop: threading.Event,
     sock.close()
 
 
-def simulator(buf: RingBuffer, stop: threading.Event,
-              fs: float = 100.0, n_sub: int = 52,
-              bus_publisher: Optional[_BusPublisher] = None,
-              seed: int = 42) -> None:
+def simulator(
+    buf: RingBuffer,
+    stop: threading.Event,
+    fs: float = 100.0,
+    n_sub: int = 52,
+    bus_publisher: Optional[_BusPublisher] = None,
+    seed: int = 42,
+) -> None:
     """Generate fake ESP32 packets so you can demo without hardware.
 
     Seeded by default (I103) so end-to-end smoke tests are repeatable.
@@ -217,18 +228,26 @@ def simulator(buf: RingBuffer, stop: threading.Event,
     try:
         from data_gen import generate_sample
     except Exception as exc:
-        log.error("simulator needs the repo on sys.path: %s", exc); return
-    log.info("simulator: synthesising %d subcarriers at %.1f Hz (seed=%s)",
-             n_sub, fs, seed)
+        log.error("simulator needs the repo on sys.path: %s", exc)
+        return
+    log.info(
+        "simulator: synthesising %d subcarriers at %.1f Hz (seed=%s)", n_sub, fs, seed
+    )
     dt = 1.0 / fs
-    hr_bpm = 75.0; rr_bpm = 18.0
+    hr_bpm = 75.0
+    rr_bpm = 18.0
     rng = np.random.default_rng(seed)
     gains = np.abs(rng.standard_normal(n_sub)) + 0.2
     sub_seed = int(rng.integers(0, 2**31 - 1)) if seed is not None else None
     while not stop.is_set():
-        iq, _ = generate_sample(duration_s=1.0, fs=fs,
-                                hr_bpm=hr_bpm, rr_bpm=rr_bpm, snr_db=20.0,
-                                seed=sub_seed)
+        iq, _ = generate_sample(
+            duration_s=1.0,
+            fs=fs,
+            hr_bpm=hr_bpm,
+            rr_bpm=rr_bpm,
+            snr_db=20.0,
+            seed=sub_seed,
+        )
         env = np.abs(iq)
         for i, sample in enumerate(env):
             amps = (sample * gains).astype(np.float32)
@@ -240,29 +259,43 @@ def simulator(buf: RingBuffer, stop: threading.Event,
                 return
 
 
-def predict_loop(buf: RingBuffer, api_url: str, fs: float,
-                 window_s: float, stride_s: float,
-                 stop: threading.Event) -> None:
+def predict_loop(
+    buf: RingBuffer,
+    api_url: str,
+    fs: float,
+    window_s: float,
+    stride_s: float,
+    stop: threading.Event,
+) -> None:
     client = httpx.Client(timeout=5.0)
     while not stop.is_set():
         time.sleep(stride_s)
         pkts = buf.snapshot()
         grid = resample_to_grid(pkts, fs=fs, duration_s=window_s)
         if grid is None:
-            log.debug("not enough packets yet (%d)", len(pkts)); continue
+            log.debug("not enough packets yet (%d)", len(pkts))
+            continue
         payload = {"fs": fs, "csi_amp": grid.tolist()}
         try:
             r = client.post(f"{api_url}/predict/csi", json=payload)
             r.raise_for_status()
             body = r.json()
         except Exception as exc:
-            log.error("predict call failed: %s", exc); continue
-        print(json.dumps({
-            "ts": time.time(),
-            "hr_bpm": body["hr_bpm"], "rr_bpm": body["rr_bpm"],
-            "hr_conf": body["hr_confidence"], "rr_conf": body["rr_confidence"],
-            "window_s": window_s, "packets": len(pkts),
-        }))
+            log.error("predict call failed: %s", exc)
+            continue
+        print(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "hr_bpm": body["hr_bpm"],
+                    "rr_bpm": body["rr_bpm"],
+                    "hr_conf": body["hr_confidence"],
+                    "rr_conf": body["rr_confidence"],
+                    "window_s": window_s,
+                    "packets": len(pkts),
+                }
+            )
+        )
     client.close()
 
 
@@ -273,19 +306,33 @@ def main() -> None:
     p.add_argument("--fs", type=float, default=100.0, help="resample rate (Hz)")
     p.add_argument("--window", type=float, default=10.0, help="window seconds")
     p.add_argument("--stride", type=float, default=2.0, help="predict every N s")
-    p.add_argument("--simulate", action="store_true",
-                   help="generate fake packets instead of listening on UDP")
-    p.add_argument("--bus", action="store_true",
-                   help=("publish each packet to csi.raw.<patient_id> on the "
-                         "ViFi message bus (set VIFI_BUS_URL=redis://...). "
-                         "Use --bus-only to skip the local /predict/csi loop "
-                         "and let an inference worker handle predictions."))
-    p.add_argument("--bus-only", action="store_true",
-                   help=("with --bus, skip the local /predict/csi loop. "
-                         "Inference is expected to come from a worker "
-                         "subscribed to csi.raw."))
-    p.add_argument("--patient-id", default="default",
-                   help="patient id for bus topic namespacing")
+    p.add_argument(
+        "--simulate",
+        action="store_true",
+        help="generate fake packets instead of listening on UDP",
+    )
+    p.add_argument(
+        "--bus",
+        action="store_true",
+        help=(
+            "publish each packet to csi.raw.<patient_id> on the "
+            "ViFi message bus (set VIFI_BUS_URL=redis://...). "
+            "Use --bus-only to skip the local /predict/csi loop "
+            "and let an inference worker handle predictions."
+        ),
+    )
+    p.add_argument(
+        "--bus-only",
+        action="store_true",
+        help=(
+            "with --bus, skip the local /predict/csi loop. "
+            "Inference is expected to come from a worker "
+            "subscribed to csi.raw."
+        ),
+    )
+    p.add_argument(
+        "--patient-id", default="default", help="patient id for bus topic namespacing"
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
@@ -306,30 +353,46 @@ def main() -> None:
     stop = threading.Event()
     threads: list[threading.Thread] = []
     if args.simulate:
-        threads.append(threading.Thread(
-            target=simulator, args=(buf, stop, args.fs, 52, bus_publisher),
-            daemon=True,
-        ))
+        threads.append(
+            threading.Thread(
+                target=simulator,
+                args=(buf, stop, args.fs, 52, bus_publisher),
+                daemon=True,
+            )
+        )
     else:
-        threads.append(threading.Thread(
-            target=udp_listener,
-            args=(args.port, buf, stop, bus_publisher),
-            daemon=True,
-        ))
+        threads.append(
+            threading.Thread(
+                target=udp_listener,
+                args=(args.port, buf, stop, bus_publisher),
+                daemon=True,
+            )
+        )
     if not args.bus_only:
-        threads.append(threading.Thread(
-            target=predict_loop,
-            args=(buf, args.api.rstrip("/"), args.fs, args.window,
-                  args.stride, stop),
-            daemon=True,
-        ))
-    for t in threads: t.start()
+        threads.append(
+            threading.Thread(
+                target=predict_loop,
+                args=(
+                    buf,
+                    args.api.rstrip("/"),
+                    args.fs,
+                    args.window,
+                    args.stride,
+                    stop,
+                ),
+                daemon=True,
+            )
+        )
+    for t in threads:
+        t.start()
     try:
-        while True: time.sleep(1.0)
+        while True:
+            time.sleep(1.0)
     except KeyboardInterrupt:
         log.info("shutting down")
         stop.set()
-        for t in threads: t.join(timeout=2.0)
+        for t in threads:
+            t.join(timeout=2.0)
     finally:
         if bus_publisher is not None:
             bus_publisher.close()

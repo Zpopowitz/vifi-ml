@@ -4,6 +4,7 @@ Verifies that messages published to hr.predicted.<patient> and
 hr.reference.<patient> are forwarded to the WebSocket client with the
 expected envelope, and that the stream is namespaced by patient_id.
 """
+
 from __future__ import annotations
 
 import sys
@@ -47,8 +48,10 @@ def client(shared_bus, tmp_path):
     """FastAPI test client with a built app. Models are not needed for
     /api/v1/stream so we point at empty model dirs."""
     from api import create_app
-    app = create_app(model_dir=tmp_path / "no_synth",
-                     real_model_dir=tmp_path / "no_real")
+
+    app = create_app(
+        model_dir=tmp_path / "no_synth", real_model_dir=tmp_path / "no_real"
+    )
     return TestClient(app)
 
 
@@ -79,10 +82,16 @@ def test_stream_forwards_hr_predicted_messages(client, shared_bus):
 
         def publisher():
             time.sleep(0.1)
-            shared_bus.publish(hr_predicted("alice"), {
-                "ts_unix": 100.0, "hr_bpm": 73.5, "hr_confidence": 0.8,
-                "patient_id": "alice",
-            }, ts_ms=100_000)
+            shared_bus.publish(
+                hr_predicted("alice"),
+                {
+                    "ts_unix": 100.0,
+                    "hr_bpm": 73.5,
+                    "hr_confidence": 0.8,
+                    "patient_id": "alice",
+                },
+                ts_ms=100_000,
+            )
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
@@ -99,10 +108,16 @@ def test_stream_forwards_hr_reference_messages(client, shared_bus):
 
         def publisher():
             time.sleep(0.1)
-            shared_bus.publish(hr_reference("alice"), {
-                "ts_unix": 200.0, "hr_bpm": 72,
-                "source": "polar_h10", "patient_id": "alice",
-            }, ts_ms=200_000)
+            shared_bus.publish(
+                hr_reference("alice"),
+                {
+                    "ts_unix": 200.0,
+                    "hr_bpm": 72,
+                    "source": "polar_h10",
+                    "patient_id": "alice",
+                },
+                ts_ms=200_000,
+            )
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
@@ -117,10 +132,16 @@ def test_stream_forwards_rr_predicted_messages(client, shared_bus):
 
         def publisher():
             time.sleep(0.1)
-            shared_bus.publish(rr_predicted("alice"), {
-                "ts_unix": 300.0, "rr_bpm": 16.5, "rr_confidence": 0.7,
-                "patient_id": "alice",
-            }, ts_ms=300_000)
+            shared_bus.publish(
+                rr_predicted("alice"),
+                {
+                    "ts_unix": 300.0,
+                    "rr_bpm": 16.5,
+                    "rr_confidence": 0.7,
+                    "patient_id": "alice",
+                },
+                ts_ms=300_000,
+            )
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
@@ -135,10 +156,16 @@ def test_stream_forwards_rr_reference_messages(client, shared_bus):
 
         def publisher():
             time.sleep(0.1)
-            shared_bus.publish(rr_reference("alice"), {
-                "ts_unix": 400.0, "rr_bpm": 18.0,
-                "source": "vernier_gdx_rb", "patient_id": "alice",
-            }, ts_ms=400_000)
+            shared_bus.publish(
+                rr_reference("alice"),
+                {
+                    "ts_unix": 400.0,
+                    "rr_bpm": 18.0,
+                    "source": "vernier_gdx_rb",
+                    "patient_id": "alice",
+                },
+                ts_ms=400_000,
+            )
 
         threading.Thread(target=publisher, daemon=True).start()
         msg = ws.receive_json()
@@ -153,15 +180,25 @@ def test_stream_isolates_clients_by_patient_id(client, shared_bus):
 
         def publish_for_bob():
             time.sleep(0.1)
-            shared_bus.publish(hr_predicted("bob"), {
-                "ts_unix": 1.0, "hr_bpm": 99.0,
-                "patient_id": "bob",
-            }, ts_ms=1000)
+            shared_bus.publish(
+                hr_predicted("bob"),
+                {
+                    "ts_unix": 1.0,
+                    "hr_bpm": 99.0,
+                    "patient_id": "bob",
+                },
+                ts_ms=1000,
+            )
             # Then publish for alice so the test can complete deterministically.
-            shared_bus.publish(hr_predicted("alice"), {
-                "ts_unix": 1.0, "hr_bpm": 70.0,
-                "patient_id": "alice",
-            }, ts_ms=1001)
+            shared_bus.publish(
+                hr_predicted("alice"),
+                {
+                    "ts_unix": 1.0,
+                    "hr_bpm": 70.0,
+                    "patient_id": "alice",
+                },
+                ts_ms=1001,
+            )
 
         threading.Thread(target=publish_for_bob, daemon=True).start()
         msg = ws_a.receive_json()

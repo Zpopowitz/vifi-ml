@@ -31,6 +31,7 @@ Why middleware (not per-route): every new endpoint added by mistake
 should be auth-required by default. Opt-in public endpoints listed
 explicitly here. Fail-closed.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -57,16 +58,27 @@ log = logging.getLogger("vifi.security")
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 class AuthMode(str, Enum):
     NONE = "none"
     API_KEY = "api_key"
 
 
-PUBLIC_PATHS: frozenset[str] = frozenset({
-    "/", "/health", "/readyz", "/roadmap",
-    "/api/v1/", "/api/v1/health", "/api/v1/readyz", "/api/v1/roadmap",
-    "/docs", "/redoc", "/openapi.json",
-})
+PUBLIC_PATHS: frozenset[str] = frozenset(
+    {
+        "/",
+        "/health",
+        "/readyz",
+        "/roadmap",
+        "/api/v1/",
+        "/api/v1/health",
+        "/api/v1/readyz",
+        "/api/v1/roadmap",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+    }
+)
 
 
 def get_auth_mode() -> AuthMode:
@@ -74,8 +86,11 @@ def get_auth_mode() -> AuthMode:
     try:
         return AuthMode(raw)
     except ValueError:
-        log.error("VIFI_AUTH_MODE=%r is not valid; falling back to api_key "
-                  "(fail-closed). Valid: none, api_key", raw)
+        log.error(
+            "VIFI_AUTH_MODE=%r is not valid; falling back to api_key "
+            "(fail-closed). Valid: none, api_key",
+            raw,
+        )
         return AuthMode.API_KEY
 
 
@@ -174,6 +189,7 @@ def generate_api_key() -> str:
 # Path normalization (I064)
 # ---------------------------------------------------------------------------
 
+
 def _normalize_path(path: str) -> str:
     """Normalize URL path so trailing slashes and double slashes can't be
     used to bypass auth. /health/ and /api/v1//health both resolve here.
@@ -193,11 +209,12 @@ def _normalize_path(path: str) -> str:
 # API key extraction + validation
 # ---------------------------------------------------------------------------
 
+
 def _extract_key(headers, query_params) -> Optional[str]:
     """Pull an API key from the request, in priority order:
-      1. Authorization: Bearer <key>
-      2. X-API-Key: <key>
-      3. ?api_key=<key>     (WebSocket fallback only)
+    1. Authorization: Bearer <key>
+    2. X-API-Key: <key>
+    3. ?api_key=<key>     (WebSocket fallback only)
     """
     auth = headers.get("authorization") or headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):
@@ -256,15 +273,15 @@ def require_api_key(request: Request) -> None:
         return
     keys = get_api_keys()
     if not keys:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            "auth_misconfigured")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "auth_misconfigured")
     key = _extract_key(request.headers, request.query_params)
     if not _key_is_valid(key, keys):
         # Structured failed-auth log (I063): includes IP, path, UA, and
         # first 6 chars of the attempted key for forensics. Never logs
         # the full key.
         log.warning(
-            "auth_failed", extra={
+            "auth_failed",
+            extra={
                 "event": "auth_failed",
                 "client_ip": _client_ip(request),
                 "path": request.url.path,
@@ -273,13 +290,12 @@ def require_api_key(request: Request) -> None:
                 "attempted_key_prefix": (key[:6] + "...") if key else "(none)",
             },
         )
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
-                            "invalid_or_missing_api_key")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_or_missing_api_key")
 
 
-async def authorize_websocket(websocket: WebSocket,
-                              *,
-                              required_scope: Optional[str] = None) -> bool:
+async def authorize_websocket(
+    websocket: WebSocket, *, required_scope: Optional[str] = None
+) -> bool:
     """WebSocket-friendly auth check. Closes the socket on failure.
 
     If `required_scope` is given, the key must own that scope (or
@@ -337,6 +353,7 @@ def require_scope(scope: str):
     In AuthMode.NONE, scopes are not checked — the API is open by
     design. In AuthMode.API_KEY, missing scope = 403.
     """
+
     async def _dep(request: Request) -> None:
         if get_auth_mode() == AuthMode.NONE:
             return
@@ -353,14 +370,15 @@ def require_scope(scope: str):
                     "attempted_key_prefix": (key[:6] + "...") if key else "(none)",
                 },
             )
-            raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                f"missing_scope:{scope}")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"missing_scope:{scope}")
+
     return _dep
 
 
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Global API-key gate.
@@ -383,8 +401,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except HTTPException as exc:
             return JSONResponse(
                 status_code=exc.status_code,
-                content={"error": exc.detail,
-                         "request_id": _request_id(request)},
+                content={"error": exc.detail, "request_id": _request_id(request)},
             )
         return await call_next(request)
 
@@ -393,8 +410,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     """Attach a request-id to every request."""
 
     async def dispatch(self, request: Request, call_next):
-        rid = (request.headers.get("x-request-id")
-               or uuid.uuid4().hex[:16])
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
         request.state.request_id = rid
         response = await call_next(request)
         response.headers["x-request-id"] = rid
@@ -432,11 +448,11 @@ def _request_id(request: Request) -> str:
 # Error redaction
 # ---------------------------------------------------------------------------
 
+
 async def redacted_exception_handler(request: Request, exc: Exception):
     """Catch-all 500 handler that NEVER puts internal detail on the wire."""
     rid = _request_id(request)
-    log.exception("unhandled exception (rid=%s, path=%s)",
-                  rid, request.url.path)
+    log.exception("unhandled exception (rid=%s, path=%s)", rid, request.url.path)
     body: dict = {"error": "internal_error", "request_id": rid}
     if reveal_errors():
         body["detail"] = f"{type(exc).__name__}: {exc}"
@@ -446,6 +462,7 @@ async def redacted_exception_handler(request: Request, exc: Exception):
 # ---------------------------------------------------------------------------
 # Boot-time validation
 # ---------------------------------------------------------------------------
+
 
 def validate_config_or_raise() -> dict:
     """Verify the security env at process start so a misconfigured
@@ -485,9 +502,7 @@ def validate_config_or_raise() -> dict:
         "reveal_errors": reveal_errors(),
         "trusted_proxies": [str(n) for n in get_trusted_proxies()],
         "audit_chain_active": bool(os.environ.get("VIFI_AUDIT_CHAIN_KEY")),
-        "audit_encryption_active": bool(
-            os.environ.get("VIFI_AUDIT_ENCRYPTION_KEY")
-        ),
+        "audit_encryption_active": bool(os.environ.get("VIFI_AUDIT_ENCRYPTION_KEY")),
     }
 
 
@@ -497,6 +512,7 @@ def validate_config_or_raise() -> dict:
 # Single-instance fixed-window. Multi-instance deployments behind a load
 # balancer should use a shared Redis token bucket — see SECURITY.md.
 
+
 class _LRUFixedWindowLimiter:
     """Fixed-window counter with bounded LRU eviction (I058).
 
@@ -505,14 +521,13 @@ class _LRUFixedWindowLimiter:
     capacity.
     """
 
-    def __init__(self, limit: int, window_s: float, *,
-                 max_buckets: int = 100_000) -> None:
+    def __init__(
+        self, limit: int, window_s: float, *, max_buckets: int = 100_000
+    ) -> None:
         self.limit = limit
         self.window_s = window_s
         self._max_buckets = max_buckets
-        self._counters: "OrderedDict[tuple[str, str], list[float]]" = (
-            OrderedDict()
-        )
+        self._counters: "OrderedDict[tuple[str, str], list[float]]" = OrderedDict()
 
     def check(self, key: tuple[str, str]) -> tuple[bool, float]:
         now = time.monotonic()
@@ -542,8 +557,9 @@ def parse_rate_limit(spec: str) -> tuple[int, float]:
     count_str, period = spec.split("/")
     count = int(count_str)
     period = period.strip().lower()
-    seconds = {"second": 1.0, "minute": 60.0, "hour": 3600.0,
-               "day": 86400.0}.get(period)
+    seconds = {"second": 1.0, "minute": 60.0, "hour": 3600.0, "day": 86400.0}.get(
+        period
+    )
     if seconds is None:
         raise ValueError(f"unknown rate-limit period: {period!r}")
     return count, seconds
@@ -575,8 +591,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 headers={"retry-after": f"{retry_after:.2f}"},
-                content={"error": "rate_limited",
-                         "retry_after_s": float(round(retry_after, 2)),
-                         "request_id": _request_id(request)},
+                content={
+                    "error": "rate_limited",
+                    "retry_after_s": float(round(retry_after, 2)),
+                    "request_id": _request_id(request),
+                },
             )
         return await call_next(request)

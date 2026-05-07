@@ -4,6 +4,7 @@ The script generates secrets atomically into a `.env` file and rotates
 individual keys in-place. Both behaviors need durable tests so an
 operator running this on a fresh server can trust the output.
 """
+
 from __future__ import annotations
 
 import os
@@ -30,12 +31,18 @@ def _run(args, cwd, expect_rc=0):
     # `.coverage.<pid>` files in non-branch mode that conflict with
     # pytest-cov's own branch-mode data file at session-end combine.
     # (root cause of the pytest exit-3 INTERNALERROR in CI)
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("COV_CORE_", "COVERAGE_"))}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("COV_CORE_", "COVERAGE_"))
+    }
     proc = subprocess.run(
         ["bash", str(SCRIPT), *args],
-        cwd=str(cwd), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cwd=str(cwd),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     assert proc.returncode == expect_rc, (
         f"expected rc={expect_rc} got {proc.returncode}\n"
@@ -88,8 +95,13 @@ def test_setup_keys_force_overwrites(tmp_env_dir):
     _run(["--force"], cwd=tmp_env_dir)
     second = _read_env(tmp_env_dir / ".env")
     # Every secret key should differ on regeneration.
-    for k in ("VIFI_API_KEYS", "VIFI_PSEUDO_SALT", "VIFI_AUDIT_ENCRYPTION_KEY",
-              "VIFI_AUDIT_CHAIN_KEY", "VIFI_REDIS_PASSWORD"):
+    for k in (
+        "VIFI_API_KEYS",
+        "VIFI_PSEUDO_SALT",
+        "VIFI_AUDIT_ENCRYPTION_KEY",
+        "VIFI_AUDIT_CHAIN_KEY",
+        "VIFI_REDIS_PASSWORD",
+    ):
         assert first[k] != second[k], f"{k} should rotate on --force"
 
 
@@ -115,6 +127,7 @@ def test_setup_keys_fernet_key_format(tmp_env_dir):
     assert key.endswith("=")
     # The key must actually round-trip with Fernet.
     from cryptography.fernet import Fernet
+
     cipher = Fernet(key.encode("ascii"))
     assert cipher.decrypt(cipher.encrypt(b"test")) == b"test"
 
@@ -142,8 +155,12 @@ def test_rotate_changes_only_one_key(tmp_env_dir):
     after = _read_env(tmp_env_dir / ".env")
     assert after["VIFI_API_KEYS"] != before["VIFI_API_KEYS"]
     # Everything else unchanged.
-    for k in ("VIFI_PSEUDO_SALT", "VIFI_AUDIT_ENCRYPTION_KEY",
-              "VIFI_AUDIT_CHAIN_KEY", "VIFI_REDIS_PASSWORD"):
+    for k in (
+        "VIFI_PSEUDO_SALT",
+        "VIFI_AUDIT_ENCRYPTION_KEY",
+        "VIFI_AUDIT_CHAIN_KEY",
+        "VIFI_REDIS_PASSWORD",
+    ):
         assert after[k] == before[k], f"{k} should NOT rotate"
 
 

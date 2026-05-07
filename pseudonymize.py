@@ -42,6 +42,7 @@ Usage:
     from pseudonymize import pseudonymize
     pseudo_id = pseudonymize("founder")  # -> "pseudo:7a2c..." (16 hex)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -75,8 +76,7 @@ def _get_salt() -> Optional[str]:
 
 
 def _require_salt() -> bool:
-    return os.environ.get("VIFI_REQUIRE_PSEUDO",
-                          "false").lower() == "true"
+    return os.environ.get("VIFI_REQUIRE_PSEUDO", "false").lower() == "true"
 
 
 def pseudonymize(subject_id: Optional[str]) -> Optional[str]:
@@ -103,14 +103,15 @@ def pseudonymize(subject_id: Optional[str]) -> Optional[str]:
             log.warning(
                 "VIFI_PSEUDO_SALT not set; subject ids written in clear "
                 "as %r prefix. Do NOT use this configuration with real "
-                "patient data.", _DEV_PREFIX
+                "patient data.",
+                _DEV_PREFIX,
             )
             _warned_no_salt = True
         return f"{_DEV_PREFIX}{subject_id}"
 
-    digest = hmac.new(salt.encode("utf-8"),
-                      subject_id.encode("utf-8"),
-                      hashlib.sha256).hexdigest()
+    digest = hmac.new(
+        salt.encode("utf-8"), subject_id.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
     # 128-bit (32 hex) pseudonym (I071). 64-bit was brute-forceable on
     # GPUs in hours; 128-bit raises the floor to "impractical for the
     # foreseeable future" without growing the audit-log footprint

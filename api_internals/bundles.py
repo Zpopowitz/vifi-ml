@@ -9,6 +9,7 @@ first call to `.load()` reads the artifacts. Missing artifacts
 surface as HTTPException(503), so the API can boot even without
 models present (dev environments, CI without paired captures).
 """
+
 from __future__ import annotations
 
 import json
@@ -34,8 +35,7 @@ def load_synthetic_models(model_dir: Path):
     meta_path = model_dir / "metadata.json"
     if not hr_path.exists() or not rr_path.exists() or not meta_path.exists():
         raise RuntimeError(
-            f"synthetic models not found in {model_dir}; "
-            "run `python train.py` first"
+            f"synthetic models not found in {model_dir}; run `python train.py` first"
         )
     hr = XGBRegressor()
     rr = XGBRegressor()
@@ -68,9 +68,11 @@ class SyntheticModelBundle:
         return self._loaded
 
     def is_available(self) -> bool:
-        return ((self.model_dir / "hr_model.json").exists()
-                and (self.model_dir / "rr_model.json").exists()
-                and (self.model_dir / "metadata.json").exists())
+        return (
+            (self.model_dir / "hr_model.json").exists()
+            and (self.model_dir / "rr_model.json").exists()
+            and (self.model_dir / "metadata.json").exists()
+        )
 
     def load(self) -> None:
         if self._loaded:
@@ -165,6 +167,7 @@ class RealModelBundle:
             # Lazy import: quality.py pulls scipy which we don't want
             # at boot for environments that never load a real model.
             from quality import MahalanobisDetector  # noqa: PLC0415
+
             self.mahalanobis = MahalanobisDetector.load(mahalanobis_path)
 
         self.metadata = meta

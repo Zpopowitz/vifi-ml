@@ -10,6 +10,7 @@ SCAN cost on Redis is ~1 per 5 s per server replica.
 DLQ topics (`<prefix>.<patient>.dlq`) are skipped — they're
 operator debug data, not real rooms.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,12 +28,13 @@ def _build_rooms_response() -> dict:
         rr_predicted,
         rr_reference,
     )
+
     topic_builders = {
-        "csi.raw":       csi_raw,
-        "hr.predicted":  hr_predicted,
-        "hr.reference":  hr_reference,
-        "rr.predicted":  rr_predicted,
-        "rr.reference":  rr_reference,
+        "csi.raw": csi_raw,
+        "hr.predicted": hr_predicted,
+        "hr.reference": hr_reference,
+        "rr.predicted": rr_predicted,
+        "rr.reference": rr_reference,
     }
     bus = bus_from_env()
     try:
@@ -45,7 +47,7 @@ def _build_rooms_response() -> dict:
                 if topic.endswith(".dlq"):
                     continue
                 # Topic format: "<prefix>.<patient_id>"
-                patient_id = topic[len(prefix) + 1:]
+                patient_id = topic[len(prefix) + 1 :]
                 if not patient_id or "." in patient_id:
                     # Defensive: a multi-segment suffix means an
                     # unknown topic shape we shouldn't surface.
@@ -57,11 +59,14 @@ def _build_rooms_response() -> dict:
                         last_ms = int(last_id.split("-", 1)[0])
                     except ValueError:
                         last_ms = 0
-                rec = by_patient.setdefault(patient_id, {
-                    "patient_id": patient_id,
-                    "topics_with_data": [],
-                    "last_seen_ms": 0,
-                })
+                rec = by_patient.setdefault(
+                    patient_id,
+                    {
+                        "patient_id": patient_id,
+                        "topics_with_data": [],
+                        "last_seen_ms": 0,
+                    },
+                )
                 rec["topics_with_data"].append(prefix)
                 if last_ms > rec["last_seen_ms"]:
                     rec["last_seen_ms"] = last_ms
@@ -99,8 +104,7 @@ def register_rooms_route(app: FastAPI) -> None:
         10 s.
         """
         now = time.time()
-        if (cache["value"] is not None
-                and now - cache["ts"] < 5.0):
+        if cache["value"] is not None and now - cache["ts"] < 5.0:
             return cache["value"]
         try:
             value = _build_rooms_response()

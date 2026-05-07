@@ -1,4 +1,5 @@
 """Tests for audit.AuditLogWriter (FDA postmarket-surveillance trail)."""
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,14 @@ from audit import AuditLogWriter, hash_capture  # noqa: E402
 def test_writes_one_line_per_record(tmp_path):
     w = AuditLogWriter(audit_dir=tmp_path)
     w.write({"window_start_s": 0.0, "hr_pred": 73.5, "suppressed": False})
-    w.write({"window_start_s": 5.0, "hr_pred": 74.1,
-             "suppressed": True, "suppressed_reason": "wide_interval"})
+    w.write(
+        {
+            "window_start_s": 5.0,
+            "hr_pred": 74.1,
+            "suppressed": True,
+            "suppressed_reason": "wide_interval",
+        }
+    )
     path = w.current_path
     w.close()
 

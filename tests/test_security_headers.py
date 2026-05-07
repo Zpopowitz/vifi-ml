@@ -2,6 +2,7 @@
 promised in SECURITY.md (I140 + I056). Locks SECURITY.md as code so
 nobody silently regresses the headers.
 """
+
 from __future__ import annotations
 
 import sys
@@ -21,6 +22,7 @@ def client():
     middleware stack (CORS, auth, rate limit, security headers,
     request id, error redaction)."""
     from api import create_app
+
     return TestClient(create_app(Path("models")))
 
 

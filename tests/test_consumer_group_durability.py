@@ -16,6 +16,7 @@ This is the same pattern Redis Streams XREADGROUP enforces; we verify
 the InMemoryBus matches the contract so tests pinned to InMemoryBus
 remain meaningful for the production behavior.
 """
+
 from __future__ import annotations
 
 import sys
@@ -44,7 +45,10 @@ def test_inference_worker_crash_replays_unacked_csi():
 
     # Worker A reads all 10, doesn't ACK (simulates crash).
     first = bus.read_group(
-        INFERENCE_GROUP, "worker-A", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "worker-A",
+        [topic],
+        block_ms=0,
     )
     assert len(first) == 10
     # No ACK. Pending count should match.
@@ -52,7 +56,10 @@ def test_inference_worker_crash_replays_unacked_csi():
 
     # Worker A "restarts" (same consumer name) and reads again.
     second = bus.read_group(
-        INFERENCE_GROUP, "worker-A", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "worker-A",
+        [topic],
+        block_ms=0,
     )
     assert len(second) == 10
     assert [m.msg_id for m in second] == [m.msg_id for m in first]
@@ -75,10 +82,16 @@ def test_audit_and_inference_are_independent():
         bus.publish(topic, {"i": i}, ts_ms=2000 + i)
 
     inf_msgs = bus.read_group(
-        INFERENCE_GROUP, "inf-w", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "inf-w",
+        [topic],
+        block_ms=0,
     )
     aud_msgs = bus.read_group(
-        AUDIT_GROUP, "aud-w", [topic], block_ms=0,
+        AUDIT_GROUP,
+        "aud-w",
+        [topic],
+        block_ms=0,
     )
     assert len(inf_msgs) == 3
     assert len(aud_msgs) == 3
@@ -89,11 +102,14 @@ def test_audit_and_inference_are_independent():
         bus.ack(INFERENCE_GROUP, topic, m.msg_id)
 
     assert bus.pending_count(INFERENCE_GROUP, topic) == 0
-    assert bus.pending_count(AUDIT_GROUP, topic) == 3   # audit replays
+    assert bus.pending_count(AUDIT_GROUP, topic) == 3  # audit replays
 
     # Audit "restart" sees the un-ACKed three.
     aud_replay = bus.read_group(
-        AUDIT_GROUP, "aud-w", [topic], block_ms=0,
+        AUDIT_GROUP,
+        "aud-w",
+        [topic],
+        block_ms=0,
     )
     assert len(aud_replay) == 3
 
@@ -109,7 +125,10 @@ def test_worker_with_partial_window_recovers_correctly():
     for i in range(5):
         bus.publish(topic, {"i": i}, ts_ms=1000 + i)
     first_read = bus.read_group(
-        INFERENCE_GROUP, "worker-A", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "worker-A",
+        [topic],
+        block_ms=0,
     )
     assert len(first_read) == 5
     # Crash before ACK.
@@ -120,7 +139,10 @@ def test_worker_with_partial_window_recovers_correctly():
 
     # Worker A restarts. First read returns the 5 pending entries.
     pending_replay = bus.read_group(
-        INFERENCE_GROUP, "worker-A", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "worker-A",
+        [topic],
+        block_ms=0,
     )
     assert len(pending_replay) == 5
     assert [m.payload["i"] for m in pending_replay] == [0, 1, 2, 3, 4]
@@ -131,7 +153,10 @@ def test_worker_with_partial_window_recovers_correctly():
 
     # Next read returns the 5 NEW packets that arrived during downtime.
     new_batch = bus.read_group(
-        INFERENCE_GROUP, "worker-A", [topic], block_ms=0,
+        INFERENCE_GROUP,
+        "worker-A",
+        [topic],
+        block_ms=0,
     )
     assert len(new_batch) == 5
     assert [m.payload["i"] for m in new_batch] == [5, 6, 7, 8, 9]

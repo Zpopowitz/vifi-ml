@@ -12,6 +12,7 @@ actually cares about:
   - bus unreachable (can't tell if subscriber is alive)
   - happy path (recent file, no pending)
 """
+
 from __future__ import annotations
 
 import sys
@@ -43,19 +44,23 @@ class _FakeBus:
 
 def _bus_factory(pending: dict[str, int] | Exception):
     """patch.object target replacing bus_from_env in audit_health."""
+
     def _make():
         return _FakeBus(pending)
+
     return _make
 
 
-def _make_audit_file(d: Path, *, age_s: float = 0.0,
-                    name: str = "audit-2026-05-07Z.jsonl") -> Path:
+def _make_audit_file(
+    d: Path, *, age_s: float = 0.0, name: str = "audit-2026-05-07Z.jsonl"
+) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     p = d / name
     p.write_text('{"event": "test"}\n')
     if age_s > 0:
         old = time.time() - age_s
         import os
+
         os.utime(p, (old, old))
     return p
 

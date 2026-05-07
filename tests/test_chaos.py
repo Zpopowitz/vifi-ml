@@ -17,6 +17,7 @@ Invariants:
   * Retry path uses bounded jitter (no thundering-herd; not strictly
     tested here — see metrics in production).
 """
+
 from __future__ import annotations
 
 import sys
@@ -107,13 +108,15 @@ def test_publish_recovers_from_transient_failures(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     msg_id = bus.publish("csi.raw.alice", {"x": 1})
     assert msg_id == "1234-0"
-    assert state["calls"] == 4   # 3 failures + 1 success
+    assert state["calls"] == 4  # 3 failures + 1 success
 
 
 def test_publish_raises_after_max_retries_exhausted(fake_redis_module):
@@ -123,9 +126,11 @@ def test_publish_raises_after_max_retries_exhausted(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     with pytest.raises(redis_mod.exceptions.ConnectionError):
         bus.publish("csi.raw.alice", {"x": 1})
@@ -137,13 +142,15 @@ def test_read_recovers_from_transient_failures(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     msgs = bus.read({"csi.raw.alice": "0"}, block_ms=0)
     assert len(msgs) == 1
-    assert state["calls"] == 3   # 2 failures + 1 success
+    assert state["calls"] == 3  # 2 failures + 1 success
 
 
 def test_read_group_recovers_from_transient_failures(fake_redis_module):
@@ -154,16 +161,21 @@ def test_read_group_recovers_from_transient_failures(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     # include_pending=False so we only do one xreadgroup call
     # (the implementation does an extra "0"-ID call when True; the
     # mock would need 6 total, exceeding max_retries).
     msgs = bus.read_group(
-        "inference", "w-1", ["csi.raw.alice"],
-        block_ms=0, include_pending=False,
+        "inference",
+        "w-1",
+        ["csi.raw.alice"],
+        block_ms=0,
+        include_pending=False,
     )
     assert len(msgs) == 1
     assert state["calls"] == 3
@@ -177,12 +189,14 @@ def test_ack_recovers_from_transient_failures(fake_redis_module):
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     bus.ack("inference", "csi.raw.alice", "1234-0")
-    assert state["calls"] == 3   # 2 failures + 1 success
+    assert state["calls"] == 3  # 2 failures + 1 success
 
 
 def test_create_group_idempotent_handles_busygroup_after_retry(fake_redis_module):
@@ -192,19 +206,23 @@ def test_create_group_idempotent_handles_busygroup_after_retry(fake_redis_module
     client = MagicMock()
 
     state = {"calls": 0}
+
     def xgroup_create(*_a, **_kw):
         state["calls"] += 1
         if state["calls"] == 1:
             raise redis_mod.exceptions.ConnectionError("flake")
         # Second attempt: the group already exists (BUSYGROUP).
         raise Exception("BUSYGROUP Consumer Group name already exists")
+
     client.xgroup_create.side_effect = xgroup_create
     redis_mod.Redis.from_url.return_value = client
 
     from modules.bus import RedisStreamBus
+
     bus = RedisStreamBus(
         url="redis://fake:6379/0",
-        max_retries=3, retry_base_s=0.01,
+        max_retries=3,
+        retry_base_s=0.01,
     )
     bus.create_group("csi.raw.alice", "inference")  # no exception
     assert state["calls"] == 2
