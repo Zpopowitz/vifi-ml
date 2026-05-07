@@ -40,7 +40,10 @@ from tools.analyze_session import (  # noqa: E402
 # Quality thresholds — sessions failing these get flagged in
 # `has_warnings`. Tune based on what's tolerable for the model.
 MIN_PAIR_COVERAGE = 0.5     # below this, the cross-stream signal is sparse
-MIN_DURATION_S = 300.0      # 5 min — anything shorter is too noisy
+# 100 s covers the original 2-min paired captures that produced the
+# 4.15 bpm RESULTS.md headline. Anything shorter is genuinely too
+# brief for stable feature extraction.
+MIN_DURATION_S = 100.0
 MAX_HR_STD = 10.0           # higher than this usually means BLE dropouts
 
 
@@ -69,7 +72,10 @@ def _stats_for_session(session_dir: Path) -> Optional[dict]:
             d = (df["t"].iloc[-1] - df["t"].iloc[0]).total_seconds()
             duration_s = max(duration_s, d)
 
-    pair_coverage = 0.0
+    # NaN means "not applicable" (one stream missing); a real number
+    # means coverage was computed. Avoids 0.00 visually masquerading
+    # as a quality problem on HR-only sessions.
+    pair_coverage = float("nan")
     if hr is not None and rr_clean is not None and not rr_clean.empty:
         merged = pd.merge_asof(
             hr.sort_values("t"),
@@ -90,9 +96,10 @@ def _stats_for_session(session_dir: Path) -> Optional[dict]:
     std_rr = float(rr_clean["rr_bpm"].std()) if n_rr > 1 else 0.0
 
     warnings: list[str] = []
-    # Only flag pair-coverage when both streams are present; one-stream
-    # sessions trivially have 0% but that's expected.
-    if hr is not None and n_rr > 0 and pair_coverage < MIN_PAIR_COVERAGE:
+    # Only flag pair-coverage when both streams are present;
+    # one-stream sessions get NaN, never flagged.
+    if (pair_coverage == pair_coverage  # not-NaN
+            and pair_coverage < MIN_PAIR_COVERAGE):
         warnings.append(
             f"low_pairing({pair_coverage * 100:.0f}%)")
     if duration_s < MIN_DURATION_S:

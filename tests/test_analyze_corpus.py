@@ -75,12 +75,11 @@ def test_finds_multiple_sessions(tmp_path, capsys):
 
 
 def test_short_session_flagged(tmp_path, capsys):
+    # 600 s is comfortably long; 60 s is below the 100 s threshold.
     _write_session(tmp_path, "session1", duration_s=600)
     _write_session(tmp_path, "session2_short", duration_s=60)  # too short
     analyze_corpus(tmp_path, write_csv=False)
     out = capsys.readouterr().out
-    # The short session row should carry a warning, the long one
-    # should not.
     short_line = next(line for line in out.splitlines()
                       if line.startswith("session2_short"))
     long_line = next(line for line in out.splitlines()
@@ -88,6 +87,29 @@ def test_short_session_flagged(tmp_path, capsys):
     assert "short" in short_line
     # session1 should have no warning text in its row.
     assert "short" not in long_line
+
+
+def test_120s_paired_capture_not_flagged(tmp_path, capsys):
+    """The original 2-min paired captures (which produced the 4.15 bpm
+    RESULTS.md headline) must not be flagged as 'short'."""
+    _write_session(tmp_path, "session_legacy", duration_s=120)
+    analyze_corpus(tmp_path, write_csv=False)
+    out = capsys.readouterr().out
+    line = next(line for line in out.splitlines()
+                if line.startswith("session_legacy"))
+    assert "short" not in line
+
+
+def test_hr_only_session_not_flagged_for_pairing(tmp_path, capsys):
+    _write_session(tmp_path, "session1", include_rr=False)
+    analyze_corpus(tmp_path, write_csv=False)
+    out = capsys.readouterr().out
+    line = next(line for line in out.splitlines()
+                if line.startswith("session1"))
+    # No "low_pairing" warning even though there's no RR stream.
+    assert "low_pairing" not in line
+    # And pair_coverage column shows '—' (NaN render) not '0.00'.
+    assert "—" in line
 
 
 def test_dropout_flagged_via_hr_std(tmp_path, capsys):
