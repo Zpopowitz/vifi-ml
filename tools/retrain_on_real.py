@@ -120,6 +120,11 @@ def main() -> None:
     p.add_argument("--fs", type=float, default=100.0)
     p.add_argument("--val-frac", type=float, default=0.2)
     p.add_argument("--model-dir", type=Path, default=Path("models_real"))
+    p.add_argument("--no-versioned", action="store_true",
+                   help="legacy mode: write artifacts in-place under "
+                        "--model-dir instead of the versioned "
+                        "<model-dir>/<sha>/ layout. Use when you don't "
+                        "want to keep the run in version history.")
     p.add_argument("--seed", type=int, default=None,
                    help="random seed (default: VIFI_SEED env var, else 42)")
     p.add_argument("--calibration-mode", choices=["none", "per_session"],
@@ -171,19 +176,15 @@ def main() -> None:
     acc = float(np.mean(np.abs(pred - y_va) <= 5.0))
     print(f"[=] val MAE: {mae:.2f} bpm ({acc*100:.1f}% within +-5 bpm)")
 
-    args.model_dir.mkdir(parents=True, exist_ok=True)
-    model.save_model(args.model_dir / "hr_model.json")
+    # Stage the artifacts in a temp dir, then promote() into the
+    # versioned layout (`<model_dir>/<sha>/...` + `current` symlink).
+    # This preserves prior versions for rollback / A-B comparison
+    # rather than overwriting in place. Disable with --no-versioned.
+    from tempfile import TemporaryDirectory  # noqa: PLC0415
 
-    # Fit + save the OOD detector on the same training features so inference
-    # can flag windows that don't look like the training distribution.
-    from quality import MahalanobisDetector  # noqa: E402
-    ood_detector = MahalanobisDetector.fit(X_tr)
-    ood_detector.save(args.model_dir / "mahalanobis.json")
-    print(f"[+] saved Mahalanobis OOD detector "
-          f"(threshold={ood_detector.threshold:.2f}, "
-          f"n_train={ood_detector.n_train})")
+    from quality import MahalanobisDetector  # noqa: PLC0415
 
-    (args.model_dir / "metadata.json").write_text(json.dumps({
+    metadata = {
         "feature_names": FEATURE_NAMES,
         "feature_set_version": FEATURE_SET_VERSION,
         "hr_tol_bpm": 5.0,
@@ -194,12 +195,37 @@ def main() -> None:
         "seed": args.seed,
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
-        "metrics": {
-            "hr_mae": mae,
-            "hr_acc_within_5": acc,
-        },
-    }, indent=2))
-    print(f"[+] saved {args.model_dir / 'hr_model.json'}")
+        "metrics": {"hr_mae": mae, "hr_acc_within_5": acc},
+    }
+
+    if args.no_versioned:
+        # Legacy in-place overwrite. Useful for ad-hoc experiments
+        # where you don't want to clutter the version history.
+        args.model_dir.mkdir(parents=True, exist_ok=True)
+        model.save_model(args.model_dir / "hr_model.json")
+        ood_detector = MahalanobisDetector.fit(X_tr)
+        ood_detector.save(args.model_dir / "mahalanobis.json")
+        (args.model_dir / "metadata.json").write_text(
+            json.dumps(metadata, indent=2))
+        print(f"[+] saved {args.model_dir / 'hr_model.json'} "
+              f"(in-place; --no-versioned)")
+    else:
+        from tools.model_swap import promote  # noqa: PLC0415
+        with TemporaryDirectory() as staging:
+            staging_path = Path(staging)
+            model.save_model(staging_path / "hr_model.json")
+            ood_detector = MahalanobisDetector.fit(X_tr)
+            ood_detector.save(staging_path / "mahalanobis.json")
+            (staging_path / "metadata.json").write_text(
+                json.dumps(metadata, indent=2))
+            sha = promote(staging_path, args.model_dir)
+        print(f"[+] saved {args.model_dir}/{sha}/ "
+              f"(current -> {sha})")
+        print(f"    list / rollback: "
+              f"`python -m tools.model_swap list {args.model_dir}`")
+    print(f"[+] OOD detector "
+          f"(threshold={ood_detector.threshold:.2f}, "
+          f"n_train={ood_detector.n_train})")
     if args.calibration_mode == "per_session":
         print("[!] calibration_mode=per_session - at inference time, also pass "
               "--calibration-mode per_session to first_capture_report.py "

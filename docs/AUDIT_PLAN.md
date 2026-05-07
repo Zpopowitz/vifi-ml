@@ -107,11 +107,19 @@ prediction reaches the WebSocket, then `down`. Catches config
 drift that no unit test will. New `tests/test_compose_e2e.py` with
 `pytest.mark.e2e`. ~1 day.
 
-A2. **Model versioning + atomic swap** — `tools/model_swap.py`.
-`models_real/` is mutated in place by `retrain_on_real.py`. After
-a retrain we have no rollback path. Write to `models_real/<sha>/`,
-symlink `models_real/current`. Add `--rollback` flag listing prior
-versions. ~1 day.
+A2. ~~**Model versioning + atomic swap**~~ — **landed in PR-E**.
+`tools/model_swap.py` exposes `promote()`, `rollback()`,
+`list_versions()`, `current_version()`, `resolve_active_model_dir()`.
+Layout: `models_real/<12-hex-sha>/{hr_model.json,mahalanobis.json,
+metadata.json}` + `models_real/current` (relative symlink) →
+active version. Sha is a stable hash of the canonicalized
+metadata.json so identical retrains are idempotent. Atomic
+symlink update via `os.replace` on a tmp link. CLI: `python -m
+tools.model_swap {list,inspect,promote,rollback} <base>`.
+`tools/retrain_on_real.py` defaults to versioned save; pass
+`--no-versioned` for in-place experiments. `api.py` resolves
+`current` symlink at boot via `resolve_active_model_dir()` so old
+in-place layouts and new versioned layouts both work. 9 tests.
 
 A3. **Audit-subscriber liveness check** — `tools/audit_health.py`.
 No operator-level "is the audit subscriber actually consuming?"

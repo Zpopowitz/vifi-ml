@@ -829,6 +829,13 @@ def create_app(model_dir: Path = MODEL_DIR,
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(Exception, redacted_exception_handler)
 
+    # If real_model_dir uses the versioned layout
+    # (`<dir>/current` symlink → `<dir>/<sha>/`), resolve to the
+    # active version before constructing the bundle. Falls back to
+    # the dir itself for legacy in-place / --no-versioned layouts.
+    from tools.model_swap import resolve_active_model_dir  # noqa: PLC0415
+    real_model_dir = resolve_active_model_dir(real_model_dir)
+
     synthetic_bundle = SyntheticModelBundle(model_dir)
     real_bundle = RealModelBundle(real_model_dir)
 
