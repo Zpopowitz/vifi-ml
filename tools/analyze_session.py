@@ -48,6 +48,10 @@ import pandas as pd  # noqa: E402
 # aren't pulled toward zero.
 RR_WARMUP_SECONDS = 30.0
 PAIR_TOLERANCE_SECONDS = 15.0
+# Adult resting RR is 6-30 brpm. Anything below ~5 is the GDX-RB
+# transitioning out of warmup with a partially-locked estimate, not
+# a real breath rate. Filtered by default; --include-suspect keeps it.
+MIN_PHYSIOLOGICAL_RR = 5.0
 
 
 def _load_csv(path: Path) -> Optional[pd.DataFrame]:
@@ -60,12 +64,15 @@ def _load_csv(path: Path) -> Optional[pd.DataFrame]:
     return df
 
 
-def _trim_rr_warmup(rr: pd.DataFrame) -> pd.DataFrame:
+def _trim_rr_warmup(rr: pd.DataFrame, *,
+                    drop_suspect: bool = True) -> pd.DataFrame:
     if rr.empty:
         return rr
     start = rr["t"].iloc[0]
     cutoff = start + pd.Timedelta(seconds=RR_WARMUP_SECONDS)
     trimmed = rr[(rr["t"] >= cutoff) & (rr["rr_bpm"] > 0)].copy()
+    if drop_suspect:
+        trimmed = trimmed[trimmed["rr_bpm"] >= MIN_PHYSIOLOGICAL_RR].copy()
     return trimmed
 
 
@@ -142,6 +149,7 @@ def _plot(out_path: Path, hr: Optional[pd.DataFrame],
 
 
 def analyze_session(session_dir: Path, *, include_warmup: bool = False,
+                    include_suspect: bool = False,
                     plot: bool = True) -> int:
     if not session_dir.is_dir():
         print(f"ERROR: not a directory: {session_dir}", file=sys.stderr)
@@ -156,7 +164,7 @@ def analyze_session(session_dir: Path, *, include_warmup: bool = False,
 
     rr_for_stats = rr
     if rr is not None and not include_warmup:
-        rr_for_stats = _trim_rr_warmup(rr)
+        rr_for_stats = _trim_rr_warmup(rr, drop_suspect=not include_suspect)
 
     print(f"Session: {session_dir}")
     notes = session_dir / "notes.txt"
@@ -216,12 +224,17 @@ def main() -> None:
     p.add_argument("--include-warmup", action="store_true",
                    help="include the first 30 s of RR (GDX-RB warmup "
                         "where rr_bpm == 0); excluded by default")
+    p.add_argument("--include-suspect", action="store_true",
+                   help=f"include rr_bpm < {MIN_PHYSIOLOGICAL_RR:.0f} "
+                        "(non-physiological readings from GDX-RB warmup "
+                        "transitions); excluded by default")
     p.add_argument("--no-plot", action="store_true",
                    help="skip the session_summary.png plot")
     args = p.parse_args()
     sys.exit(analyze_session(
         args.session_dir,
         include_warmup=args.include_warmup,
+        include_suspect=args.include_suspect,
         plot=not args.no_plot,
     ))
 
