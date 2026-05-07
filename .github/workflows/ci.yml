@@ -47,8 +47,12 @@ jobs:
           pip install -r requirements-dev.txt
       - name: mypy strict modules
         run: mypy pseudonymize.py config.py __version__.py
-      - name: mypy lenient modules (warn-only; never fails CI)
-        run: mypy security.py audit.py observability.py || true
+      # The previous "mypy lenient modules" step (security.py + audit.py
+      # + observability.py with `|| true`) was theatrical — it ran but
+      # never failed CI even when types were wrong. Removing it; when
+      # we're ready to commit to strict types on those modules, add
+      # them to the strict line above (currently 24 pre-existing errors
+      # to clear; M2 work).
 
   test:
     name: pytest
