@@ -100,12 +100,14 @@ technical due-diligence read of the repo.
 
 ### A. Home-setup unblockers + FDA-readiness story
 
-A1. **End-to-end compose smoke test in CI** — `make ci-e2e`:
-`docker compose --profile dev up -d`, wait for health, hit
-`/health` + `/api/v1/rooms`, publish synthetic CSI, verify a
-prediction reaches the WebSocket, then `down`. Catches config
-drift that no unit test will. New `tests/test_compose_e2e.py` with
-`pytest.mark.e2e`. ~1 day.
+A1. ~~**End-to-end compose smoke test in CI**~~ — **landed in PR-F**.
+`tests/test_compose_e2e.py` brings the dev-profile stack up,
+verifies `/health`, `/api/v1/rooms`, and the SPA at `/` are
+responsive, then tears down. New `e2e` CI job depends on
+`docker-build` (re-uses the cached image), runs only the
+`pytest.mark.e2e`-marked tests. The regular `test` job now passes
+`-m "not e2e"` so it doesn't pay the import cost. Test skips
+cleanly when docker isn't available.
 
 A2. ~~**Model versioning + atomic swap**~~ — **landed in PR-E**.
 `tools/model_swap.py` exposes `promote()`, `rollback()`,
@@ -126,9 +128,13 @@ No operator-level "is the audit subscriber actually consuming?"
 check today. Reads `audit_dir/`'s newest file mtime + Redis
 consumer-group XPENDING for the audit consumer. ~half day.
 
-A4. **Inference-worker integration test** — currently 9 unit tests
-but zero integration test that publishes CSI to the bus and asserts
-a prediction comes out. Wire into the e2e job in A1. ~1 day.
+A4. ~~**Inference-worker integration test**~~ — **retracted**:
+ground-truthed during PR-F. `tests/test_inference_worker.py`
+already covers exactly this — `test_loop_consumes_csi_and_publishes_hr_predictions`
+publishes CSI to InMemoryBus, runs `loop()` with `max_iterations=2`,
+and asserts a prediction lands on `hr_predicted(<patient>)`. The
+audit-agent finding was inaccurate. The e2e compose test in PR-F
+provides the additional Redis-backed coverage.
 
 A5. ~~**Audit chain + encryption keys enforced in prod**~~ —
 **landed in PR-C**. `api.py:create_app` now refuses to start when
