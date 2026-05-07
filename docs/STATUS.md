@@ -29,7 +29,8 @@ landed nine PRs:
 | **E** | Versioned model layout (`models_real/<sha>/`) | `52c14c2` | ✅ |
 | **F** | E2E compose smoke test as separate CI job | `ce8dbf9` | ✅ |
 | **G** | Audit-subscriber liveness check | `fc8add1` | ✅ |
-| **H1** | Bundle classes → `api_internals/` | `a23d179` | ✅ phase 1 |
+| **H1** | Bundle classes → `api_internals/bundles.py` | `a23d179` | ✅ |
+| **H2** | Middleware + SPA mount → `api_internals/{middleware,spa}.py` | TBD | ✅ |
 | **K** | Prometheus metrics in inference_worker | `c0969ac` | ✅ |
 | **I** | CSI quality gate | `2ca0b0b` | ✅ |
 | **L** | Coverage-ramp commitment (this PR) | TBD | ✅ |
@@ -40,7 +41,7 @@ Pending PRs (gated on either home-data or quiet-stretch):
 
 | PR | What | Gating |
 |---|---|---|
-| H2 | Route extraction from `create_app()` | Quiet stretch (risky refactor) |
+| H3 | Route handlers → factory pattern w/ deps injection | Quiet stretch (risky refactor; routes share closure vars) |
 | J | Stratified eval by geometry | Need 5+ sessions w/ geometry metadata |
 | B-format | 86-file ruff format sweep | Quiet stretch (noisy diff) |
 

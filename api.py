@@ -29,16 +29,9 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.middleware.cors import CORSMiddleware
 
 from security import (
-    AuthMiddleware,
-    RateLimitMiddleware,
-    RequestIdMiddleware,
-    SecurityHeadersMiddleware,
     authorize_websocket,
-    get_cors_origins,
-    redacted_exception_handler,
     require_scope,
     validate_config_or_raise,
 )
@@ -668,25 +661,13 @@ def create_app(model_dir: Path = MODEL_DIR,
                       "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None,
                   openapi_url="/openapi.json" if os.environ.get(
                       "VIFI_EXPOSE_DOCS", "true").lower() == "true" else None)
-    # Middleware order: outermost added LAST.
-    # Request flow into app:  request_id -> security_headers -> rate_limit
-    #                         -> auth -> CORS -> gzip -> app
-    # Comment + tested via test_middleware_order.
-    from fastapi.middleware.gzip import GZipMiddleware  # noqa: PLC0415
-    app.add_middleware(GZipMiddleware, minimum_size=1024)  # I046
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=get_cors_origins(),
-        allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["authorization", "x-api-key", "content-type",
-                       "x-request-id"],
-    )
-    app.add_middleware(AuthMiddleware)
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)  # I056
-    app.add_middleware(RequestIdMiddleware)
-    app.add_exception_handler(Exception, redacted_exception_handler)
+    # Middleware setup lives in api_internals/middleware.py (PR-H2 split).
+    # Request flow into app: request_id -> security_headers -> rate_limit
+    #                        -> auth -> CORS -> gzip -> app
+    # (FastAPI runs outermost-first, which is reverse of add_middleware
+    # call order; install_middleware encodes the right sequence.)
+    from api_internals.middleware import install_middleware  # noqa: PLC0415
+    install_middleware(app)
 
     # If real_model_dir uses the versioned layout
     # (`<dir>/current` symlink → `<dir>/<sha>/`), resolve to the
@@ -1109,21 +1090,11 @@ def create_app(model_dir: Path = MODEL_DIR,
     if install_prometheus_endpoint(app):
         log.info("Prometheus /metrics enabled")
 
-    # Mount the static dashboard SPA (replaces the legacy Streamlit
-    # dashboard). Served at the API origin so the WebSocket and the UI
-    # share `Origin` — no CORS gymnastics, no separate container.
-    # html=True makes `/` resolve to `index.html`.
-    from fastapi.staticfiles import StaticFiles  # noqa: PLC0415
-    dashboard_dir = ROOT / "dashboard"
-    if dashboard_dir.is_dir():
-        # Mount LAST so explicit API routes (/health, /predict, etc.)
-        # take precedence; the SPA handles everything else.
-        app.mount("/", StaticFiles(directory=dashboard_dir, html=True),
-                  name="dashboard")
-        log.info("dashboard SPA mounted at / from %s", dashboard_dir)
-    else:
-        log.warning("dashboard directory %s not found; UI disabled",
-                    dashboard_dir)
+    # SPA mount is in api_internals/spa.py (PR-H2 split). Must run
+    # AFTER all explicit API route registrations so /health,
+    # /predict, etc. take precedence over the catch-all.
+    from api_internals.spa import mount_dashboard_spa  # noqa: PLC0415
+    mount_dashboard_spa(app, dashboard_dir=ROOT / "dashboard")
 
     # Warm-up: load models on startup if available so first user doesn't
     # pay the cold-load latency (I175).
