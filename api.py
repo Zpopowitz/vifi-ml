@@ -949,6 +949,13 @@ def create_app(model_dir: Path = MODEL_DIR,
     }
 
     def _not_implemented(capability: str):
+        # Log stub calls so accidental hits in deployed environments
+        # leave a trail. The Prometheus middleware
+        # (`vifi_http_requests_total{path=...,status=501}`) already
+        # captures the rate when `VIFI_METRICS_ENABLED=true`; this
+        # `log.info` covers the case where Prometheus is off.
+        log.info("stub_endpoint_called capability=%s eta=%s",
+                 capability, _ROADMAP[capability]["eta"])
         raise HTTPException(
             status_code=501,
             detail={"status": "planned", "capability": capability,

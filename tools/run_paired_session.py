@@ -300,7 +300,13 @@ def run_session(args: argparse.Namespace) -> int:
                 print(f"[orchestrator] bus mode active (patient_id="
                       f"{args.subject_id}). Open the dashboard at "
                       f"http://localhost:8501 to watch predicted vs "
-                      f"reference in real time.",
+                      f"reference in real time. After the session "
+                      f"finishes, run "
+                      f"`python -m tools.analyze_session "
+                      f"{session_dir}` for a summary + plot, or "
+                      f"`python -m tools.preflight ...` before the "
+                      f"next session to catch dumb hardware issues "
+                      f"early.",
                       flush=True)
 
             # Loggers (CSI/HR/RR) are bounded by --duration. Workers

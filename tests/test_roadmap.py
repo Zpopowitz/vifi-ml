@@ -30,6 +30,19 @@ def test_roadmap_endpoints_return_501(client, path, method):
     assert "eta" in body["detail"]
 
 
+def test_stub_call_emits_telemetry_log(client, caplog):
+    """Each 501 stub call should leave a structured log line so
+    accidental hits in deployed environments are visible even when
+    Prometheus is off."""
+    import logging
+    with caplog.at_level(logging.INFO, logger="vifi.api"):
+        client.post("/predict/apnea")
+    msgs = [r.getMessage() for r in caplog.records
+            if r.name == "vifi.api"]
+    assert any("stub_endpoint_called" in m and "capability=apnea" in m
+               for m in msgs)
+
+
 def test_roadmap_listing(client):
     r = client.get("/roadmap")
     assert r.status_code == 200
