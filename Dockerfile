@@ -55,6 +55,7 @@ COPY data_gen.py preprocess.py train.py calibration.py quality.py audit.py ./
 COPY security.py pseudonymize.py ./
 COPY __version__.py config.py observability.py ./
 COPY api.py ./
+COPY api_internals/ ./api_internals/
 COPY modules/ ./modules/
 COPY tools/ ./tools/
 # Static SPA dashboard (replaces the Streamlit one).

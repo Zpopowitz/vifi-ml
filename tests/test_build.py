@@ -37,9 +37,12 @@ def test_dockerfile_copies_every_runtime_module():
             f"Dockerfile is missing COPY {mod}. Add it next to its "
             f"siblings in the runtime stage."
         )
-    # And the directories.
+    # And the directories. api_internals/ was added in PR-H — the
+    # original miss caused the e2e job to fail on commit a23d179
+    # because uvicorn couldn't import api -> api_internals.bundles.
     assert "modules/" in df
     assert "tools/" in df
+    assert "api_internals/" in df
 
 
 def test_requirements_pins_core_libs():
