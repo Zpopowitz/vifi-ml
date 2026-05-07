@@ -11,6 +11,7 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
 - Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
 - Daily reproduction: `docs/QUICKSTART.md`
+- ESP32-S3 firmware flashing: `docs/ESP32_SETUP.md`
 - Calibration + RF fingerprint + walk-in detector: `calibration.py`
 - Mahalanobis OOD: `quality.py`
 - Audit log (FDA-grade JSONL): `audit.py`

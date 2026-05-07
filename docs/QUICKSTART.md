@@ -165,3 +165,12 @@ Bank 4–5 sessions before adding ESP32. Vary one thing per session:
   bus message to JSONL for FDA-grade audit trail
 - `dashboard/` — static SPA served by `api.py`'s `StaticFiles` mount
 - `data/captures/<subject>/<session>/` — gitignored output dir
+
+## Adding ESP32 CSI to the loop
+
+This guide covers the BLE-only path (Polar HR + Vernier RR). When
+you're ready to add live CSI predictions, see **`docs/ESP32_SETUP.md`**
+for one-time firmware flashing on the TX + RX boards. Once flashed,
+add a third PowerShell window running `tools/csi_capture.py --bus`
+and the dashboard's "Predicted HR" / "Predicted RR" readouts come to
+life.
