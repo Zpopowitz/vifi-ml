@@ -69,7 +69,7 @@ pytestmark = [
 def _wait_for_health(deadline: float) -> bool:
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(HEALTH_URL, timeout=2) as r:
+            with urllib.request.urlopen(HEALTH_URL, timeout=2) as r:  # nosec B310
                 if r.status == 200:
                     return True
         except (URLError, ConnectionResetError, OSError):
@@ -112,7 +112,7 @@ def compose_stack():
 
 
 def test_health_endpoint_responds(compose_stack):
-    with urllib.request.urlopen(HEALTH_URL, timeout=5) as r:
+    with urllib.request.urlopen(HEALTH_URL, timeout=5) as r:  # nosec B310
         assert r.status == 200
         body = r.read()
     # Body should contain the model_loaded fields and no PHI.
@@ -124,7 +124,7 @@ def test_rooms_endpoint_responds(compose_stack):
     """/api/v1/rooms talks to Redis. If the bus URL or password is
     wrong, this fails — which is a config-drift failure no unit
     test would catch."""
-    with urllib.request.urlopen(ROOMS_URL, timeout=5) as r:
+    with urllib.request.urlopen(ROOMS_URL, timeout=5) as r:  # nosec B310
         assert r.status == 200
         body = r.read().decode("utf-8")
     # Shape: {"rooms": [...]} or {"rooms": [], "error": "..."}
@@ -136,7 +136,7 @@ def test_dashboard_spa_served_at_root(compose_stack):
     /. Docker COPY drift was a real failure mode in M1 (the audit
     subscriber's audit/ dir was owned by root and unwritable until
     we fixed the Dockerfile)."""
-    with urllib.request.urlopen("http://localhost:8000/", timeout=5) as r:
+    with urllib.request.urlopen("http://localhost:8000/", timeout=5) as r:  # nosec B310
         assert r.status == 200
         body = r.read().decode("utf-8")
     assert "<!doctype html>" in body.lower() or "<!DOCTYPE" in body

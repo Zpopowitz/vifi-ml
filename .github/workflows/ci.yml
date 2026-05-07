@@ -126,7 +126,11 @@ jobs:
             --ignore-vuln GHSA-2c2j-9gv5-cj73 \
             --ignore-vuln GHSA-7f5h-v6xp-fcq8
       - name: bandit
-        run: bandit -r . -x tests,build,sbom -ll
+        # bandit's -x argument needs './path' style entries (not bare
+        # names) for the directory-exclude to actually work in 1.7.x
+        # — otherwise it scans tests/ etc. anyway and we have to
+        # # nosec annotate every test file. Found this the hard way.
+        run: bandit -r . -x ./tests,./build,./sbom -ll
 
   sbom:
     name: SBOM (CycloneDX)
