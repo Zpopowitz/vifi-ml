@@ -392,14 +392,66 @@ an external dipole antenna. The pigtail joint is what flops around.
 
 ### Validation session protocol
 
-For each capture:
+#### Floor layout — controlled-geometry SOP
 
-1. **Tape the floor** at TX, RX, subject positions. Reproducible
-   geometry session-to-session.
-2. **Same antenna orientation every session.** Velcro/zip-tie/jig.
-3. **Same chair, same height, same orientation.** No swapping office
-   chairs between sessions.
-4. **Vary one thing per session:**
+The single biggest avoidable source of cross-session MAE drift is the
+subject sitting in a different position relative to the TX-RX line.
+Empirical case from the founder corpus: session4 had a 7.2 bpm
+held-out HR MAE while sessions 3 and 5 sat at 2.6 bpm — the only
+visible difference was a ~10 Hz drop in CSI packet rate, consistent
+with the subject having shifted off-axis between captures. Don't
+guess at this; mark it.
+
+```
+       ◯ TX                 X (subject)                 ◯ RX
+       │                    │                           │
+       └────────d_TX────────┴──────d_RX─────────────────┘
+
+       Total:  d_TX + d_RX = TX-RX distance
+       Goal:   d_TX ≈ d_RX (subject at the midpoint)
+       Goal:   subject ON the TX-RX line (subject_on_axis = True)
+       Goal:   chest perpendicular to the TX-RX axis
+```
+
+Day-1 setup, once per room (never move it again):
+
+1. Pick TX and RX positions. Mark each on the floor with painter's
+   tape. Both at chest-height when seated (~110 cm).
+2. Measure TX→RX distance. Record as `tx_rx_distance_m`.
+3. Mark the **midpoint X** between TX and RX — that's where the
+   subject sits.
+4. Mark the chair's footprint at that X. Same chair, same height,
+   same orientation, every session.
+5. Lock the antenna orientation with velcro or a 3D-printed cradle
+   (see `Antenna mounting` above). Once locked, the antenna
+   should never wiggle again.
+
+Per-session, do every time:
+
+1. Strap on belts. Sit at the marked X position, on the TX-RX line.
+2. Run the orchestrator with the geometry flags set:
+
+   ```bash
+   python tools/run_paired_session.py \
+       --subject-id founder --room-id home_office \
+       --posture seated --csi-port COM6 \
+       --h10-address AA:BB:CC:DD:EE:FF \
+       --duration 600 \
+       --tx-rx-distance-m 2.0 \
+       --subject-to-tx-distance-m 1.0 \
+       --subject-on-axis true \
+       --antenna-type external_dipole \
+       --antenna-height-cm 110 \
+       --notes "session1 baseline"
+   ```
+
+   Those geometry flags get persisted into `session.json` so
+   `eval_harness` can later stratify MAE by distance / on-axis,
+   and so future-you can debug a session4-style failure
+   retrospectively. Use `python tools/validate_session_metadata.py
+   --strict` to verify the geometry fields landed.
+
+3. **Vary one thing per session:**
 
    | Session | Posture | Activity | Notes |
    |---|---|---|---|
@@ -409,7 +461,8 @@ For each capture:
    | 4 | Standing | Still | Vertical chest motion |
    | 5 | Seated | Reading + talking | Speech artifact |
 
-5. **Annotate `notes.txt`** in each session directory.
+4. **Annotate `notes.txt`** in each session directory if you want
+   free-text observations beyond what the schema captures.
 
 Cross-room generalization is its own experiment, in M3. Don't change
 rooms during the M2 paired-capture corpus.

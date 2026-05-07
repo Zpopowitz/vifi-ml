@@ -69,7 +69,7 @@ def session_dir_name(now: Optional[datetime] = None) -> str:
 
 
 def build_session_metadata(args: argparse.Namespace) -> dict:
-    return {
+    md = {
         "subject_id": args.subject_id,
         "room_id": args.room_id,
         "posture": args.posture,
@@ -81,6 +81,21 @@ def build_session_metadata(args: argparse.Namespace) -> dict:
         "captured_at_utc": utc_now_iso(),
         "duration_planned_s": float(args.duration),
     }
+    # Geometry fields. Optional but strongly recommended — capturing
+    # them per session is what lets the eval harness stratify MAE by
+    # distance / on-axis position, and makes session4-style failures
+    # debuggable retrospectively.
+    if args.tx_rx_distance_m is not None:
+        md["tx_rx_distance_m"] = float(args.tx_rx_distance_m)
+    if args.subject_to_tx_distance_m is not None:
+        md["subject_to_tx_distance_m"] = float(args.subject_to_tx_distance_m)
+    if args.subject_on_axis is not None:
+        md["subject_on_axis"] = bool(args.subject_on_axis)
+    if args.antenna_type is not None:
+        md["antenna_type"] = args.antenna_type
+    if args.antenna_height_cm is not None:
+        md["antenna_height_cm"] = float(args.antenna_height_cm)
+    return md
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -379,6 +394,27 @@ def main() -> None:
                         help="recommended for cross-subject eval")
     g_meta.add_argument("--notes", default=None,
                         help="free-text notes for this session")
+
+    g_geom = p.add_argument_group("geometry (optional, strongly recommended)")
+    g_geom.add_argument("--tx-rx-distance-m", type=float, default=None,
+                        help="distance between TX and RX antennas, in meters")
+    g_geom.add_argument("--subject-to-tx-distance-m", type=float,
+                        default=None,
+                        help="distance from subject to TX, in meters; "
+                             "subject-to-RX is implied by tx_rx_distance_m "
+                             "minus this when --subject-on-axis is set")
+    g_geom.add_argument("--subject-on-axis", type=lambda v:
+                        v.lower() in ("true", "yes", "1", "y"),
+                        default=None, metavar="TRUE|FALSE",
+                        help="True if subject sits on the TX-RX line; "
+                             "False if off-axis. Off-axis severely degrades "
+                             "CSI breathing detection.")
+    g_geom.add_argument("--antenna-type", default=None,
+                        choices=["pcb_trace", "external_dipole", "patch"],
+                        help="antenna model on the ESP32 RX board")
+    g_geom.add_argument("--antenna-height-cm", type=float, default=None,
+                        help="antenna height above floor, in cm "
+                             "(chest level ≈ 100-130 cm seated)")
 
     g_dur = p.add_argument_group("capture parameters")
     g_dur.add_argument("--duration", type=float, default=120.0,

@@ -42,6 +42,12 @@ def _base_args(**overrides) -> Namespace:
         no_h10=False,
         no_rr=False,
         dry_run=True,
+        # Geometry fields default to None (omitted from metadata).
+        tx_rx_distance_m=None,
+        subject_to_tx_distance_m=None,
+        subject_on_axis=None,
+        antenna_type=None,
+        antenna_height_cm=None,
     )
     defaults.update(overrides)
     return Namespace(**defaults)
@@ -138,3 +144,54 @@ def test_metadata_satisfies_locked_schema():
     POSTURES = {"seated", "lying_supine", "lying_lateral",
                 "standing", "none", "other"}
     assert meta["posture"] in POSTURES
+
+
+def test_geometry_fields_omitted_when_unset():
+    """Geometry fields are optional; old workflows must keep working."""
+    meta = build_session_metadata(_base_args())
+    for f in ("tx_rx_distance_m", "subject_to_tx_distance_m",
+              "subject_on_axis", "antenna_type", "antenna_height_cm"):
+        assert f not in meta
+
+
+def test_geometry_fields_propagated_when_set():
+    meta = build_session_metadata(_base_args(
+        tx_rx_distance_m=2.0,
+        subject_to_tx_distance_m=1.0,
+        subject_on_axis=True,
+        antenna_type="external_dipole",
+        antenna_height_cm=110.0,
+    ))
+    assert meta["tx_rx_distance_m"] == 2.0
+    assert meta["subject_to_tx_distance_m"] == 1.0
+    assert meta["subject_on_axis"] is True
+    assert meta["antenna_type"] == "external_dipole"
+    assert meta["antenna_height_cm"] == 110.0
+
+
+def test_geometry_fields_validate_in_locked_schema(tmp_path):
+    """Validator accepts well-formed geometry fields and rejects junk."""
+    import json
+    from tools.validate_session_metadata import _validate_one
+
+    good = build_session_metadata(_base_args(
+        tx_rx_distance_m=2.0, subject_to_tx_distance_m=1.0,
+        subject_on_axis=True, antenna_type="external_dipole",
+        antenna_height_cm=110.0,
+    ))
+    p = tmp_path / "good.json"
+    p.write_text(json.dumps(good))
+    ok, errors = _validate_one(p)
+    assert ok, f"good metadata rejected: {errors}"
+
+    bad = dict(good)
+    bad["tx_rx_distance_m"] = -5.0
+    bad["antenna_type"] = "made_up"
+    bad["subject_on_axis"] = "yes"  # string, not bool
+    p2 = tmp_path / "bad.json"
+    p2.write_text(json.dumps(bad))
+    ok2, errors2 = _validate_one(p2)
+    assert not ok2
+    assert any("tx_rx_distance_m" in e for e in errors2)
+    assert any("antenna_type" in e for e in errors2)
+    assert any("subject_on_axis" in e for e in errors2)

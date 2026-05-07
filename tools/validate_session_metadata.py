@@ -32,9 +32,17 @@ PROTOCOL_VERSION = "v1"
 
 REQUIRED_FIELDS = {"subject_id", "room_id", "posture", "post_cardio"}
 RECOMMENDED_FIELDS = {"chair", "body_mass_lbs", "notes", "protocol_version"}
+# Geometry fields are recommended for any session you intend to use
+# in cross-session evaluation. The eval harness can stratify MAE by
+# distance / on-axis when these are present.
+GEOMETRY_FIELDS = {
+    "tx_rx_distance_m", "subject_to_tx_distance_m", "subject_on_axis",
+    "antenna_type", "antenna_height_cm",
+}
 
 POSTURES = {"seated", "lying_supine", "lying_lateral", "standing", "none", "other"}
 CHAIRS = {"A", "B", None}
+ANTENNA_TYPES = {"pcb_trace", "external_dipole", "patch"}
 
 
 def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
@@ -70,10 +78,29 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
         if not isinstance(bm, (int, float)) or bm < 50 or bm > 500:
             errors.append(f"body_mass_lbs out of plausible range (50-500): {bm}")
 
+    for f in ("tx_rx_distance_m", "subject_to_tx_distance_m",
+              "antenna_height_cm"):
+        if f in meta and meta[f] is not None:
+            v = meta[f]
+            if not isinstance(v, (int, float)) or v <= 0 or v > 1000:
+                errors.append(f"{f} must be positive number <=1000, got {v!r}")
+    if "subject_on_axis" in meta and not isinstance(
+            meta["subject_on_axis"], bool):
+        errors.append(
+            "subject_on_axis must be bool, got "
+            f"{type(meta['subject_on_axis']).__name__}")
+    if "antenna_type" in meta and meta["antenna_type"] not in ANTENNA_TYPES:
+        errors.append(f"antenna_type must be one of {sorted(ANTENNA_TYPES)}, "
+                      f"got {meta['antenna_type']!r}")
+
     if strict:
         for field in RECOMMENDED_FIELDS:
             if field not in meta:
                 errors.append(f"missing recommended field (--strict): {field}")
+        for field in GEOMETRY_FIELDS:
+            if field not in meta:
+                errors.append(
+                    f"missing recommended geometry field (--strict): {field}")
 
     return len(errors) == 0, errors
 
