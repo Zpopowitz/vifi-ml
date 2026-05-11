@@ -30,4 +30,4 @@ bandit==1.7.10
 cyclonedx-bom==4.6.1         # SBOM generation
 
 # Pre-commit
-pre-commit==3.8.0
+pre-commit==4.6.0
