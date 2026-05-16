@@ -1,28 +1,28 @@
 # Pinned for reproducibility. Bump versions deliberately + re-run tests.
 # Test deps live in requirements-dev.txt (not audited at runtime).
 numpy==1.26.4
-scipy==1.13.1
-scikit-learn==1.5.2
+scipy==1.17.1
+scikit-learn==1.8.0
 xgboost==3.2.0
-fastapi==0.115.4
-uvicorn[standard]==0.32.0
-pydantic==2.9.2
-httpx==0.27.2
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+pydantic==2.13.4
+httpx==0.28.1
 # pandas remains for some tools (eval_harness etc.); streamlit was
 # removed when the dashboard moved from Streamlit to a static SPA
 # (served by FastAPI). One fewer dep, no streamlit XSS advisory.
 pandas==2.2.3
-joblib==1.4.2
+joblib==1.5.3
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
 # in production; optional in dev (audit log falls back to plaintext
 # with a startup warning).
 # Bumped 43.0.1 → 46.0.7 (clears all three GHSA advisories).
 cryptography==48.0.0
 # Optional Prometheus metrics — only loaded when VIFI_METRICS_ENABLED=true.
-prometheus-client==0.21.0
+prometheus-client==0.25.0
 # Live message bus (Redis Streams). Optional: in-memory backend works
 # without it, but production deployments and the Live dashboard need Redis.
 redis==5.0.8        ; extra == "bus"
 # Hardware loggers (optional; only needed when capturing real data).
 bleak==0.22.3       ; extra == "capture"
-godirect==1.1.4     ; extra == "capture"
+godirect==1.2.1     ; extra == "capture"

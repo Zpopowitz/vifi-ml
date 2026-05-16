@@ -11,19 +11,19 @@
 pytest==8.3.4
 pytest-cov==7.1.0
 pytest-asyncio==0.24.0
-pytest-timeout==2.3.1
-hypothesis==6.115.0          # property-based DSP testing
+pytest-timeout==2.4.0
+hypothesis==6.152.5          # property-based DSP testing
 
 # Lint + type
-ruff==0.6.9
+ruff==0.15.12
 mypy==1.11.2
 types-redis==4.6.0.20240903
 types-PyYAML==6.0.12.20240917
-PyYAML==6.0.2                # for compose tests
+PyYAML==6.0.3                # for compose tests
 
 # Security scanning
-pip-audit==2.7.3
-bandit==1.7.10
+pip-audit==2.10.0
+bandit==1.9.4
 
 # Build artifacts. cyclonedx-bom 4.6.1 is the latest in the 4.x line;
 # upgrade to 5.x or 7.x in a follow-up after verifying the CLI shape.
