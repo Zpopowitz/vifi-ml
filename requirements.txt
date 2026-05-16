@@ -17,7 +17,7 @@ joblib==1.4.2
 # in production; optional in dev (audit log falls back to plaintext
 # with a startup warning).
 # Bumped 43.0.1 → 46.0.7 (clears all three GHSA advisories).
-cryptography==46.0.7
+cryptography==48.0.0
 # Optional Prometheus metrics — only loaded when VIFI_METRICS_ENABLED=true.
 prometheus-client==0.21.0
 # Live message bus (Redis Streams). Optional: in-memory backend works
