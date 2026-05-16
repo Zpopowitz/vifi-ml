@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['site/**']
   pull_request:
     branches: [main]
+    paths-ignore: ['site/**']
 
 # Cancel in-progress runs for the same PR when a new commit is pushed.
 concurrency:
@@ -131,7 +133,7 @@ jobs:
         # names) for the directory-exclude to actually work in 1.7.x
         # — otherwise it scans tests/ etc. anyway and we have to
         # # nosec annotate every test file. Found this the hard way.
-        run: bandit -r . -x ./tests,./build,./sbom -ll
+        run: bandit -r . -x ./tests,./build,./sbom,./site -ll
 
   sbom:
     name: SBOM (CycloneDX)

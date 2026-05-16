@@ -43,3 +43,9 @@ Thumbs.db
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+
+# site/ (Astro marketing site, merged from vifi-site)
+site/node_modules/
+site/.astro/
+site/dist/
+site/.vercel/
