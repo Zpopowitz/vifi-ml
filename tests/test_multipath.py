@@ -85,9 +85,9 @@ def test_subtract_top_components_preserves_subject_signal_under_static_multipath
     peak_freq = float(freqs[peak_idx])
 
     # Allow a 1-bin tolerance (df = 0.1 Hz at n_time=1000, fs=100).
-    assert abs(peak_freq - 0.2) < 0.15, (
-        f"expected 0.2 Hz peak in residual; got {peak_freq:.3f} Hz"
-    )
+    assert (
+        abs(peak_freq - 0.2) < 0.15
+    ), f"expected 0.2 Hz peak in residual; got {peak_freq:.3f} Hz"
 
 
 def test_subtract_top_components_rejects_non_2d():
