@@ -1,6 +1,8 @@
 # ViFi — Contactless Hospital Vitals from WiFi Signals
 
-> **Real-hardware result:** **4.15 bpm cross-session HR MAE** against Polar H10 chest-strap ground truth, on **$50 of commodity ESP32-S3 hardware**, validated by leave-one-session-out across 4 paired captures.
+> **Real-hardware result:** **4.15 bpm cross-session HR MAE within domain** (Polar H10 ground truth, leave-one-session-out across 4 paired captures, single subject, single room, single antenna pair, **~$50 of commodity ESP32-S3 hardware**).
+>
+> **Cross-environment caveat (2026-05-16):** in a new room with patch antennas — a first-time deployment outside the training distribution — MAE collapsed to **17.77 bpm**. The model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus and is the open problem ViFi's next milestones address. Full empirical record: [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). Architectural response: [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
 
 ViFi turns a pair of off-the-shelf WiFi chips into a contactless patient monitor. No wires, no adhesive, no line of sight, no patient compliance or discomfort required. The same sensor stream that recovers heart rate also extends to respiratory rate, presence, gait, fall detection, and apnea — all on the same $50 of hardware.
 
@@ -10,12 +12,13 @@ ViFi turns a pair of off-the-shelf WiFi chips into a contactless patient monitor
 
 | Metric | Value | Methodology |
 |---|---|---|
-| **Cross-session HR MAE** | **4.15 bpm** | Leave-one-session-out, mean of 2 holdouts (3.89 / 4.41) |
-| Within ±5 bpm | 65–68% | Per-window, on never-seen test session |
-| Bias | +0.94 / +3.02 bpm | Slight positive offset, ~2 bpm avg |
+| **Cross-session HR MAE (within domain)** | **4.15 bpm** | Leave-one-session-out, mean of 2 holdouts (3.89 / 4.41) |
+| **Cross-environment HR MAE (out of domain)** | **17.77 bpm** | New room + patch antennas, single session, [`bedroom_1` log](./docs/HOME_PILOT_LOG.md) |
+| Within ±5 bpm (within domain) | 65–68% | Per-window, on never-seen test session |
+| Bias (within domain) | +0.94 / +3.02 bpm | Slight positive offset, ~2 bpm avg |
 | Hardware cost per node pair | **~$50** | 2x ESP32-S3 + antennas + pigtails |
-| Dataset | 4 paired captures, 1 subject | ~8 minutes total real-hardware data |
-| Comparison: PhaseBeat (INFOCOM 2017) | 1.5 bpm | Intel 5300 NIC ($500/node) |
+| Dataset | 4 paired captures, 1 subject, 1 room, 1 antenna type | ~8 minutes total real-hardware data |
+| Comparison: PhaseBeat (INFOCOM 2017) | 1.5 bpm | Intel 5300 NIC ($500/node), within domain |
 
 Full methodology: [RESULTS.md](./RESULTS.md). Roadmap: [ROADMAP.md](./ROADMAP.md).
 

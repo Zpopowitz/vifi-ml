@@ -18,6 +18,17 @@ For the live milestone plan see `docs/AUDIT_PLAN.md`; this doc is the
 
 ### A1. Rolling-PCA subspace decomposition (Tier 1, highest ROI)
 
+**Scope honest:** the bedroom_1 17.77 bpm regression
+([`docs/HOME_PILOT_LOG.md`](./HOME_PILOT_LOG.md)) had three plausible
+contributing factors: antenna mismatch with training data, HR
+out-of-training-distribution, and room multipath. A1 addresses **only
+the third**, and arguably not the largest of the three. The expected
+near-term win from collecting bedroom_1 paired sessions with patch
+antennas and retraining `models_real/` (the short-term step in the
+home-pilot log) is likely larger than A1 in isolation. A1 is on the
+roadmap because cross-environment multipath robustness is the dominant
+long-term blocker once the training-distribution gap is closed.
+
 The dominant multipath structure of a room lives in the top 1–3
 principal components of the CSI covariance matrix. Subject vital signs
 live in lower-energy components. A sliding-window SVD (~30–60 s window),
@@ -238,3 +249,20 @@ rather than competing.
 - Competitive context (Emerald comparison, FMCW vs WiFi CSI, IP
   considerations): `docs/COMPETITIVE_LANDSCAPE.md`.
 - Sequenced milestone work: `docs/AUDIT_PLAN.md`.
+
+---
+
+## What's wired today
+
+| Item | Status | Notes |
+|---|---|---|
+| A1 — `subtract_top_components` | **wired** | `multipath.py` + `preprocess.build_envelope_from_amps`; controlled by `VIFI_PCA_COMPONENTS_REMOVED` (default 0 = no-op). |
+| A1 — `RollingPCASuppressor` | stub | `multipath.py` — `update()`/`transform()` raise `NotImplementedError`. xfail tests in `tests/test_multipath.py` lock the contract. |
+| Train/serve K version barrier | **wired** | `metadata.json::pca_k` + `inference_worker._resolve_pca_k_from_metadata` refuses mismatched starts. |
+| Envelope-builder consolidation | **wired** | Four formerly-duplicated sites (`api.py` ×2, `tools/inference_worker.py`, `preprocess.py`) collapsed to one canonical: `preprocess.build_envelope_from_amps`. Parity locked by `tests/test_envelope_builder_parity.py`. |
+| MAE-vs-Polar quality gate | **wired** | `tools/first_capture_report.py` emits WARN at MAE≥8 bpm, CRITICAL at MAE≥12 bpm. |
+| A2 — adaptive baseline EMA | not started | spec only |
+| A3 — tighter spectral gating | not started | spec only |
+| A4 — reference antenna | not started | hardware-gated |
+| A5–A7 | not started | spec only |
+| B1–B4 | not started | M3+ |
