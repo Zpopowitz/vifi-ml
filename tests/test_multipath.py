@@ -126,6 +126,25 @@ def test_subtract_top_components_dtype_preserved():
         assert out.dtype == dtype
 
 
+def test_subtract_top_components_rescues_svd_failure(monkeypatch):
+    """LAPACK SVD can occasionally fail to converge on near-singular
+    inputs (rare but real on ARM OpenBLAS in particular). The function
+    must degrade to a no-op rather than crash the inference window —
+    the suppressor is best-effort, one stuck window is acceptable;
+    crashing the patient's session is not."""
+    x = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+    def _broken_svd(*args, **kwargs):
+        raise np.linalg.LinAlgError("synthetic non-convergence")
+
+    monkeypatch.setattr(np.linalg, "svd", _broken_svd)
+    out = subtract_top_components(x, k=1)
+    # No-op fallback: returns a copy of input.
+    np.testing.assert_array_equal(out, x)
+    # AND it's a copy, not the original.
+    assert out is not x
+
+
 # ---------------------------------------------------------------------------
 # RollingPCASuppressor — interface spec (xfail until implemented)
 # ---------------------------------------------------------------------------

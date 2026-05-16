@@ -86,7 +86,15 @@ def subtract_top_components(x: np.ndarray, k: int) -> np.ndarray:
     # SVD: x = U @ diag(s) @ Vt
     # Top-K reconstruction: U[:, :k] @ diag(s[:k]) @ Vt[:k, :]
     # Residual: x - top-K reconstruction
-    u, s, vt = np.linalg.svd(x, full_matrices=False)
+    # LinAlgError rescue: on rare LAPACK non-convergence (typically a
+    # pathological near-singular CSI window on ARM OpenBLAS), degrade
+    # gracefully to a no-op rather than crash the inference window.
+    # The suppressor is best-effort; one stuck window is acceptable.
+    try:
+        u, s, vt = np.linalg.svd(x, full_matrices=False)
+    except np.linalg.LinAlgError as e:
+        log.warning("SVD non-convergence in subtract_top_components: %s", e)
+        return x.copy()
     k_eff = min(k, len(s))
     top_k = (u[:, :k_eff] * s[:k_eff]) @ vt[:k_eff, :]
     return (x - top_k).astype(x.dtype)

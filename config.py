@@ -88,6 +88,23 @@ MIN_PACKETS_PER_WINDOW: int = _env_int("VIFI_MIN_PACKETS_PER_WINDOW", 16)
 # unstable below ~64 samples.
 MIN_SAMPLES_PER_GRID: int = _env_int("VIFI_MIN_SAMPLES_PER_GRID", 64)
 
+# Multipath A1 (rolling-PCA subspace decomposition) — see
+# `docs/FUTURE_ARCHITECTURE.md` §A1 and `multipath.py`. K=0 is a no-op
+# (preserves pre-A1 behavior); K=2 is the recommended starting value
+# once ablations on real captures support it. The K value is BAKED INTO
+# THE MODEL's metadata.json on training and verified at worker boot —
+# do not change at runtime without a compatible retrain (`tools/
+# retrain_on_real.py`).
+PCA_COMPONENTS_REMOVED: int = _env_int("VIFI_PCA_COMPONENTS_REMOVED", 0)
+
+# Rolling-PCA window length (seconds) — how much CSI history the
+# rolling suppressor uses to estimate the multipath subspace. Stub
+# default until ablation lands. See `multipath.RollingPCASuppressor`.
+PCA_WINDOW_S: float = _env_float("VIFI_PCA_WINDOW_S", 60.0)
+
+# Rolling-PCA subspace recompute cadence (seconds).
+PCA_UPDATE_EVERY_S: float = _env_float("VIFI_PCA_UPDATE_EVERY_S", 30.0)
+
 
 def validate_at_boot() -> None:
     """Sanity check that band edges fit inside Nyquist for the default
@@ -119,4 +136,14 @@ def validate_at_boot() -> None:
     if FFT_ZEROPAD_FACTOR not in (1, 2, 4, 8, 16):
         raise RuntimeError(
             f"FFT_ZEROPAD_FACTOR={FFT_ZEROPAD_FACTOR} should be a power of 2 in [1, 16]"
+        )
+    if PCA_COMPONENTS_REMOVED < 0 or PCA_COMPONENTS_REMOVED > 16:
+        raise RuntimeError(
+            f"PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED} out of range [0, 16]"
+        )
+    if PCA_WINDOW_S <= 0 or PCA_WINDOW_S > 600:
+        raise RuntimeError(f"PCA_WINDOW_S={PCA_WINDOW_S} out of range (0, 600]")
+    if PCA_UPDATE_EVERY_S <= 0 or PCA_UPDATE_EVERY_S > PCA_WINDOW_S:
+        raise RuntimeError(
+            f"PCA_UPDATE_EVERY_S={PCA_UPDATE_EVERY_S} must be in (0, PCA_WINDOW_S={PCA_WINDOW_S}]"
         )

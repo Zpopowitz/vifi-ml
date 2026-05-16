@@ -56,7 +56,11 @@ from api_internals.bundles import (
     load_synthetic_models as _load_synthetic_models,
 )
 from data_gen import generate_sample
-from preprocess import FEATURE_SET_VERSION, extract_features
+from preprocess import (
+    FEATURE_SET_VERSION,
+    build_envelope_from_amps,
+    extract_features,
+)
 
 MODEL_DIR = Path("models")
 REAL_MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
@@ -272,9 +276,10 @@ def _parse_capture_text(text: str, packet_rate_hz: Optional[float]):
 def _build_envelope(
     win_amps: np.ndarray, win_ts: np.ndarray, fs_resample: float
 ) -> Optional[np.ndarray]:
-    """Resample + variance-pick + normalize -> 1-D envelope ready for features.
+    """Resample (T, n_sub) amplitudes onto a uniform grid, then delegate
+    envelope-building to the canonical `preprocess.build_envelope_from_amps`.
 
-    Returns None if the window is too short.
+    Returns None if the resampled grid would be too short.
     """
     grid = np.arange(win_ts[0], win_ts[-1], 1.0 / fs_resample)
     if grid.size < 64:
@@ -282,12 +287,7 @@ def _build_envelope(
     resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
     for s in range(win_amps.shape[1]):
         resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
-    x = resampled - np.mean(resampled, axis=0, keepdims=True)
-    variances = np.var(x, axis=0)
-    k = min(8, x.shape[1])
-    picked = x[:, np.argsort(variances)[-k:]]
-    std = np.std(picked, axis=0, keepdims=True) + 1e-9
-    return np.mean(picked / std, axis=1).astype(np.float32)
+    return build_envelope_from_amps(resampled)
 
 
 def _resolve_calibration(
@@ -635,19 +635,10 @@ def _confidence_from_feature(feats: np.ndarray, idx: int) -> float:
     return float(np.clip(val, 0.0, 1.0))
 
 
-def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
-    """Collapse (T, n_sub) CSI amplitudes to a 1-D envelope."""
-    if csi_amp.ndim == 1:
-        return csi_amp.astype(np.float32)
-    if csi_amp.shape[1] == 1:
-        return csi_amp[:, 0].astype(np.float32)
-    x = csi_amp - np.mean(csi_amp, axis=0, keepdims=True)
-    variances = np.var(x, axis=0)
-    k = min(8, csi_amp.shape[1])
-    top = np.argsort(variances)[-k:]
-    picked = x[:, top]
-    std = np.std(picked, axis=0, keepdims=True) + 1e-9
-    return np.mean(picked / std, axis=1).astype(np.float32)
+# `_csi_to_envelope` was a duplicate of `preprocess.build_envelope_from_amps`.
+# Kept as a re-export so `api_internals.routes_predict` keeps importing this
+# name; new code should import from `preprocess` directly.
+_csi_to_envelope = build_envelope_from_amps
 
 
 # ---------------------------------------------------------------------------

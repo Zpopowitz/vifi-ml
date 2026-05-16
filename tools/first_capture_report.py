@@ -491,6 +491,25 @@ def run_report(
     )
     print(f"      HR bias:            {bias:+.2f} bpm")
     print(f"      within +-5 bpm:     {within_5 * 100:.1f}%")
+    # MAE-vs-Polar quality gate (CEO Decision 3A). The 2026-05-16 bedroom_1
+    # home pilot shipped 17.77 bpm MAE silently — the existing quality
+    # gates check packet rate + duration + geometry but not prediction
+    # accuracy. This catches "model defaulted to its training-distribution
+    # prior" failures whenever a Polar log is available.
+    HR_MAE_WARN_BPM = 8.0
+    HR_MAE_CRITICAL_BPM = 12.0
+    if mae >= HR_MAE_CRITICAL_BPM:
+        print(
+            f"      [CRITICAL] HR MAE {mae:.2f} bpm >= {HR_MAE_CRITICAL_BPM} bpm"
+            f" — likely cross-environment regression. See"
+            f" docs/HOME_PILOT_LOG.md for the bedroom_1 case study."
+        )
+    elif mae >= HR_MAE_WARN_BPM:
+        print(
+            f"      [WARN] HR MAE {mae:.2f} bpm >= {HR_MAE_WARN_BPM} bpm"
+            f" — investigate antenna geometry, calibration mode, and"
+            f" whether the training distribution covers this HR range."
+        )
     print()
     print("first 10 windows:")
     if emit_intervals and q_low_model is not None:

@@ -33,9 +33,11 @@ from config import (
     FILTER_BAND_HZ,
     HR_BAND_HZ,
     MIN_SAMPLES_PER_GRID,
+    PCA_COMPONENTS_REMOVED,
     RR_BAND_HZ,
     TOP_K_SUBCARRIERS,
 )
+from multipath import subtract_top_components
 
 log = logging.getLogger("vifi.preprocess")
 
@@ -322,16 +324,46 @@ def estimate_cfo_hz(complex_csi: np.ndarray, fs: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _build_envelope_from_complex(complex_csi: np.ndarray) -> np.ndarray:
-    """Variance-rank top-K subcarriers, normalize, average. Centralized
-    here so amplitude + phase paths share a single implementation."""
-    amps = np.abs(complex_csi)
-    x = amps - np.mean(amps, axis=0, keepdims=True)
+def build_envelope_from_amps(csi_amp: np.ndarray) -> np.ndarray:
+    """Canonical envelope builder: (T, n_sub) amplitudes -> 1-D envelope.
+
+    Recipe (single source of truth, formerly duplicated across
+    `api.py::_csi_to_envelope`, `tools/inference_worker.py::_csi_to_envelope`,
+    `api.py::_build_envelope`, and this module's `_build_envelope_from_complex`):
+
+      1. Zero-mean each subcarrier.
+      2. (NEW, A1) Project out the top-K principal components if
+         `PCA_COMPONENTS_REMOVED > 0` — multipath subspace subtraction.
+         K=0 is a no-op preserving pre-A1 behavior.
+      3. Variance-rank subcarriers; retain the top `TOP_K_SUBCARRIERS`.
+      4. Per-subcarrier z-normalize.
+      5. Mean across the retained subcarriers.
+
+    Shape shortcuts: 1-D input is returned as-is (float32); single-subcarrier
+    input is squeezed.
+
+    PCA-K is BAKED INTO THE MODEL via `metadata.json` and verified at worker
+    boot (see `tools/inference_worker.py::_resolve_pca_k_from_metadata`).
+    Changing K at runtime without a compatible retrain causes train/serve
+    feature-distribution skew.
+    """
+    if csi_amp.ndim == 1:
+        return csi_amp.astype(np.float32)
+    if csi_amp.shape[1] == 1:
+        return csi_amp[:, 0].astype(np.float32)
+    x = csi_amp - np.mean(csi_amp, axis=0, keepdims=True)
+    if PCA_COMPONENTS_REMOVED > 0:
+        x = subtract_top_components(x, k=PCA_COMPONENTS_REMOVED)
     variances = np.var(x, axis=0)
     k = min(TOP_K_SUBCARRIERS, x.shape[1])
     picked = x[:, np.argsort(variances)[-k:]]
     std = np.std(picked, axis=0, keepdims=True) + 1e-9
     return np.mean(picked / std, axis=1).astype(np.float32)
+
+
+def _build_envelope_from_complex(complex_csi: np.ndarray) -> np.ndarray:
+    """Complex CSI -> 1-D envelope. Thin wrapper over `build_envelope_from_amps`."""
+    return build_envelope_from_amps(np.abs(complex_csi))
 
 
 def extract_features_v2(

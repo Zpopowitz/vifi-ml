@@ -40,6 +40,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
+from config import PCA_COMPONENTS_REMOVED, PCA_UPDATE_EVERY_S, PCA_WINDOW_S
 from data_gen import generate_dataset
 from preprocess import FEATURE_NAMES, FEATURE_SET_VERSION, preprocess_dataset
 
@@ -232,6 +233,13 @@ def train(
                 "rr_tol_bpm": RR_TOL_BPM,
                 "fs": float(ds["fs"]),
                 "duration_s": float(ds["duration_s"]),
+                # Multipath A1 hyperparams (PCA subspace decomposition).
+                # Worker compares these to runtime env at boot and refuses
+                # to load a model with a different K — see
+                # `tools/inference_worker.py::_resolve_pca_k_from_metadata`.
+                "pca_k": PCA_COMPONENTS_REMOVED,
+                "pca_window_s": PCA_WINDOW_S,
+                "pca_update_every_s": PCA_UPDATE_EVERY_S,
                 "hyperparameters": hyperparams.to_dict(),
                 "training_distribution": _distribution_stats(y_hr, y_rr),
                 "metrics": asdict(report),

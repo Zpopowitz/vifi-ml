@@ -110,7 +110,10 @@ def list_versions(base: Path) -> list[VersionInfo]:
                 ctime=entry.stat().st_ctime,
             )
         )
-    versions.sort(key=lambda v: v.ctime)
+    # Sort by (ctime, sha) so the order is deterministic even when two
+    # promotes complete inside the same filesystem-second — iterdir()
+    # order is undefined and was the source of an intermittent test flake.
+    versions.sort(key=lambda v: (v.ctime, v.sha))
     return versions
 
 

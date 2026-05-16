@@ -22,6 +22,39 @@ from xgboost import XGBRegressor
 from preprocess import FEATURE_SET_VERSION
 
 
+def _check_pca_k_compat(meta: dict, *, model_dir: Path) -> None:
+    """Refuse to load a model whose training-time `pca_k` doesn't match
+    the runtime PCA env. Same policy as
+    `tools/inference_worker._resolve_pca_k_from_metadata`; duplicated
+    here because the API server reads models through a different code
+    path. Raises HTTPException 503 so the dev API still surfaces a
+    diagnostic message rather than crashing the worker process."""
+    from config import PCA_COMPONENTS_REMOVED  # noqa: PLC0415
+
+    model_pca_k = meta.get("pca_k")
+    if model_pca_k is None:
+        if PCA_COMPONENTS_REMOVED != 0:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"model at {model_dir} has no pca_k in metadata "
+                    f"(legacy/pre-A1) but runtime "
+                    f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                    f"Train/serve skew. Retrain with the same K, or unset env."
+                ),
+            )
+        return
+    if int(model_pca_k) != int(PCA_COMPONENTS_REMOVED):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"model at {model_dir} trained with pca_k={model_pca_k} but "
+                f"runtime VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                f"Train/serve skew. Set env to match the model, or retrain."
+            ),
+        )
+
+
 def load_synthetic_models(model_dir: Path):
     """Eager loader (kept for tests that want a hard error on missing
     models, instead of the SyntheticModelBundle's 503 path).
@@ -87,6 +120,7 @@ class SyntheticModelBundle:
                 ),
             )
         hr, rr, meta = load_synthetic_models(self.model_dir)
+        _check_pca_k_compat(meta, model_dir=self.model_dir)
         self.hr = hr
         self.rr = rr
         self.metadata = meta
@@ -148,6 +182,7 @@ class RealModelBundle:
                     f"'{FEATURE_SET_VERSION}'. Retrain the model."
                 ),
             )
+        _check_pca_k_compat(meta, model_dir=self.model_dir)
         hr = XGBRegressor()
         hr.load_model(hr_path)
         self.hr = hr

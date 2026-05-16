@@ -159,8 +159,16 @@ def test_list_versions_skips_orphans(tmp_path):
 
 
 def test_list_versions_returns_oldest_first(tmp_path):
+    import time
+
     base = tmp_path / "models_real"
     sha1 = promote(_make_source(tmp_path, n_train=44), base)
+    # Sleep so the two promotes have distinguishable ctimes — otherwise
+    # the test was relying on iterdir() insertion-order luck, which is
+    # undefined. list_versions sorts by (ctime, sha); when ctimes tie,
+    # sha-alphabetical wins, which is deterministic but not insertion
+    # order.
+    time.sleep(0.02)
     # Different content → second version, slightly later.
     src2 = tmp_path / "s2"
     src2.mkdir()

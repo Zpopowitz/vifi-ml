@@ -49,7 +49,7 @@ from modules.bus import (  # noqa: E402
     rr_predicted,
 )
 from observability import install_worker_metrics  # noqa: E402
-from preprocess import extract_features  # noqa: E402
+from preprocess import build_envelope_from_amps, extract_features  # noqa: E402
 
 log = logging.getLogger("vifi.inference_worker")
 
@@ -82,23 +82,10 @@ class _Window:
         return len(self._buf)
 
 
-def _csi_to_envelope(csi_amp: np.ndarray) -> np.ndarray:
-    """Collapse (T, n_sub) amplitudes to a 1-D envelope.
-
-    Same recipe as api._csi_to_envelope: zero-mean each subcarrier,
-    pick top-K by variance, normalize, mean across subcarriers.
-    """
-    if csi_amp.ndim == 1:
-        return csi_amp.astype(np.float32)
-    if csi_amp.shape[1] == 1:
-        return csi_amp[:, 0].astype(np.float32)
-    x = csi_amp - np.mean(csi_amp, axis=0, keepdims=True)
-    variances = np.var(x, axis=0)
-    k = min(8, csi_amp.shape[1])
-    top = np.argsort(variances)[-k:]
-    picked = x[:, top]
-    std = np.std(picked, axis=0, keepdims=True) + 1e-9
-    return np.mean(picked / std, axis=1).astype(np.float32)
+# `_csi_to_envelope` was a duplicate of `preprocess.build_envelope_from_amps`.
+# Kept as a re-export so existing call sites in this module keep working;
+# new code should import from `preprocess` directly.
+_csi_to_envelope = build_envelope_from_amps
 
 
 def _resample(
@@ -141,6 +128,45 @@ class _ModelBundle:
         return self.rr_model is not None
 
 
+def _resolve_pca_k_from_metadata(meta: dict) -> None:
+    """Verify the loaded model's `pca_k` matches the runtime PCA env.
+
+    `build_envelope_from_amps` applies PCA based on
+    `config.PCA_COMPONENTS_REMOVED`, read from `VIFI_PCA_COMPONENTS_REMOVED`
+    at process start. The model was trained with whatever K was in the env
+    at training time, captured in `metadata.json::pca_k`. A mismatch means
+    the worker computes features from a different distribution than the
+    model was fit on — silent train/serve skew, the exact failure mode
+    the bedroom_1 home-pilot regression highlighted.
+
+    Policy: log + refuse to start on mismatch. Operators who want to
+    A/B test K must retrain (or set `VIFI_PCA_COMPONENTS_REMOVED` to
+    match the model artifact before starting the worker).
+
+    Legacy models without `pca_k` are assumed K=0 (pre-A1 behavior),
+    which preserves backward compatibility — but ONLY if the runtime
+    env also says K=0. A legacy model + K>0 runtime is a hard fail.
+    """
+    from config import PCA_COMPONENTS_REMOVED  # noqa: PLC0415
+
+    model_pca_k = meta.get("pca_k")
+    if model_pca_k is None:
+        # Pre-A1 model. Safe only if runtime is also K=0.
+        if PCA_COMPONENTS_REMOVED != 0:
+            raise RuntimeError(
+                f"Model has no pca_k in metadata (legacy/pre-A1) but runtime "
+                f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                f"Train/serve skew. Retrain with the same K, or unset the env."
+            )
+        return
+    if int(model_pca_k) != int(PCA_COMPONENTS_REMOVED):
+        raise RuntimeError(
+            f"Model trained with pca_k={model_pca_k} but runtime "
+            f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+            f"Train/serve skew. Set the env to match the model, or retrain."
+        )
+
+
 def _load_model(model: str = "synthetic") -> _ModelBundle:
     """Load HR + optional RR models.
 
@@ -174,6 +200,7 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
     import json
 
     meta = json.loads(meta_path.read_text())
+    _resolve_pca_k_from_metadata(meta)
     feature_names = list(meta.get("feature_names", []))
     hr_ratio_idx: Optional[int] = None
     rr_ratio_idx: Optional[int] = None
