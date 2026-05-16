@@ -2,7 +2,7 @@
 
 Single-page static site for [ViFi](https://github.com/Zpopowitz/vifi-ml). Built with Astro + Tailwind. Hosted on Vercel. Deployed at **vifi.health**.
 
-The engineering project lives in the sibling repo [`vifi-ml`](https://github.com/Zpopowitz/vifi-ml). This repo is marketing-only.
+Lives at `site/` inside the [`vifi-ml`](https://github.com/Zpopowitz/vifi-ml) monorepo (merged in via `git subtree` from the now-archived `vifi-site` repo). All paths below are relative to `site/`. Vercel's project **Root Directory** must be set to `site`.
 
 ---
 

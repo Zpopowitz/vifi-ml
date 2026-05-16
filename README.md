@@ -346,6 +346,8 @@ vifi-ml/
 ├── docs/
 │   └── multi_subject_test_protocol.md  # capture protocol for the walk-in test
 │
+├── site/                      # marketing site (Astro + Tailwind, deploys to vifi.health) -- see site/README.md
+│
 ├── scripts/                   # PowerShell convenience wrappers
 │   ├── capture_session.ps1
 │   └── preflight_check.ps1
