@@ -71,6 +71,45 @@ def test_envelope_handles_single_subcarrier_input():
     np.testing.assert_array_equal(out, np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
 
+def test_envelope_reads_pca_k_at_call_time_not_module_import_time():
+    """Regression test for adversarial finding C-1: the version barrier
+    is bypassable if `build_envelope_from_amps` snapshots
+    PCA_COMPONENTS_REMOVED at module-import time. Any test or in-process
+    pipeline that mutates `config.PCA_COMPONENTS_REMOVED` (via
+    importlib.reload or direct attribute set) should be reflected by
+    the next call to the envelope builder.
+
+    This proves the applier reads `config.PCA_COMPONENTS_REMOVED` at
+    call time — the same way `_check_pca_k_compat` and
+    `_resolve_pca_k_from_metadata` do — so they can never disagree.
+    """
+    import os
+    from unittest.mock import patch
+
+    import config
+    from preprocess import build_envelope_from_amps
+
+    x = _sample_csi(seed=42, t=64, s=16)
+
+    # Sanity: with K=0, builder produces the pre-A1 envelope.
+    with patch.object(config, "PCA_COMPONENTS_REMOVED", 0):
+        out_k0 = build_envelope_from_amps(x)
+
+    # Now flip the runtime config to K=2 in-process — exactly what a
+    # test fixture or hot-reload pipeline would do.
+    with patch.object(config, "PCA_COMPONENTS_REMOVED", 2):
+        out_k2 = build_envelope_from_amps(x)
+
+    # If the builder snapshotted the value at module import (C-1 bug),
+    # out_k2 would equal out_k0. Reading at call time makes them differ
+    # because K=2 actually projects out 2 principal components.
+    assert not np.array_equal(out_k0, out_k2), (
+        "build_envelope_from_amps snapshotted PCA_COMPONENTS_REMOVED at "
+        "module import time — version barrier bypassed. Read config.PCA_* "
+        "at call time, not via `from config import` at module top."
+    )
+
+
 def test_envelope_k0_pca_matches_pre_a1_behavior():
     """Default PCA_COMPONENTS_REMOVED=0 must be a strict no-op vs the
     pre-A1 recipe (zero-mean -> variance-rank top-K -> normalize -> mean).

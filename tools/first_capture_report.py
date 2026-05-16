@@ -468,7 +468,7 @@ def run_report(
 
     if not rows:
         print("[!] no windows scored. Check --start-offset and timelines.")
-        return
+        return "no_data"
 
     # Filter for stats: if intervals enabled, exclude suppressed windows from MAE
     scored_rows = [r for r in rows if not r.get("suppressed", False)]
@@ -496,15 +496,30 @@ def run_report(
     # gates check packet rate + duration + geometry but not prediction
     # accuracy. This catches "model defaulted to its training-distribution
     # prior" failures whenever a Polar log is available.
+    #
+    # Thresholds:
+    #   WARN at >= 8 bpm: roughly 2x the in-domain target (4.15 bpm). Most
+    #                     within-domain captures hit < 5 bpm; >=8 is "look
+    #                     into this" but might be a hard session.
+    #   CRITICAL at >=12 bpm: well above any plausible within-domain noise;
+    #                         strongly indicative of cross-environment
+    #                         regression. Bedroom_1 hit 17.77 → would trip.
+    # On CRITICAL the report still completes (the per-window detail is
+    # useful for debugging), but main() exits non-zero so CI/CD that
+    # invokes this script as a quality gate sees the failure via $?.
     HR_MAE_WARN_BPM = 8.0
     HR_MAE_CRITICAL_BPM = 12.0
+    quality_status = "ok"
     if mae >= HR_MAE_CRITICAL_BPM:
+        quality_status = "critical"
         print(
             f"      [CRITICAL] HR MAE {mae:.2f} bpm >= {HR_MAE_CRITICAL_BPM} bpm"
             f" — likely cross-environment regression. See"
             f" docs/HOME_PILOT_LOG.md for the bedroom_1 case study."
+            f" (Process will exit 2 to gate CI/CD.)"
         )
     elif mae >= HR_MAE_WARN_BPM:
+        quality_status = "warn"
         print(
             f"      [WARN] HR MAE {mae:.2f} bpm >= {HR_MAE_WARN_BPM} bpm"
             f" — investigate antenna geometry, calibration mode, and"
@@ -553,6 +568,8 @@ def run_report(
         }
         json_out.write_text(json.dumps(payload, indent=2))
         print(f"\nwrote {json_out}")
+
+    return quality_status
 
 
 def main() -> None:
@@ -615,7 +632,7 @@ def main() -> None:
         help="suppress predictions when interval width exceeds this (default 15)",
     )
     args = p.parse_args()
-    run_report(
+    status = run_report(
         capture_path=args.capture,
         hr_log_path=args.hr_log,
         start_offset_s=args.start_offset,
@@ -632,6 +649,11 @@ def main() -> None:
         emit_intervals=args.emit_intervals,
         max_interval_bpm=args.max_interval_bpm,
     )
+    # Quality gate: non-zero exit so CI/CD pipelines that invoke this script
+    # as a regression check see the failure via $?. The full report is
+    # already printed at this point; this only affects the process exit code.
+    if status == "critical":
+        sys.exit(2)
 
 
 if __name__ == "__main__":

@@ -146,23 +146,36 @@ def _resolve_pca_k_from_metadata(meta: dict) -> None:
     Legacy models without `pca_k` are assumed K=0 (pre-A1 behavior),
     which preserves backward compatibility — but ONLY if the runtime
     env also says K=0. A legacy model + K>0 runtime is a hard fail.
-    """
-    from config import PCA_COMPONENTS_REMOVED  # noqa: PLC0415
 
+    Strict type/value validation: rejects malformed `pca_k` types
+    (string, float, bool) instead of silently coercing them via `int()`
+    — a `metadata.json` with `pca_k: 1.7` would otherwise pass an
+    `int(1.7) == int(1)` equality while the model was trained with a
+    different effective K. bool is excluded explicitly because Python
+    treats `True`/`False` as int instances.
+    """
+    import config  # noqa: PLC0415
+
+    pca_env = config.PCA_COMPONENTS_REMOVED
     model_pca_k = meta.get("pca_k")
     if model_pca_k is None:
         # Pre-A1 model. Safe only if runtime is also K=0.
-        if PCA_COMPONENTS_REMOVED != 0:
+        if pca_env != 0:
             raise RuntimeError(
                 f"Model has no pca_k in metadata (legacy/pre-A1) but runtime "
-                f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                f"VIFI_PCA_COMPONENTS_REMOVED={pca_env}. "
                 f"Train/serve skew. Retrain with the same K, or unset the env."
             )
         return
-    if int(model_pca_k) != int(PCA_COMPONENTS_REMOVED):
+    if isinstance(model_pca_k, bool) or not isinstance(model_pca_k, int):
+        raise RuntimeError(
+            f"Model has malformed pca_k={model_pca_k!r} (type "
+            f"{type(model_pca_k).__name__}); expected int. Retrain to fix metadata."
+        )
+    if model_pca_k != pca_env:
         raise RuntimeError(
             f"Model trained with pca_k={model_pca_k} but runtime "
-            f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+            f"VIFI_PCA_COMPONENTS_REMOVED={pca_env}. "
             f"Train/serve skew. Set the env to match the model, or retrain."
         )
 
@@ -494,6 +507,16 @@ def main() -> None:
         level=args.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+
+    # Hard-fail on out-of-range DSP / PCA env vars BEFORE loading any model
+    # or accepting any packets. Without this guard the worker would accept
+    # `VIFI_PCA_COMPONENTS_REMOVED=99999`, the version barrier would match
+    # against a malformed model artifact, and `subtract_top_components(K=99999)`
+    # would silently subtract the entire matrix on every window — exactly the
+    # silent-skew failure mode this PR was sold as preventing.
+    from config import validate_at_boot  # noqa: PLC0415
+
+    validate_at_boot()
 
     bus = bus_from_env()
     bundle = _load_model(args.model)

@@ -28,34 +28,62 @@ def _check_pca_k_compat(meta: dict, *, model_dir: Path) -> None:
     `tools/inference_worker._resolve_pca_k_from_metadata`; duplicated
     here because the API server reads models through a different code
     path. Raises HTTPException 503 so the dev API still surfaces a
-    diagnostic message rather than crashing the worker process."""
-    from config import PCA_COMPONENTS_REMOVED  # noqa: PLC0415
+    diagnostic message rather than crashing the worker process.
 
+    Strict type/value validation: rejects malformed `pca_k` types
+    (string, float, bool) instead of silently coercing them via `int()`
+    — a `metadata.json` with `pca_k: 1.7` would otherwise pass an
+    `int(1.7) == int(1)` equality check while having been trained
+    with a different effective K. JSON has no native int/float
+    distinction so bool also passes `isinstance(int)`; exclude it.
+    """
+    import config  # noqa: PLC0415
+
+    pca_env = config.PCA_COMPONENTS_REMOVED
     model_pca_k = meta.get("pca_k")
     if model_pca_k is None:
-        if PCA_COMPONENTS_REMOVED != 0:
+        if pca_env != 0:
             raise HTTPException(
                 status_code=503,
                 detail=(
                     f"model at {model_dir} has no pca_k in metadata "
                     f"(legacy/pre-A1) but runtime "
-                    f"VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                    f"VIFI_PCA_COMPONENTS_REMOVED={pca_env}. "
                     f"Train/serve skew. Retrain with the same K, or unset env."
                 ),
             )
         return
-    if int(model_pca_k) != int(PCA_COMPONENTS_REMOVED):
+    if isinstance(model_pca_k, bool) or not isinstance(model_pca_k, int):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"model at {model_dir} has malformed pca_k="
+                f"{model_pca_k!r} (type {type(model_pca_k).__name__}); "
+                f"expected int. Retrain to fix metadata."
+            ),
+        )
+    if model_pca_k != pca_env:
         raise HTTPException(
             status_code=503,
             detail=(
                 f"model at {model_dir} trained with pca_k={model_pca_k} but "
-                f"runtime VIFI_PCA_COMPONENTS_REMOVED={PCA_COMPONENTS_REMOVED}. "
+                f"runtime VIFI_PCA_COMPONENTS_REMOVED={pca_env}. "
                 f"Train/serve skew. Set env to match the model, or retrain."
             ),
         )
 
 
-def load_synthetic_models(model_dir: Path):
+def load_synthetic_models(model_dir: Path):  # noqa: D401
+    # See `_load_synthetic_models_impl` for the body. This wrapper enforces
+    # `_check_pca_k_compat` on every caller — the lazy bundle wrapper already
+    # does, but direct callers (tests, ad-hoc scripts, `tools/retrain_on_real`)
+    # would otherwise bypass the version barrier.
+    hr, rr, meta = _load_synthetic_models_impl(model_dir)
+    _check_pca_k_compat(meta, model_dir=model_dir)
+    return hr, rr, meta
+
+
+def _load_synthetic_models_impl(model_dir: Path):
     """Eager loader (kept for tests that want a hard error on missing
     models, instead of the SyntheticModelBundle's 503 path).
 

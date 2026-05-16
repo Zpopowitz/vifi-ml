@@ -27,17 +27,27 @@ import numpy as np
 from scipy.signal import butter, detrend, sosfiltfilt
 from scipy.signal.windows import hann
 
+import config
 from config import (
     EDGE_SUBCARRIER_GUARD,
     FFT_ZEROPAD_FACTOR,
     FILTER_BAND_HZ,
     HR_BAND_HZ,
     MIN_SAMPLES_PER_GRID,
-    PCA_COMPONENTS_REMOVED,
     RR_BAND_HZ,
     TOP_K_SUBCARRIERS,
 )
 from multipath import subtract_top_components
+
+# Intentional: PCA_COMPONENTS_REMOVED is NOT imported by name here. The check
+# functions in `tools/inference_worker._resolve_pca_k_from_metadata` and
+# `api_internals/bundles._check_pca_k_compat` read it via `from config import`
+# at call time, so they see the current attribute value after any
+# `importlib.reload(config)`. If this module snapshotted it via `from config
+# import PCA_COMPONENTS_REMOVED`, the check would see the new value while the
+# applier (`build_envelope_from_amps`) kept using the stale snapshot —
+# defeating the train/serve version barrier from any test or in-process
+# retrain pipeline that mutates env vars. Always read via `config.PCA_*`.
 
 log = logging.getLogger("vifi.preprocess")
 
@@ -352,8 +362,10 @@ def build_envelope_from_amps(csi_amp: np.ndarray) -> np.ndarray:
     if csi_amp.shape[1] == 1:
         return csi_amp[:, 0].astype(np.float32)
     x = csi_amp - np.mean(csi_amp, axis=0, keepdims=True)
-    if PCA_COMPONENTS_REMOVED > 0:
-        x = subtract_top_components(x, k=PCA_COMPONENTS_REMOVED)
+    # Read at call time, not module-import time — see note at top of file.
+    pca_k = config.PCA_COMPONENTS_REMOVED
+    if pca_k > 0:
+        x = subtract_top_components(x, k=pca_k)
     variances = np.var(x, axis=0)
     k = min(TOP_K_SUBCARRIERS, x.shape[1])
     picked = x[:, np.argsort(variances)[-k:]]
