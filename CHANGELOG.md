@@ -5,9 +5,91 @@ All notable changes to ViFi are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-05-16
+
+### Added — multipath A1 + envelope-builder consolidation + cross-environment story
+
+- **A1 multipath suppression wired into the live pipeline** (`multipath.py`,
+  `preprocess.py`). The rolling-PCA subspace decomposition described in
+  `docs/FUTURE_ARCHITECTURE.md` §A1 is now an opt-in step inside
+  `preprocess.build_envelope_from_amps`, gated by the new
+  `VIFI_PCA_COMPONENTS_REMOVED` env var. Default `K=0` preserves
+  pre-A1 behavior bit-for-bit. Set `K=2` to activate; ablation against
+  real captures will inform the production default.
+- **`tools/first_capture_report.py` MAE-vs-Polar quality gate.** When a
+  Polar log is supplied, the report now emits `[WARN]` at MAE ≥ 8 bpm and
+  `[CRITICAL]` at MAE ≥ 12 bpm. The bedroom_1 home pilot (17.77 bpm) would
+  trip the CRITICAL gate. The existing gates checked packet rate + duration
+  + geometry but never prediction accuracy — silent regressions made it to
+  the operator before this. Cites `docs/HOME_PILOT_LOG.md` in the
+  operator output for context.
+- **New SVD non-convergence rescue** in `multipath.subtract_top_components`.
+  Rare-but-real `np.linalg.LinAlgError` on near-singular matrices now logs a
+  warning and falls back to a no-op (`x.copy()`) rather than crashing the
+  inference window. The suppressor is best-effort; one stuck window beats a
+  killed patient session.
+
+### Changed — single source of truth for the envelope builder
+
+- **Four duplicated envelope-builder sites collapsed to one canonical**
+  `preprocess.build_envelope_from_amps`. Previously `api.py` (two copies),
+  `tools/inference_worker.py`, and `preprocess.py` each implemented the
+  variance-rank top-K recipe independently. Wiring any new preprocessing
+  step (like A1) into one site without the others produced silent
+  train/serve feature-distribution skew — the exact failure mode the
+  bedroom_1 regression highlighted. `api._csi_to_envelope` and
+  `tools/inference_worker._csi_to_envelope` are now aliases for the
+  canonical, and `api._build_envelope` delegates after its resample step.
+  Locked by `tests/test_envelope_builder_parity.py`.
+- **Model `metadata.json` schema extended** with `pca_k`, `pca_window_s`,
+  and `pca_update_every_s` — additive, fully backward-compatible. The
+  inference worker (`tools/inference_worker._resolve_pca_k_from_metadata`)
+  and the API model loaders (`api_internals/bundles._check_pca_k_compat`)
+  now refuse to load a model whose training-time K disagrees with the
+  runtime env, returning a clear diagnostic. Legacy pre-A1 models without
+  `pca_k` load cleanly when runtime K=0; reject with explanation when K>0.
+- **`tools/model_swap.list_versions` now sorts deterministically** by
+  `(ctime, sha)` instead of ctime alone. Two model promotes inside the
+  same filesystem-second previously produced undefined order, depending
+  on `iterdir()` insertion luck. The tiebreaker eliminates an intermittent
+  test flake and makes any "which is the latest" logic predictable.
+- **README + RESULTS retell the headline honestly.** The 4.15 bpm
+  cross-session HR MAE is now qualified as "within domain" (single subject,
+  single room, single antenna pair), with the bedroom_1 17.77 bpm
+  out-of-domain result called out alongside it. Investors, grant reviewers,
+  and FDA pre-sub consultants who read the README first now see the real
+  story instead of the un-caveated number.
+
+### Documentation
+
+- **`docs/FUTURE_ARCHITECTURE.md` honest-scope addendum.** Adds a
+  "Scope honest" disclaimer to §A1 noting it addresses room multipath
+  (one of three factors driving the bedroom_1 regression — antenna
+  mismatch and HR out-of-distribution are likely larger) and a
+  "What's wired today" status table tracking A1 / A2-A7 / B1-B4
+  implementation state.
+- **CEO plan + autoplan addendum** (in `~/.gstack/projects/vifi-ml/`)
+  document the strategic rationale: defer A1 wire-in until envelope
+  builders are consolidated and `pca_k` is in `metadata.json` —
+  preconditions met by this PR.
+
+### Tests
+
+- `tests/test_envelope_builder_parity.py` — locks the 4-site
+  consolidation. Any re-introduction of a duplicate envelope-builder
+  fails loudly. Includes a K=0 PCA bit-for-bit no-op test that proves
+  the wire-in is behavior-preserving by default.
+- `tests/test_model_pca_metadata.py` — locks the train/serve version
+  barrier. Legacy + K=0 OK; legacy + K>0 refused; matched K loads;
+  mismatched K refused; `train.py` writes the new fields.
+- `tests/test_multipath.py` — adds `test_subtract_top_components_rescues_svd_failure`.
+- `tests/test_model_swap.py` — fixes the intermittent flake in
+  `test_list_versions_returns_oldest_first` (sleep so ctimes differ).
+
+## [0.2.0] - 2026-05-15
 
 ### Added — clinical UI: login + room dropdown
+
 - **`GET /api/v1/rooms`** — discovers patient_ids that have at least
   one stream on the bus. Returns `[{patient_id, topics_with_data,
   last_seen_ms}, ...]` sorted by recency. 5-second server-side cache
