@@ -1,0 +1,198 @@
+---
+import { ViewTransitions } from "astro:transitions";
+import Analytics from "@vercel/analytics/astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "ViFi — Contactless patient vitals from $44 of WiFi hardware",
+  description = "ViFi is building a 510(k)-track contactless patient monitor on commodity ESP32 hardware. 4.15 bpm cross-session HR accuracy on real hardware at ~1/20th the cost of bedside monitors.",
+} = Astro.props;
+
+const url = Astro.site
+  ? new URL(Astro.url.pathname, Astro.site).toString()
+  : "https://vifi.health";
+---
+
+<!doctype html>
+<html lang="en" class="bg-ink text-paper antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={url} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={url} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- Webfont -->
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+
+    <!-- Astro View Transitions: cross-fade between pages and keep
+         transition:persist elements (header, footer) mounted across nav. -->
+    <ViewTransitions />
+    <!-- Structured data for search engines + AI -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "ViFi",
+      "alternateName": "ViFi Health",
+      "url": "https://vifi.health",
+      "logo": "https://vifi.health/logo.png",
+      "description": "Contactless WiFi-based patient monitoring for hospital med-surg and telemetry floors. Pre-clearance research prototype targeting FDA 510(k) Class II clearance.",
+      "founder": {
+        "@type": "Person",
+        "name": "Zach Popowitz"
+      },
+      "foundingDate": "2026",
+      "industry": "Medical Devices",
+      "knowsAbout": [
+        "WiFi health monitoring",
+        "WiFi vital signs monitoring",
+        "WiFi heart rate monitor",
+        "WiFi-based vital signs",
+        "WiFi sensing for healthcare",
+        "WiFi sensor for hospitals",
+        "WiFi medical device",
+        "WiFi healthcare technology",
+        "RF sensing",
+        "RF health monitoring",
+        "radio frequency vital signs",
+        "RF-based patient monitoring",
+        "RF chest motion sensing",
+        "Channel State Information",
+        "CSI for vital signs",
+        "contactless patient monitoring",
+        "contactless health monitoring",
+        "contactless vital signs",
+        "non-invasive patient monitoring",
+        "non-contact health monitoring",
+        "ambient patient monitoring",
+        "wireless vital signs monitor",
+        "wireless patient monitoring",
+        "remote patient monitoring",
+        "continuous patient monitoring",
+        "continuous vital signs monitoring",
+        "bedside vital signs monitor alternative",
+        "hospital med-surg monitoring",
+        "telemetry floor monitoring",
+        "ESP32 vital signs",
+        "ESP32 health monitor",
+        "commodity hardware patient monitoring",
+        "FDA 510(k) Class II vital signs monitor",
+        "pre-clearance medical device research",
+        "digital health monitoring",
+        "healthtech",
+        "PhaseBeat",
+        "FullBreathe",
+        "ResBeat"
+      ],
+      "sameAs": [
+        "https://github.com/Zpopowitz"
+      ]
+    })} />
+  </head>
+  <body class="font-sans">    <!-- Ambient ECG monitor trace -->
+    <slot />
+    <Analytics />
+  </body>
+</html>
+
+<style is:global>
+  html {
+    scroll-behavior: smooth;
+    /* Suppress the transient horizontal scrollbar caused by data-animate
+       slide-in transforms (translateX ±3rem). Nothing on the site needs
+       to scroll horizontally; tables that overflow on narrow viewports
+       have their own overflow-x:auto wrappers. `clip` is preferred over
+       `hidden` so it doesn't establish a new scroll container, which
+       would break the sticky header. */
+    overflow-x: clip;
+  }
+  body {
+    text-rendering: optimizeLegibility;
+  }
+.ecg-trace path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  mix-blend-mode: screen;
+  animation: ecg-sweep 5s linear infinite;
+  animation-delay: 1s;
+}
+.ecg-trace path:nth-child(2) {
+  animation-delay: 3.5s;
+}
+@keyframes ecg-sweep {
+}
+@keyframes ecg-sweep {
+  0%   { stroke-dashoffset: 100; }
+  85%  { stroke-dashoffset: 0; }
+  90%  { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ecg-trace path { animation: none; stroke-dashoffset: 0; }
+}
+</style>
+<script>
+  // Re-bind on every page navigation. Astro's ViewTransitions swap the
+  // DOM without firing DOMContentLoaded, so a one-shot listener would
+  // leave new [data-animate] sections stuck at opacity:0 after a soft
+  // nav. astro:page-load fires on both the initial load and after each
+  // view-transition swap, so the observer always sees the live DOM.
+  const setupScrollReveal = () => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("animate-in");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -10% 0px" }
+    );
+    document
+      .querySelectorAll("[data-animate]:not(.animate-in)")
+      .forEach((el) => observer.observe(el));
+  };
+  document.addEventListener("astro:page-load", setupScrollReveal);
+</script>
+
+<style is:global>
+  [data-animate] {
+    opacity: 0;
+    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+  }
+  [data-animate="left"]  { transform: translateX(-3rem); }
+  [data-animate="right"] { transform: translateX(3rem);  }
+  [data-animate="up"]    { transform: translateY(2rem);  }
+
+  [data-animate].animate-in {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-animate] {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }

@@ -1,0 +1,172 @@
+{
+  "nav": {
+    "brand": "ViFi",
+    "items": [
+      {
+        "label": "Home",
+        "href": "/"
+      },
+      {
+        "label": "Results",
+        "href": "/results"
+      },
+      {
+        "label": "Roadmap",
+        "href": "/roadmap"
+      },
+      {
+        "label": "Pilot",
+        "href": "/pilots"
+      },
+      {
+        "label": "Contact",
+        "href": "/contact"
+      }
+    ]
+  },
+  "proof": {
+    "eyebrow": "What's been shown",
+    "heading_line1": "The hardware works.",
+    "heading_line2": "It's been tested.",
+    "paragraphs": [
+      "4.15 bpm cross-session HR error against a Polar H10 chest-strap reference, on a 2-chip array of $25 ESP32-S3 boards. PhaseBeat — the academic reference using $500 WiFi cards — reported 1.5 bpm. ViFi: 4.15 bpm on 20× cheaper hardware."
+    ],
+    "results_link_text": "Full methodology, captures, and per-session breakdowns: read our results",
+    "placeholder_caption": "[ photo of ESP32-S3 array + result chart goes here ]",
+    "comparison_rows": [
+      {
+        "system": "ViFi",
+        "mae": "4.15 bpm",
+        "hardware": "2× ESP32-S3",
+        "per_node_cost": "~$22",
+        "highlight": true
+      },
+      {
+        "system": "PhaseBeat",
+        "mae": "1.5 bpm",
+        "hardware": "2× Intel 5300 NIC",
+        "per_node_cost": "~$500",
+        "highlight": false
+      },
+      {
+        "system": "Bedside monitor",
+        "mae": "≤ 1 bpm",
+        "hardware": "ECG / SpO₂",
+        "per_node_cost": "~$3,000",
+        "highlight": false
+      }
+    ]
+  },
+  "meta": {
+    "title": "Contactless Vital Signs Monitoring | ViFi",
+    "description": "ViFi is a WiFi-based health monitoring system for hospital patients. Contactless RF sensing measures heart rate and breathing rate continuously without wires, electrodes, or wearables. WiFi sensing for med-surg and telemetry monitoring at $50 per bed. Pre-FDA 510(k) clearance."
+  },
+  "hospitals": {
+    "eyebrow": "For hospitals",
+    "heading": "Pilot sites wanted.",
+    "intro_paragraphs": [
+      "ViFi is in conversation with medical/surgical floor leaders, biomedical engineering teams, and clinical research offices interested in hosting a wellness-grade pilot of contactless monitoring.",
+      "A pilot looks like this:"
+    ],
+    "pilot_bullets": [
+      "5–10 rooms instrumented with 2 ESP32-S3 boards each",
+      "30–90 day duration, IRB review where applicable",
+      "Runs alongside your existing monitoring; no clinical decisions are made from ViFi data",
+      "Fully de-identified, on-premise data handling",
+      "Output: a measurement study comparing ViFi against your existing reference"
+    ],
+    "cta": "Start a pilot inquiry →"
+  },
+  "links": {
+    "github": "mailto:hello@vifi.health?subject=ViFi%20technical%20review%20request",
+    "results": "/results",
+    "roadmap": "/roadmap",
+    "contact_email": "hello@vifi.health",
+    "pilot_email": "pilots@vifi.health",
+    "linkedin": "https://www.linkedin.com/company/vifi-health/"
+  },
+  "hero": {
+    "eyebrow": "Pre-clearance research prototype",
+    "headline_line1": "Hospital-grade vital signs",
+    "headline_highlight": "$44",
+    "headline_line2": "of WiFi hardware.",
+    "tagline": "ViFi is a Wi-Fi-based sensor on the wall that monitors hospital patients continuously, captures the transient abnormalities that intermittent nursing rounds miss, and never touches or disturbs the patient. Built for hospital med-surg and telemetry floors and skilled nursing facilities, where 2.3 million U.S. beds get vital-signs checks every 4 to 8 hours and are unmonitored more than 23 hours a day.",
+    "primary_cta": "Pilot inquiry →",
+    "secondary_cta": "See the results",
+    "stats": [
+      {
+        "label": "Cost per room",
+        "value": "$44",
+        "sublabel": "vs $3,000+ for a bedside monitor"
+      },
+      {
+        "label": "Patient effort",
+        "value": "Zero",
+        "sublabel": "no wires, no wearables, no compliance"
+      },
+      {
+        "label": "Coverage",
+        "value": "24/7",
+        "sublabel": "vs every 4–8 hours by a nurse"
+      },
+      {
+        "label": "Validated accuracy",
+        "value": "4.15 bpm",
+        "sublabel": "real hardware, real subject"
+      }
+    ]
+  },
+  "footer": {
+    "disclaimer_title": "ViFi is a pre-incorporation research project.",
+    "disclaimer_body": "Not yet FDA-cleared. Research and development use only. The current system is not a medical device and must not be used for clinical decision-making.",
+    "copyright": "© 2026 Zach Popowitz"
+  },
+  "roadmap": {
+    "eyebrow": "What's next",
+    "heading": "The path to a hospital-approved medical device.",
+    "intro": "Today ViFi is a pre-clearance research prototype, not a medical device. Three dated milestones stand between this and a contactless monitor running over a hospital bed:",
+    "steps": [
+      {
+        "date": "Summer 2026",
+        "title": "Multi-subject, multi-room HR validation",
+        "body": "Validate heart rate across 10+ people in 3+ rooms against the same chest-strap reference. Target: under 3 bpm cross-subject MAE on subjects the system has never seen."
+      },
+      {
+        "date": "Spring 2027 (funding-dependent)",
+        "title": "First hospital pilot",
+        "body": "Wellness-grade install in 5–10 rooms alongside the existing standard of care. Patient data stays on-site and de-identified; no clinical decisions are made from ViFi during the pilot."
+      },
+      {
+        "date": "Late 2027 (funding-dependent)",
+        "title": "FDA 510(k) clearance",
+        "body": "Clinical validation study at an academic medical center, then file safety + accuracy data for FDA 510(k) Class II clearance. This is what makes ViFi legally usable for medical decisions in U.S. hospitals."
+      }
+    ],
+    "live_manifest_text": "Live shipped-vs-planned manifest: read our roadmap"
+  },
+  "how_it_works": {
+    "eyebrow": "How it works",
+    "heading": "WiFi signals bend around bodies. ViFi listens to how.",
+    "intro": "Two small chips in the room exchange WiFi signals back and forth. Every breath you take and every heartbeat slightly changes how those signals travel through the air. ViFi reads those changes as vital signs — no contact, no wearables, no line of sight required.",
+    "diagram": "[ESP32-S3 TX] ─────── 192 subcarriers ───────► [ESP32-S3 RX]\n   antenna          (chest perturbs path)         antenna\n                                                     │\n                                                     │  USB serial @ 921600 baud\n                                                     ▼\n                                            csi_capture.py\n                                                     │\n                                                     ▼\n                                       first_capture_report.py\n                                                     │\n                                                     ▼\n                  HR / RR predictions  vs  Polar H10 ground truth",
+    "signal_path_title": "Signal pipeline",
+    "signal_path_steps": [
+      "Variance-rank top-K subcarriers",
+      "Butterworth 0.1–3 Hz bandpass",
+      "4× zero-padded FFT",
+      "Parabolic peak refinement (cardiac and respiratory bands)",
+      "9-dimensional feature vector → XGBoost regressor"
+    ],
+    "prior_art_title": "Where the science comes from",
+    "prior_art": "The signal-processing approach is from peer-reviewed academic work — PhaseBeat (INFOCOM 2017), FullBreathe (UbiComp 2018), ResBeat (2020). ViFi's contribution is making it work on $15 commodity ESP32 chips instead of $500 research-grade WiFi cards, with the calibration, signal quality checks, and audit trail you need to go in front of an FDA reviewer."
+  },
+  "problem": {
+    "eyebrow": "Why this exists",
+    "heading": "Most hospital patients are unmonitored more than 23 hours a day.",
+    "paragraphs": [
+      "Outside the ICU — across 2.3 million U.S. hospital and skilled nursing facility beds — a nurse takes vital signs every 4 to 8 hours. The rest of the time, no one is watching. Sepsis spikes, post-surgical complications, opioid-induced breathing problems: most of them happen in those gaps and only get noticed at the next round.",
+      "Continuous monitoring exists, but it costs about $3,000 per bed and means strapping wires and electrodes to people who often pull them off. So hospitals reserve it for the ICU. The much larger floor of ordinary patients gets nothing."
+    ],
+    "pullquote": "I'm building ViFi because it's the platform I wish my mother had when she spent a month in the hospital with sepsis, where the monitoring equipment meant to keep her safe — wires, adhesives, blood-pressure cuffs, lights at 3 a.m. — were the very thing preventing her rest and recovery."
+  }
+}

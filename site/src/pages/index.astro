@@ -1,0 +1,284 @@
+---
+import { getEntry } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+
+const entry = await getEntry("landing", "main");
+const c = entry.data;
+---
+
+<Layout title={c.meta.title} description={c.meta.description}>
+  <SiteHeader />
+
+  <!-- ============================================================ HERO -->
+  <section class="bg-ink px-6 pt-20 pb-24 md:pt-28 md:pb-32">
+    <div class="mx-auto max-w-6xl">
+      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
+        {c.hero.eyebrow}
+      </p>
+      <h1
+        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
+      >
+        {c.hero.headline_line1}
+        <br class="hidden sm:block" />
+        from <span class="text-accent">{c.hero.headline_highlight}</span>
+        {" "}
+        {c.hero.headline_line2}
+      </h1>
+            <!-- ECG sweep through the gap between headline and tagline -->
+       <div class="ecg-overlay pointer-events-none mt-6 hidden md:flex h-20 items-center overflow-hidden md:h-24">
+             <svg
+        class="ecg-trace w-full flex-shrink-0"
+        viewBox="0 0 2000 100"
+        preserveAspectRatio="none"
+      >
+        <path
+          d="M 0 50 L 1300 50 L 1320 56 L 1360 8 L 1410 92 L 1460 50 L 1500 44 L 1560 44 L 1600 50 L 2000 50"
+          pathLength="100"
+          stroke="#34d399"
+          stroke-width="1.5"
+          fill="none"
+          opacity="0.7"
+          stroke-linecap="butt"
+          stroke-linejoin="miter"
+          vector-effect="non-scaling-stroke"
+        />
+        <path
+          d="M 0 50 L 1300 50 L 1320 56 L 1360 8 L 1410 92 L 1460 50 L 1500 44 L 1560 44 L 1600 50 L 2000 50"
+          pathLength="100"
+          stroke="#34d399"
+          stroke-width="1.5"
+          fill="none"
+          opacity="0.7"
+          stroke-linecap="butt"
+          stroke-linejoin="miter"
+          vector-effect="non-scaling-stroke"
+        />
+</svg>      
+</div>
+    <p class="mt-2 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+        {c.hero.tagline}
+      </p>
+      <div class="mt-10 flex flex-wrap gap-4">
+        <a
+          href="/pilots"
+          class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+        >
+          {c.hero.primary_cta}
+        </a>
+        <a
+          href={c.links.results}
+          rel="noopener"
+          class="rounded-md border border-slate-700 px-6 py-3 text-sm font-medium text-paper transition hover:border-accent"
+        >
+          {c.hero.secondary_cta}
+        </a>
+      </div>
+
+      <dl
+        class="mt-16 grid grid-cols-2 gap-8 border-t border-slate-800 pt-10 md:grid-cols-4"
+      >
+        {c.hero.stats.map((stat) => (
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-slate-500">
+              {stat.label}
+            </dt>
+            <dd class="mt-2 text-3xl font-semibold tracking-tight text-paper">
+              {stat.value}
+            </dd>
+            {stat.sublabel && (
+              <p class="mt-1 text-xs text-slate-500">{stat.sublabel}</p>
+            )}
+          </div>
+        ))}
+      </dl>    
+    </div>
+  </section>
+
+  <!-- ============================================================ PROBLEM -->
+  <section id="problem" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24">
+    <div class="mx-auto max-w-3xl">
+      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+        {c.problem.eyebrow}
+      </p>
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        {c.problem.heading}
+      </h2>
+      <div class="mt-8 space-y-6 text-lg leading-relaxed text-slate-300">
+        {c.problem.paragraphs.map((p) => <p>{p}</p>)}
+        <p class="border-l-2 border-accent pl-6 italic text-slate-400">
+          {c.problem.pullquote}
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ HOW IT WORKS -->
+  <section id="how" data-animate="right" class="bg-ink px-6 py-24">
+    <div class="mx-auto max-w-5xl">
+      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+        {c.how_it_works.eyebrow}
+      </p>
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        {c.how_it_works.heading}
+      </h2>
+      <p class="mt-6 max-w-3xl text-lg leading-relaxed text-slate-300">
+        {c.how_it_works.intro}
+      </p>
+
+      <p class="mt-10 text-sm text-slate-500">
+        For full methodology, signal pipeline, and validation runs:
+        <a
+          href={c.links.results}
+          class="text-accent hover:text-accentDark underline"
+        >read the results</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ PROOF -->
+<section id="proof" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24">
+  <div class="mx-auto max-w-5xl">
+    <div class="grid items-start gap-10 md:grid-cols-2">
+      <!-- LEFT: eyebrow + heading + body + link -->
+      <div>
+        <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+          {c.proof.eyebrow}
+        </p>
+        <h2 class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl">
+          {c.proof.heading_line1}
+          <br class="hidden md:block" />
+          {c.proof.heading_line2}
+        </h2>
+        <div class="mt-8 space-y-4 text-slate-300">
+          {c.proof.paragraphs.map((p) => <p>{p}</p>)}
+          <p class="text-sm text-slate-500">
+            <a
+              href={c.links.results}
+              rel="noopener"
+              class="text-accent hover:text-accentDark underline"
+            >
+              {c.proof.results_link_text}
+            </a>
+          </p>
+        </div>
+      </div>
+
+      <!-- RIGHT: photo, aligned to top -->
+      <img
+        src="/esp32-array.jpg"
+        alt="The ViFi ESP32-S3 array — two chips with dual-band antennas, the rig used for the 4.15 bpm result"
+        class="aspect-[4/3] w-full max-w-xs sm:max-w-md mx-auto rounded-lg border border-slate-800 object-cover"
+      />
+    </div>
+
+      <div class="mt-16 overflow-hidden rounded-lg border border-slate-800">
+        <table class="w-full text-sm">
+          <thead class="bg-ink text-left text-slate-500">
+            <tr>
+              <th class="px-4 py-3 font-medium">System</th>
+              <th class="px-4 py-3 font-medium">HR MAE</th>
+              <th class="px-4 py-3 font-medium">Hardware</th>
+              <th class="px-4 py-3 font-medium">Per-node cost</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800 bg-slate-950">
+            {c.proof.comparison_rows.map((row) => (
+              <tr class={row.highlight ? "text-accent" : "text-slate-400"}>
+                <td class="px-4 py-3 font-semibold">{row.system}</td>
+                <td class="px-4 py-3">{row.mae}</td>
+                <td class="px-4 py-3">{row.hardware}</td>
+                <td class="px-4 py-3">{row.per_node_cost}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ ROADMAP -->
+  <section id="roadmap" data-animate="right" class="bg-ink px-6 py-24">
+    <div class="mx-auto max-w-3xl">
+      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+        {c.roadmap.eyebrow}
+      </p>
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        {c.roadmap.heading}
+      </h2>
+      <p class="mt-6 text-lg leading-relaxed text-slate-300">
+        {c.roadmap.intro}
+      </p>
+
+      <ol class="mt-10 space-y-6">
+        {c.roadmap.steps.map((step, i) => (
+          <li class="flex gap-4">
+            <span
+              class="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-ink"
+            >
+              {i + 1}
+            </span>
+            <div>
+              {step.date && (
+                <p class="text-xs font-medium uppercase tracking-widest text-accent">
+                  {step.date}
+                </p>
+              )}
+              <h3 class="mt-1 font-semibold text-paper">{step.title}</h3>
+              <p class="mt-1 text-slate-300">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <p class="mt-10 text-sm text-slate-500">
+        <a
+          href={c.links.roadmap}
+          rel="noopener"
+          class="text-accent hover:text-accentDark underline"
+        >
+          {c.roadmap.live_manifest_text}
+        </a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ HOSPITALS -->
+  <section
+    id="hospitals" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24"
+  >
+    <div class="mx-auto max-w-3xl">
+      <p
+        class="mb-4 text-sm font-medium uppercase tracking-widest text-accent"
+      >
+        {c.hospitals.eyebrow}
+      </p>
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        {c.hospitals.heading}
+      </h2>
+      <div class="mt-8 space-y-5 text-lg leading-relaxed text-slate-300">
+        {c.hospitals.intro_paragraphs.map((p) => <p>{p}</p>)}
+        <ul class="list-disc space-y-2 pl-6 text-slate-400">
+          {c.hospitals.pilot_bullets.map((b) => <li>{b}</li>)}
+        </ul>
+      </div>
+      <a
+        href="/pilots"
+        class="mt-10 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+      >
+        {c.hospitals.cta}
+      </a>
+    </div>
+  </section>
+
+  <SiteFooter />
+</Layout>

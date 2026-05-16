@@ -1,0 +1,221 @@
+{
+  "meta": {
+    "title": "Privacy Policy",
+    "description": "Privacy Policy for vifi.health. ViFi processes only the minimal personal information necessary to operate the Site, respond to inquiries, and analyze aggregate Site traffic. The Site uses no cookies and no persistent tracking technologies."
+  },
+  "title": "Privacy Policy",
+  "intro": "Effective Date: May 1, 2026. Last Updated: May 4, 2026. This Privacy Policy (the \"Policy\") describes how ViFi (\"ViFi,\" \"we,\" \"us,\" or \"our\") collects, uses, discloses, and safeguards personal information in connection with the website located at vifi.health and any successor or related domains (collectively, the \"Site\"). By accessing or otherwise using the Site, you (\"User\" or \"you\") acknowledge that you have read, understood, and agree to be bound by this Policy. If you do not agree, you must not access or use the Site.",
+  "sections": [
+    {
+      "id": "scope",
+      "heading": "1. Scope",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "This Policy applies solely to personal information collected through the Site. It does not apply to: (i) information collected by third parties, including through any application or content (including advertising) that may link to or be accessible from the Site; or (ii) information collected, processed, or stored in connection with any pilot deployment, evaluation, clinical study, business-to-business engagement, or other relationship between ViFi and a hospital, health system, research institution, or other organization, each of which shall be governed by a separate written agreement, and where applicable, by an Institutional Review Board (\"IRB\") protocol and a Business Associate Agreement (\"BAA\") executed in accordance with the Health Insurance Portability and Accountability Act of 1996, as amended (\"HIPAA\")."
+        }
+      ]
+    },
+    {
+      "id": "information-collected",
+      "heading": "2. Information We Collect",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We collect only the categories of information described below, and we collect each category only to the extent necessary for the purposes stated in this Policy."
+        },
+        { "type": "subheading", "text": "2.1 Server Log Information" },
+        {
+          "type": "paragraph",
+          "text": "Our hosting provider, Vercel Inc. (\"Vercel\"), automatically records certain technical information when you request a page from the Site, including without limitation your Internet Protocol (\"IP\") address, browser type and version, operating system, referring uniform resource locator (\"URL\"), the date and time of the request, the requested resource path, the HyperText Transfer Protocol (\"HTTP\") response status code, and the number of bytes transferred (collectively, \"Server Log Data\"). Server Log Data is generated automatically by the underlying network infrastructure and is retained by Vercel in accordance with Vercel's then-current data-retention practices."
+        },
+        { "type": "subheading", "text": "2.2 Aggregated Analytics Data" },
+        {
+          "type": "paragraph",
+          "text": "We use Vercel Web Analytics, a privacy-preserving, cookieless analytics service operated by Vercel (\"Analytics Service\"). The Analytics Service generates anonymized, aggregated metrics regarding Site usage — including page views, referring source, country-level geography derived from IP, device type, and browser type — without setting cookies on your device, without using persistent identifiers, and without storing personally identifiable information (\"PII\"). The Analytics Service is designed to comply with the European Union General Data Protection Regulation 2016/679 (\"GDPR\"), the California Consumer Privacy Act of 2018, as amended by the California Privacy Rights Act of 2020 (collectively, the \"CCPA\"), and the ePrivacy Directive 2002/58/EC (the \"ePrivacy Directive\"), and does not require consent for its operation in the European Economic Area (\"EEA\")."
+        },
+        { "type": "subheading", "text": "2.3 Communications" },
+        {
+          "type": "paragraph",
+          "text": "If you elect to contact us via electronic mail (including without limitation messages directed to addresses ending in `@vifi.health`), we receive and retain the contents of your communication, your email address, your name (to the extent voluntarily disclosed), and any attachments or metadata transmitted therewith (collectively, \"Communications Data\"). Communications Data is retained for the duration reasonably necessary to respond to your inquiry, to maintain ordinary business records, and to comply with our legal obligations."
+        },
+        { "type": "subheading", "text": "2.4 Cookies and Similar Technologies — None Used" },
+        {
+          "type": "paragraph",
+          "text": "**The Site does not set, read, or otherwise utilize Hypertext Transfer Protocol cookies, web beacons, pixel tags, local-storage identifiers, session-storage identifiers, browser fingerprinting techniques, or any other persistent tracking technology in connection with public Site visits.** No third-party advertising, retargeting, conversion-tracking, social-media, or session-replay scripts are loaded on the Site. The administrative interface located at `/admin` requires authentication via GitHub Inc.'s OAuth service, which may set authentication cookies for the benefit of the authenticated administrator only; such cookies are not set for, and have no effect on, ordinary public visitors."
+        },
+        { "type": "subheading", "text": "2.5 No Sensitive Personal Information" },
+        {
+          "type": "paragraph",
+          "text": "We do not knowingly collect, and the Site is not designed to collect, any \"sensitive personal information\" as defined under the CCPA, any \"special categories of personal data\" as defined under Article 9 of the GDPR, or any \"protected health information\" (\"PHI\") as defined under HIPAA. You should not transmit any such information to ViFi via the Site or via unencrypted email."
+        }
+      ]
+    },
+    {
+      "id": "purposes",
+      "heading": "3. Purposes of Processing",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We process the categories of personal information described in Section 2 solely for the following purposes:"
+        },
+        {
+          "type": "ordered_list",
+          "items": [
+            "To operate, maintain, secure, monitor, and improve the Site, and to detect, prevent, investigate, and address technical issues, security incidents, fraudulent activity, and violations of our Terms of Use;",
+            "To respond to your inquiries, fulfill your requests, and conduct ordinary correspondence with you;",
+            "To produce anonymized, aggregated statistics regarding Site usage for the purpose of evaluating the effectiveness of our communications and informing future updates to the Site;",
+            "To comply with applicable laws, regulations, court orders, subpoenas, and other legal process, and to enforce our legal rights and remedies; and",
+            "To consummate any merger, acquisition, financing, reorganization, dissolution, or other corporate transaction involving ViFi, in accordance with Section 5(c) below."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legal-bases",
+      "heading": "4. Legal Bases for Processing (EEA / UK / Switzerland)",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "If you are located in the EEA, the United Kingdom, or Switzerland, our legal bases for processing your personal information are: (a) our **legitimate interests** (Article 6(1)(f) GDPR) in operating, securing, and improving the Site, in responding to inquiries directed to us, and in producing aggregated, anonymized analytics, where such interests are not overridden by your fundamental rights and freedoms; (b) **compliance with our legal obligations** (Article 6(1)(c) GDPR), including without limitation tax, accounting, and law-enforcement obligations; and (c) where applicable, **your consent** (Article 6(1)(a) GDPR), which you may withdraw at any time without affecting the lawfulness of processing carried out before withdrawal."
+        }
+      ]
+    },
+    {
+      "id": "disclosures",
+      "heading": "5. Disclosures to Third Parties",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We do not sell, rent, lease, license, or otherwise commercialize personal information. We do not share personal information for cross-context behavioral advertising. We disclose personal information only as set forth below."
+        },
+        { "type": "subheading", "text": "5.1 Service Providers" },
+        {
+          "type": "paragraph",
+          "text": "We engage the following service providers, each of which acts as a processor (or, where applicable, a service provider as defined under the CCPA) in respect of personal information they handle on our behalf, and each of which is contractually obligated to maintain the confidentiality and security of such information and to use it solely for the purposes for which it is disclosed:"
+        },
+        {
+          "type": "table",
+          "headers": ["Provider", "Service", "Categories Processed"],
+          "rows": [
+            ["Vercel Inc.", "Static hosting, edge content delivery, server logging, cookieless web analytics", "Server Log Data; Aggregated Analytics Data"],
+            ["Cloudflare, Inc.", "Domain Name System resolution", "IP address (transient, in connection with DNS resolution)"],
+            ["GitHub, Inc.", "Source-control hosting and OAuth authentication for the administrative interface", "Authenticated administrator account information only"],
+            ["Email service provider", "Receipt and storage of email directed to `@vifi.health` addresses", "Communications Data"]
+          ]
+        },
+        { "type": "subheading", "text": "5.2 Legal Process and Protection of Rights" },
+        {
+          "type": "paragraph",
+          "text": "We may disclose personal information when we believe in good faith that such disclosure is necessary or appropriate to: (i) comply with applicable law, regulation, court order, subpoena, search warrant, or other legal process; (ii) cooperate with law-enforcement, regulatory, or governmental authorities; (iii) enforce, exercise, or defend our legal rights, including without limitation our Terms of Use; (iv) prevent, detect, or address fraud, security, or technical issues; or (v) protect the rights, property, safety, or security of ViFi, our users, or any third party."
+        },
+        { "type": "subheading", "text": "5.3 Business Transfers" },
+        {
+          "type": "paragraph",
+          "text": "In connection with any actual or proposed merger, acquisition, consolidation, financing, reorganization, change of control, sale of substantially all of our assets, dissolution, bankruptcy, receivership, or similar transaction (each, a \"Corporate Transaction\"), we may transfer, assign, or otherwise convey personal information to one or more counterparties, successors, assignees, or acquirers, provided that such transferee shall be bound by terms of confidentiality and use no less protective than those set forth in this Policy."
+        }
+      ]
+    },
+    {
+      "id": "international-transfers",
+      "heading": "6. International Data Transfers",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ViFi is organized and operated in the United States of America. Our service providers may store and process personal information in the United States and in other jurisdictions whose data-protection laws may differ from those in your country of residence. Where personal information originating in the EEA, the United Kingdom, or Switzerland is transferred to a country not the subject of an adequacy decision by the European Commission or the United Kingdom Information Commissioner's Office, such transfer is effected pursuant to (a) the European Commission's Standard Contractual Clauses (Decision 2021/914) or (b) such other transfer mechanism as may be lawfully available, in each case as implemented by the relevant service provider."
+        }
+      ]
+    },
+    {
+      "id": "retention",
+      "heading": "7. Data Retention",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We retain each category of personal information only for the period reasonably necessary to fulfill the purpose for which it was collected, to comply with our legal, regulatory, accounting, and audit obligations, and to establish, exercise, or defend legal claims. Server Log Data is retained by Vercel in accordance with Vercel's then-current retention practices. Aggregated Analytics Data is anonymized at collection and retained indefinitely in aggregated form. Communications Data is retained for the duration of any active correspondence and thereafter as part of our ordinary business records."
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "heading": "8. Information Security",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We implement and maintain commercially reasonable administrative, technical, and physical safeguards designed to protect personal information against unauthorized access, disclosure, alteration, or destruction. **However, no method of transmission over the Internet, and no method of electronic storage, is one hundred percent (100%) secure.** Accordingly, while we strive to protect your personal information using industry-standard practices, we cannot and do not guarantee its absolute security, and you transmit personal information to us at your own risk."
+        }
+      ]
+    },
+    {
+      "id": "your-rights",
+      "heading": "9. Your Rights",
+      "blocks": [
+        { "type": "subheading", "text": "9.1 Rights Under the GDPR (EEA / UK / Switzerland)" },
+        {
+          "type": "paragraph",
+          "text": "Subject to applicable conditions and exceptions, you have the right to: (i) request access to and a copy of the personal information we hold about you; (ii) request correction of inaccurate or incomplete personal information; (iii) request erasure of your personal information; (iv) request restriction of processing; (v) object to processing carried out on the basis of legitimate interests; (vi) request portability of personal information you have provided to us in a structured, commonly used, machine-readable format; (vii) withdraw any consent you have provided; and (viii) lodge a complaint with the data-protection supervisory authority of your habitual residence, place of work, or place of the alleged infringement."
+        },
+        { "type": "subheading", "text": "9.2 Rights Under the CCPA (California Residents)" },
+        {
+          "type": "paragraph",
+          "text": "Subject to applicable conditions and exceptions, California residents have the right to: (i) know the categories and specific pieces of personal information we have collected, the categories of sources from which the information was collected, the business or commercial purposes for collection, and the categories of third parties with whom the information has been disclosed; (ii) request deletion of personal information; (iii) request correction of inaccurate personal information; (iv) opt out of the \"sale\" or \"sharing\" of personal information (we do not sell or share personal information as those terms are defined under the CCPA); (v) limit the use and disclosure of sensitive personal information (we do not collect sensitive personal information); and (vi) be free from unlawful retaliation or discrimination for exercising any of the foregoing rights."
+        },
+        { "type": "subheading", "text": "9.3 Exercising Your Rights" },
+        {
+          "type": "paragraph",
+          "text": "To exercise any of the rights described in this Section 9, please submit a verifiable request to [hello@vifi.health](mailto:hello@vifi.health). We will respond to verifiable requests within the timeframes prescribed by applicable law. We may decline to honor a request to the extent permitted by applicable law. You may designate an authorized agent to act on your behalf, in which case we may require written documentation of such designation."
+        }
+      ]
+    },
+    {
+      "id": "do-not-track",
+      "heading": "10. Do-Not-Track Disclosure",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Certain web browsers transmit \"Do-Not-Track\" or \"Global Privacy Control\" signals to websites with which the user communicates. Because the Site does not engage in tracking of the kind such signals are designed to address, we do not currently take any action in response to such signals. We will reassess this position if and when an industry-wide standard governing such signals is established."
+        }
+      ]
+    },
+    {
+      "id": "children",
+      "heading": "11. Children's Privacy",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site is intended exclusively for adult professional audiences, including without limitation clinicians, researchers, biomedical engineers, hospital administrators, and investors, and is not directed to, marketed to, or designed for individuals under thirteen (13) years of age. We do not knowingly collect personal information from children under thirteen (13). If you become aware that a child has provided personal information to us in violation of this Policy, please contact us at [hello@vifi.health](mailto:hello@vifi.health) and we will take prompt steps to delete such information."
+        }
+      ]
+    },
+    {
+      "id": "third-party-links",
+      "heading": "12. Third-Party Links and Resources",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site may contain hyperlinks to websites, applications, or services operated by third parties. We do not control such third-party properties and are not responsible for their privacy practices. We encourage you to review the privacy policies of any third-party properties you visit."
+        }
+      ]
+    },
+    {
+      "id": "changes",
+      "heading": "13. Changes to This Policy",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "We may amend this Policy from time to time in our sole discretion. Any amendment will be effective upon posting of the revised Policy to the Site, with a corresponding update to the \"Last Updated\" date set forth above. Your continued use of the Site following the effective date of any amendment constitutes your acceptance of such amendment. If any amendment materially affects the rights of EEA, UK, or Swiss data subjects, we will provide reasonable advance notice of the change."
+        }
+      ]
+    },
+    {
+      "id": "contact",
+      "heading": "14. Contact Information",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "All inquiries, requests, complaints, and notices relating to this Policy or to our processing of personal information should be directed to: ViFi, Attn: Privacy Officer, c/o Zach Popowitz, by electronic mail at [hello@vifi.health](mailto:hello@vifi.health). We will use commercially reasonable efforts to respond to verifiable inquiries promptly and in any event within the timeframes prescribed by applicable law."
+        }
+      ]
+    }
+  ]
+}
