@@ -1,0 +1,8 @@
+---
+import { getEntry } from "astro:content";
+import SubpageLayout from "../layouts/SubpageLayout.astro";
+
+const entry = await getEntry("terms", "main");
+---
+
+<SubpageLayout page={entry.data} />

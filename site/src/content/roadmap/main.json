@@ -1,0 +1,214 @@
+{
+  "meta": {
+    "title": "Roadmap",
+    "description": "ViFi's shipped vs. planned manifest, hardware BOM, and FDA pathway. Contactless patient monitoring on ~$44 of commodity WiFi hardware per hospital bed."
+  },
+  "title": "Product Roadmap | ViFi",
+  "intro": "Contactless patient monitoring on ~$44 of commodity WiFi hardware per hospital bed. HR is validated on real hardware today; everything else runs on the same CSI stream and the same pair of ESP32-S3 nodes.",
+  "sections": [
+    {
+      "id": "status-board",
+      "heading": "Status board",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Capability", "Status"],
+          "rows": [
+            ["**Heart rate (HR)**", "**✓ — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([results](/results))"],
+            ["Respiratory rate (RR)", "Pipeline + synthetic regressor only; awaiting first Vernier paired captures"],
+            ["Per-subject calibration + RF fingerprinting", "✓"],
+            ["Multi-subject \"walks in the room\" detection", "✓ — rolling fingerprint + hysteresis"],
+            ["Out-of-distribution suppression", "✓ — Mahalanobis distance, chi-square 99% threshold"],
+            ["Confidence-interval suppression", "✓ — quantile XGBoost, configurable width"],
+            ["Per-prediction audit log", "✓ — JSONL, daily-rotating, FDA-ready"],
+            ["Paired-capture orchestrator", "✓ — one-command 3-logger session"],
+            ["Synthetic CSI generator", "✓ (sanity check)"],
+            ["Per-packet CSI ingest", "✓ — live API endpoint"],
+            ["ESP32 capture + HR logger", "✓ — hands-free 2-min paired capture"],
+            ["Presence / occupancy", "✓ (variance threshold)"],
+            ["Apnea detection", "Planned"],
+            ["Transient-event logger", "Planned"],
+            ["Gait / walking-speed", "Planned (WiGait reference)"],
+            ["Fall detection", "Planned (WiFall reference)"],
+            ["4-receiver multi-node array (deterministic identity)", "Planned"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "in-flight",
+      "heading": "In flight (May 2026)",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Milestone", "Target", "Deliverable"],
+          "rows": [
+            ["Multi-subject HR validation", "May 2026", "10+ subjects, varied HR ranges, target cross-subject MAE <3 bpm"],
+            ["Multi-room validation", "May 2026", "3+ rooms, fixed subject, measure setup-specific bias"],
+            ["Walk-in detection validation", "May 2026", "Run the multi-subject walk-in protocol, validate detector thresholds"],
+            ["Respiratory-rate paired captures", "May 2026", "Vernier belt arrives; first paired CSI + RR sessions"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stage-2",
+      "heading": "Stage 2 (Summer 2026)",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Capability", "Prior art", "Ground truth"],
+          "rows": [
+            ["Apnea detection", "ApneaApp (UW 2015)", "recording pulse oximeter"],
+            ["Transient-event logger", "none — clinical wedge", "same HR/RR stream"],
+            ["Improved subcarrier features", "per-subcarrier ensemble", "—"],
+            ["Phase-domain features", "PhaseBeat (CFO/SFO calibration)", "—"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stage-3",
+      "heading": "Stage 3 (Fall 2026 – Winter 2027)",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Capability", "Prior art", "Ground truth"],
+          "rows": [
+            ["Gait / walking speed", "WiGait (MIT CSAIL 2018)", "timed course, pressure mat"],
+            ["Fall detection", "WiFall", "actors + crash mat"],
+            ["4-receiver multi-patient array", "ICA + AoA", "4× ESP32-S3 array"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stage-4",
+      "heading": "Stage 4 (Winter 2026 – Spring 2027)",
+      "blocks": [
+        {
+          "type": "bulleted_list",
+          "items": [
+            "First hospital pilot (5–10 beds, wellness-grade, pre-FDA)",
+            "IRB submission and approval",
+            "Subject-level cross-validation across diverse demographics"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stage-5",
+      "heading": "Stage 5 (Mid–Late 2027)",
+      "blocks": [
+        {
+          "type": "bulleted_list",
+          "items": [
+            "FDA 510(k) Class II submission for vitals monitoring",
+            "ISO 13485 Quality Management System",
+            "Clinical validation study at academic medical center",
+            "Estimated cost: ~$300K (clinical study + consultant + QMS + filing)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "long-term",
+      "heading": "Long-term / research (2028 and beyond)",
+      "blocks": [
+        {
+          "type": "bulleted_list",
+          "items": [
+            "Heart Rate Variability (beat-to-beat precision; requires phase work)",
+            "Arrhythmia classification (downstream of HRV)",
+            "Sleep staging (overnight recordings + polysomnogram partnership)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "complementary-sensors",
+      "heading": "Where add-on sensors fit best",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Some vital signs are best measured with a different physics. ViFi's WiFi-CSI pipeline is designed to share the room with low-cost add-on modules — the per-room hardware budget leaves plenty of headroom for them."
+        },
+        {
+          "type": "table",
+          "headers": ["Vital sign", "Best-fit sensor", "Add-on cost"],
+          "rows": [
+            ["Blood oxygen (SpO₂)", "Optical PPG module", "~$5"],
+            ["Body temperature", "Infrared thermometer module", "~$10"],
+            ["Blood pressure", "Active research problem industry-wide", "—"],
+            ["ECG waveform", "Direct-contact electrodes", "—"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hardware-bom",
+      "heading": "Hardware BOM",
+      "blocks": [
+        { "type": "subheading", "text": "v1 — 2-node room (single Tx + single Rx, statistical identity)" },
+        {
+          "type": "table",
+          "headers": ["Item", "Qty", "~$"],
+          "rows": [
+            ["ESP32-S3-DevKitC-1U-N8R8", "2", "30"],
+            ["Dual-band 2.4/5 GHz RP-SMA antenna", "2", "8"],
+            ["IPEX1 U.FL → RP-SMA Female pigtail, 8\"", "2", "6"],
+            ["**Total per room (v1)**", "", "**~$44**"]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Replaces a $5,000 ward bedside monitor. **>100× cheaper.** Statistical multi-subject identity via RF fingerprinting (shipped)."
+        },
+        { "type": "subheading", "text": "v2 — 4-node room (1 Tx + 3 corner Rx, deterministic spatial identity)" },
+        {
+          "type": "paragraph",
+          "text": "Same per-board cost (~$22). Add 2 more nodes: **~$88 per room**. Multi-perspective CSI fusion gives full 3D triangulation, deterministic multi-subject discrimination, redundancy across boards."
+        },
+        {
+          "type": "table",
+          "headers": ["Config", "Boards", "~$", "vs $5K ward monitor"],
+          "rows": [
+            ["v1 (Tx + Rx)", "2", "$44", "114× cheaper"],
+            ["v2-min (1 Tx + 2 Rx)", "3", "$66", "76× cheaper"],
+            ["**v2 (1 Tx + 3 corner Rx)**", "**4**", "**$88**", "**57× cheaper**"],
+            ["v2 + isolated AP (HIPAA-clean deployment)", "4 + AP", "$118", "42× cheaper"]
+          ]
+        },
+        { "type": "subheading", "text": "Per first capture kit (development)" },
+        {
+          "type": "paragraph",
+          "text": "Add Polar H10 chest strap ($90) for HR ground truth during dataset collection."
+        }
+      ]
+    },
+    {
+      "id": "regulatory",
+      "heading": "Regulatory path",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**Wellness-grade products first** (presence, falls, gait): no FDA clearance required. Target: first paying hospital customer by Spring 2027 (funding-dependent)."
+        },
+        {
+          "type": "paragraph",
+          "text": "**Vitals-grade products** (HR, RR, apnea): FDA 510(k) Class II. Target: late 2027, ~$300K all-in (funding-dependent)."
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "heading": "Engineering details",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The full code — DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, and 102-test suite — is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
+        }
+      ]
+    }
+  ]
+}

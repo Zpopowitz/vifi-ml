@@ -1,0 +1,452 @@
+# Decap CMS configuration for vifi.health.
+#
+# Backend: GitHub via custom OAuth proxy hosted on the same Vercel
+# deployment as the site (api/auth and api/callback).
+backend:
+  name: github
+  repo: Zpopowitz/vifi-site
+  branch: main
+  base_url: https://vifi.health
+  auth_endpoint: api/oauth/auth
+
+publish_mode: simple
+display_url: https://vifi.health
+site_url: https://vifi.health
+media_folder: "public/uploads"
+public_folder: "/uploads"
+
+# Content lives in src/content/landing/main.json (validated by Astro
+# Content Collections). Decap edits this single file via a form.
+collections:
+  - name: landing
+    label: "Landing page"
+    files:
+      - file: src/content/landing/main.json
+        name: main
+        label: "ViFi landing page"
+        format: json
+        editor: { preview: false }
+        fields:
+          # ---- Meta ----
+          - label: "Page metadata"
+            name: meta
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Title (browser tab + OG)",      name: title,       widget: string }
+              - { label: "Description (meta + OG)",        name: description, widget: text }
+
+          # ---- Links ----
+          - label: "Links / contacts"
+            name: links
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "GitHub repo URL",   name: github,         widget: string }
+              - { label: "RESULTS.md URL",    name: results,        widget: string }
+              - { label: "ROADMAP.md URL",    name: roadmap,        widget: string }
+              - { label: "Contact email",     name: contact_email,  widget: string }
+              - { label: "Pilot inquiry email", name: pilot_email,  widget: string }
+              - { label: "LinkedIn URL",      name: linkedin,       widget: string, required: false }
+
+          # ---- Nav ----
+          - label: "Nav bar"
+            name: nav
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Brand",   name: brand,   widget: string }
+              - label: "Items"
+                name: items
+                widget: list
+                fields:
+                  - { label: "Label", name: label, widget: string }
+                  - { label: "Anchor href", name: href, widget: string }
+
+          # ---- Hero ----
+          - label: "Hero"
+            name: hero
+            widget: object
+            fields:
+              - { label: "Eyebrow (small uppercase tag)",  name: eyebrow, widget: string }
+              - { label: "Headline line 1",                 name: headline_line1, widget: string }
+              - { label: "Headline highlighted phrase",     name: headline_highlight, widget: string }
+              - { label: "Headline line 2",                 name: headline_line2, widget: string }
+              - { label: "Tagline (full paragraph)",        name: tagline, widget: text }
+              - { label: "Primary CTA text",                name: primary_cta, widget: string }
+              - { label: "Secondary CTA text",              name: secondary_cta, widget: string }
+              - label: "Stat blocks (4)"
+                name: stats
+                widget: list
+                min: 4
+                max: 4
+                fields:
+                  - { label: "Label", name: label, widget: string }
+                  - { label: "Value (big number)", name: value, widget: string }
+                  - { label: "Sub-label (optional)", name: sublabel, widget: string, required: false }
+
+          # ---- Problem ----
+          - label: "Problem"
+            name: problem
+            widget: object
+            fields:
+              - { label: "Eyebrow", name: eyebrow, widget: string }
+              - { label: "Heading", name: heading, widget: text }
+              - { label: "Body paragraphs", name: paragraphs, widget: list, field: { label: "Paragraph", name: p, widget: text } }
+              - { label: "Pull quote (italic, accent border)", name: pullquote, widget: text }
+
+          # ---- How it works ----
+          - label: "How it works"
+            name: how_it_works
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Eyebrow", name: eyebrow, widget: string }
+              - { label: "Heading", name: heading, widget: string }
+              - { label: "Intro paragraph", name: intro, widget: text }
+              - { label: "ASCII diagram (preserve indentation)", name: diagram, widget: text }
+              - { label: "Signal path heading", name: signal_path_title, widget: string }
+              - { label: "Signal path steps", name: signal_path_steps, widget: list, field: { label: "Step", name: s, widget: string } }
+              - { label: "Prior art heading", name: prior_art_title, widget: string }
+              - { label: "Prior art paragraph", name: prior_art, widget: text }
+
+          # ---- Proof ----
+          - label: "Proof / results"
+            name: proof
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Eyebrow", name: eyebrow, widget: string }
+              - { label: "Heading line 1", name: heading_line1, widget: string }
+              - { label: "Heading line 2", name: heading_line2, widget: string }
+              - { label: "Body paragraphs", name: paragraphs, widget: list, field: { label: "Paragraph", name: p, widget: text } }
+              - { label: "Results link text", name: results_link_text, widget: string }
+              - { label: "Image placeholder caption", name: placeholder_caption, widget: string }
+              - label: "Comparison table rows"
+                name: comparison_rows
+                widget: list
+                fields:
+                  - { label: "System name",     name: system,        widget: string }
+                  - { label: "HR MAE",          name: mae,           widget: string }
+                  - { label: "Hardware",        name: hardware,      widget: string }
+                  - { label: "Per-node cost",   name: per_node_cost, widget: string }
+                  - { label: "Highlight (bold)", name: highlight,    widget: boolean, default: false }
+
+          # ---- Roadmap ----
+          - label: "Roadmap"
+            name: roadmap
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Eyebrow", name: eyebrow, widget: string }
+              - { label: "Heading", name: heading, widget: string }
+              - { label: "Intro paragraph", name: intro, widget: text }
+              - label: "Steps"
+                name: steps
+                widget: list
+                fields:
+                  - { label: "Date / target window", name: date, widget: string, required: false }
+                  - { label: "Title", name: title, widget: string }
+                  - { label: "Body",  name: body,  widget: text }
+              - { label: "Live manifest link text", name: live_manifest_text, widget: string }
+
+          # ---- Hospitals ----
+          - label: "For hospitals"
+            name: hospitals
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Eyebrow", name: eyebrow, widget: string }
+              - { label: "Heading", name: heading, widget: string }
+              - { label: "Intro paragraphs", name: intro_paragraphs, widget: list, field: { label: "Paragraph", name: p, widget: text } }
+              - { label: "Pilot bullet points", name: pilot_bullets, widget: list, field: { label: "Bullet", name: b, widget: string } }
+              - { label: "CTA button text", name: cta, widget: string }
+
+          # ---- Footer ----
+          - label: "Footer"
+            name: footer
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Disclaimer title (bold line)", name: disclaimer_title, widget: string }
+              - { label: "Disclaimer body",              name: disclaimer_body,  widget: text }
+              - { label: "Copyright line",               name: copyright,        widget: string }
+
+  # ---- Results subpage ----
+  # Edits src/content/results/main.json — rendered by src/pages/results.astro
+  # via the shared SubpageLayout. Sections are an ordered list of h2 blocks;
+  # each block within a section is one of: paragraph, subheading (h3),
+  # bulleted_list, ordered_list, table.
+  - name: results
+    label: "Results page (/results)"
+    files:
+      - file: src/content/results/main.json
+        name: main
+        label: "Validation results"
+        format: json
+        editor: { preview: false }
+        fields:
+          - label: "Page metadata"
+            name: meta
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Title (browser tab + OG)", name: title,       widget: string }
+              - { label: "Description (meta + OG)",  name: description, widget: text }
+          - { label: "Page title (h1)", name: title, widget: string }
+          - { label: "Intro paragraph", name: intro, widget: text, required: false }
+          - label: "Sections"
+            name: sections
+            widget: list
+            fields:
+              - { label: "Anchor id", name: id, widget: string, required: false }
+              - { label: "Heading (h2)", name: heading, widget: string }
+              - label: "Content blocks"
+                name: blocks
+                widget: list
+                types:
+                  - label: "Paragraph"
+                    name: paragraph
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "paragraph" }
+                      - { label: "Text (markdown inline)", name: text, widget: text }
+                  - label: "Subheading (h3)"
+                    name: subheading
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "subheading" }
+                      - { label: "Text", name: text, widget: string }
+                  - label: "Bulleted list"
+                    name: bulleted_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "bulleted_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Ordered list"
+                    name: ordered_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "ordered_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Table"
+                    name: table
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "table" }
+                      - { label: "Headers", name: headers, widget: list, field: { label: "Header", name: h, widget: string } }
+                      - label: "Rows"
+                        name: rows
+                        widget: list
+                        field:
+                          label: "Row (cells)"
+                          name: row
+                          widget: list
+                          field: { label: "Cell", name: c, widget: string }
+
+  # ---- Roadmap subpage ----
+  # Edits src/content/roadmap/main.json — same structure as the results page.
+  - name: roadmap
+    label: "Roadmap page (/roadmap)"
+    files:
+      - file: src/content/roadmap/main.json
+        name: main
+        label: "Product roadmap"
+        format: json
+        editor: { preview: false }
+        fields:
+          - label: "Page metadata"
+            name: meta
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Title (browser tab + OG)", name: title,       widget: string }
+              - { label: "Description (meta + OG)",  name: description, widget: text }
+          - { label: "Page title (h1)", name: title, widget: string }
+          - { label: "Intro paragraph", name: intro, widget: text, required: false }
+          - label: "Sections"
+            name: sections
+            widget: list
+            fields:
+              - { label: "Anchor id", name: id, widget: string, required: false }
+              - { label: "Heading (h2)", name: heading, widget: string }
+              - label: "Content blocks"
+                name: blocks
+                widget: list
+                types:
+                  - label: "Paragraph"
+                    name: paragraph
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "paragraph" }
+                      - { label: "Text (markdown inline)", name: text, widget: text }
+                  - label: "Subheading (h3)"
+                    name: subheading
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "subheading" }
+                      - { label: "Text", name: text, widget: string }
+                  - label: "Bulleted list"
+                    name: bulleted_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "bulleted_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Ordered list"
+                    name: ordered_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "ordered_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Table"
+                    name: table
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "table" }
+                      - { label: "Headers", name: headers, widget: list, field: { label: "Header", name: h, widget: string } }
+                      - label: "Rows"
+                        name: rows
+                        widget: list
+                        field:
+                          label: "Row (cells)"
+                          name: row
+                          widget: list
+                          field: { label: "Cell", name: c, widget: string }
+
+  # ---- Privacy subpage ----
+  # Edits src/content/privacy/main.json — same blocks structure as results/roadmap.
+  - name: privacy
+    label: "Privacy policy (/privacy)"
+    files:
+      - file: src/content/privacy/main.json
+        name: main
+        label: "Privacy policy"
+        format: json
+        editor: { preview: false }
+        fields:
+          - label: "Page metadata"
+            name: meta
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Title (browser tab + OG)", name: title,       widget: string }
+              - { label: "Description (meta + OG)",  name: description, widget: text }
+          - { label: "Page title (h1)", name: title, widget: string }
+          - { label: "Intro paragraph", name: intro, widget: text, required: false }
+          - label: "Sections"
+            name: sections
+            widget: list
+            fields:
+              - { label: "Anchor id", name: id, widget: string, required: false }
+              - { label: "Heading (h2)", name: heading, widget: string }
+              - label: "Content blocks"
+                name: blocks
+                widget: list
+                types:
+                  - label: "Paragraph"
+                    name: paragraph
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "paragraph" }
+                      - { label: "Text (markdown inline)", name: text, widget: text }
+                  - label: "Subheading (h3)"
+                    name: subheading
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "subheading" }
+                      - { label: "Text", name: text, widget: string }
+                  - label: "Bulleted list"
+                    name: bulleted_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "bulleted_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Ordered list"
+                    name: ordered_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "ordered_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Table"
+                    name: table
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "table" }
+                      - { label: "Headers", name: headers, widget: list, field: { label: "Header", name: h, widget: string } }
+                      - label: "Rows"
+                        name: rows
+                        widget: list
+                        field:
+                          label: "Row (cells)"
+                          name: row
+                          widget: list
+                          field: { label: "Cell", name: c, widget: string }
+
+  # ---- Terms subpage ----
+  # Edits src/content/terms/main.json — same blocks structure as the others.
+  - name: terms
+    label: "Terms of use (/terms)"
+    files:
+      - file: src/content/terms/main.json
+        name: main
+        label: "Terms of use"
+        format: json
+        editor: { preview: false }
+        fields:
+          - label: "Page metadata"
+            name: meta
+            widget: object
+            collapsed: true
+            fields:
+              - { label: "Title (browser tab + OG)", name: title,       widget: string }
+              - { label: "Description (meta + OG)",  name: description, widget: text }
+          - { label: "Page title (h1)", name: title, widget: string }
+          - { label: "Intro paragraph", name: intro, widget: text, required: false }
+          - label: "Sections"
+            name: sections
+            widget: list
+            fields:
+              - { label: "Anchor id", name: id, widget: string, required: false }
+              - { label: "Heading (h2)", name: heading, widget: string }
+              - label: "Content blocks"
+                name: blocks
+                widget: list
+                types:
+                  - label: "Paragraph"
+                    name: paragraph
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "paragraph" }
+                      - { label: "Text (markdown inline)", name: text, widget: text }
+                  - label: "Subheading (h3)"
+                    name: subheading
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "subheading" }
+                      - { label: "Text", name: text, widget: string }
+                  - label: "Bulleted list"
+                    name: bulleted_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "bulleted_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Ordered list"
+                    name: ordered_list
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "ordered_list" }
+                      - { label: "Items", name: items, widget: list, field: { label: "Item", name: i, widget: text } }
+                  - label: "Table"
+                    name: table
+                    widget: object
+                    fields:
+                      - { label: "Type", name: type, widget: hidden, default: "table" }
+                      - { label: "Headers", name: headers, widget: list, field: { label: "Header", name: h, widget: string } }
+                      - label: "Rows"
+                        name: rows
+                        widget: list
+                        field:
+                          label: "Row (cells)"
+                          name: row
+                          widget: list
+                          field: { label: "Cell", name: c, widget: string }

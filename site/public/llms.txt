@@ -1,0 +1,50 @@
+# ViFi
+
+> ViFi is a Wi-Fi-based sensor on the wall that monitors hospital patients continuously, captures the transient abnormalities that intermittent nursing rounds miss, and never touches or disturbs the patient. Built for hospital med-surg and telemetry floors. Pre-clearance research prototype targeting FDA 510(k) Class II clearance for heart rate and respiratory rate monitoring.
+
+## Key facts
+
+- Hardware: 2x ESP32-S3 chips (~$44 per room) vs ~$3,000 for traditional bedside monitors
+- Validation: 4.15 bpm cross-session HR mean absolute error on real hardware vs Polar H10 chest strap reference (single subject, leave-one-session-out across 4 paired captures)
+- Cross-subject: 6.34 bpm preliminary at n=2; multi-subject scaling in progress (target <3 bpm across 12+ subjects)
+- Per-window accuracy within ±5 bpm: 65–68% in-subject, 45% cross-subject (n=2 baseline)
+- Calibration: per-session bias offset against ground truth reference, +0.5 bpm cross-subject bias
+- Market: 700,000+ U.S. medical-surgical and telemetry beds, unmonitored 23+ hours per day
+- Status: pre-incorporation, pre-FDA clearance, pre-pilot
+- Founder: Zach Popowitz, Babson College
+- Location: Los Angeles after YC batch
+- Open methodology, private engineering: results and roadmap are public; code is kept private during pre-clearance development and available for technical review under NDA
+
+## How it works
+
+Two ESP32-S3 chips mounted in a hospital room exchange WiFi packets at ~70-100 packets per second. Each received packet's per-subcarrier amplitude (Channel State Information / CSI) reflects the multipath environment in the room, including chest-wall motion from breathing and heartbeat. The signal-processing pipeline (variance-rank top-K subcarriers → Butterworth 0.1–4 Hz bandpass → FFT with parabolic peak refinement in cardiac 0.7–3.0 Hz and respiratory 0.15–0.6 Hz bands → 9-dim feature vector → XGBoost regressor) extracts heart rate and respiratory rate with no contact, no wearables, and no line-of-sight requirement.
+
+Built on prior academic work — PhaseBeat (INFOCOM 2017), FullBreathe (UbiComp 2018), ResBeat (2020). ViFi's contribution is productizing it on $20 commodity ESP32 chips instead of $500 research-grade WiFi cards, with calibration, RF fingerprinting, out-of-distribution suppression, and an auditable prediction pipeline suitable for FDA submission.
+
+## Pages
+
+- [Home](https://vifi.health/): product overview, market context, and headline result
+- [Results](https://vifi.health/results): full real-hardware methodology, per-session breakdowns, comparison to academic reference
+- [Roadmap](https://vifi.health/roadmap): shipped vs planned capabilities, FDA 510(k) pathway, hardware bill of materials, regulatory plan
+
+## Roadmap (high-level)
+
+1. Multi-subject validation (12+ subjects, target <3 bpm cross-subject MAE)
+2. First wellness-grade hospital pilot (5–10 medical/surgical beds, pre-FDA)
+3. FDA 510(k) Class II submission, predicate EarlySense (K191357) or comparable
+
+Total time to FDA clearance: ~18 months. Total cost: ~$300K (clinical study + ISO 13485 QMS + regulatory consultant + filing).
+
+## Out of scope
+
+ViFi targets vital signs from chest motion. Things ViFi does NOT and will not detect:
+- Blood oxygen (SpO2) — requires optical sensor, not RF
+- Body temperature — requires IR sensor, not RF
+- Blood pressure — open research problem industry-wide
+- ECG waveform — requires direct skin contact
+
+## Contact
+
+- Pilot inquiries: popowitzzm@gmail.com
+- General: popowitzzm@gmail.com
+- Engineering due diligence: available under NDA for investors and hospital partners

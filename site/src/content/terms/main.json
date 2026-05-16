@@ -1,0 +1,319 @@
+{
+  "meta": {
+    "title": "Terms of Use",
+    "description": "Terms of Use governing access to and use of vifi.health. The Site is informational only. ViFi is a pre-clearance research project; nothing on the Site constitutes a medical device, medical advice, or a clinical service. The Site is provided AS IS, without warranty, with maximum disclaimer and limitation of liability."
+  },
+  "title": "Terms of Use",
+  "intro": "Effective Date: May 1, 2026. Last Updated: May 4, 2026. PLEASE READ THESE TERMS OF USE CAREFULLY BEFORE ACCESSING OR USING THE SITE. THESE TERMS CONTAIN A BINDING ARBITRATION PROVISION, A CLASS-ACTION WAIVER, A LIMITATION OF LIABILITY, AND A COMPREHENSIVE DISCLAIMER OF WARRANTIES, EACH OF WHICH AFFECTS YOUR LEGAL RIGHTS AND REMEDIES.",
+  "sections": [
+    {
+      "id": "acceptance",
+      "heading": "1. Acceptance of Terms",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "These Terms of Use, together with the Privacy Policy and any other policies, notices, or supplemental terms expressly incorporated herein by reference (collectively, the \"Terms\"), constitute a legally binding agreement between you (\"User,\" \"you,\" or \"your\") and ViFi (\"ViFi,\" \"we,\" \"us,\" or \"our\") governing your access to and use of the website located at vifi.health and any successor or related domains and any content, information, text, graphics, images, data, software, services, features, and functionality made available through it (collectively, the \"Site\" or the \"Platform\"). By accessing, browsing, downloading from, or otherwise using the Site, you represent and warrant that (i) you have read, understood, and agree to be bound by these Terms; (ii) you are of legal age to form a binding contract in your jurisdiction; and (iii) you have the authority to enter into these Terms personally and, if applicable, on behalf of any entity you represent. **IF YOU DO NOT AGREE TO THESE TERMS, YOU MUST IMMEDIATELY DISCONTINUE ALL USE OF THE SITE.**"
+        }
+      ]
+    },
+    {
+      "id": "definitions",
+      "heading": "2. Definitions",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "For purposes of these Terms: \"Applicable Law\" means all applicable federal, state, provincial, local, and foreign laws, statutes, regulations, rules, ordinances, codes, treaties, judgments, decrees, and orders. \"Content\" means any and all text, graphics, images, photographs, illustrations, diagrams, charts, audio, video, software, source code, data, statistics, methodology descriptions, results, performance metrics, forward-looking statements, and other materials available on or through the Site. \"FDA\" means the United States Food and Drug Administration. \"HIPAA\" means the Health Insurance Portability and Accountability Act of 1996, as amended, together with its implementing regulations. \"Intellectual Property Rights\" means all rights, titles, and interests in and to copyrights, trademarks, service marks, trade names, trade dress, patents, patent applications, trade secrets, know-how, moral rights, rights of publicity, and any other proprietary rights, whether registered or unregistered, arising under the laws of any jurisdiction. \"Loss\" means any and all losses, damages, liabilities, claims, demands, judgments, settlements, fines, penalties, interest, costs, and expenses (including without limitation reasonable attorneys' fees, expert-witness fees, and costs of investigation and litigation)."
+        }
+      ]
+    },
+    {
+      "id": "eligibility",
+      "heading": "3. Eligibility",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site is intended for use by adult professional audiences, including without limitation clinicians, researchers, biomedical engineers, hospital administrators, and prospective investors. By using the Site, you represent and warrant that you are at least eighteen (18) years of age and otherwise capable of forming a legally binding contract under Applicable Law. The Site is not intended for, and may not be used by, individuals under thirteen (13) years of age."
+        }
+      ]
+    },
+    {
+      "id": "purpose",
+      "heading": "4. Informational Purpose Only",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site is provided solely for informational, research-status, and business-development purposes. The Site is not, and is not intended to be, (i) a clinical product or service; (ii) a patient portal; (iii) a medical-device user interface; (iv) a diagnostic or therapeutic tool; (v) a source of medical advice; or (vi) a substitute for the professional judgment of a licensed healthcare provider. Information made available on the Site is provided for general informational purposes only and may be incomplete, inaccurate, or out of date."
+        }
+      ]
+    },
+    {
+      "id": "no-medical-advice",
+      "heading": "5. No Medical Advice; No Medical Device",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**THE SITE DOES NOT CONSTITUTE THE PRACTICE OF MEDICINE, NURSING, OR ANY OTHER HEALTHCARE PROFESSION, AND DOES NOT CREATE A PHYSICIAN-PATIENT, NURSE-PATIENT, OR OTHER PROFESSIONAL HEALTHCARE RELATIONSHIP.** Nothing contained on or accessible through the Site shall be construed as medical advice, a medical opinion, a diagnosis, a treatment recommendation, a prescription, or an endorsement of any particular test, product, procedure, or course of action. **YOU SHOULD ALWAYS SEEK THE ADVICE OF A QUALIFIED HEALTHCARE PROVIDER WITH ANY QUESTIONS YOU MAY HAVE REGARDING A MEDICAL CONDITION OR TREATMENT.** You shall never disregard professional medical advice or delay seeking it on account of anything you have read on or through the Site. **IN A MEDICAL EMERGENCY, CALL 911 (IN THE UNITED STATES) OR YOUR LOCAL EMERGENCY SERVICES IMMEDIATELY.**"
+        },
+        {
+          "type": "paragraph",
+          "text": "The system, methodology, hardware, and software described on the Site (collectively, the \"ViFi Research System\") **HAS NOT BEEN CLEARED, AUTHORIZED, OR APPROVED** by the FDA or by any other regulatory authority in any jurisdiction, and is **NOT** a medical device under Section 201(h) of the Federal Food, Drug, and Cosmetic Act (21 U.S.C. § 321(h)) or under any analogous provision of foreign law. The ViFi Research System is a pre-clearance research prototype and may not be used in connection with the diagnosis, cure, mitigation, treatment, or prevention of disease in human beings."
+        }
+      ]
+    },
+    {
+      "id": "forward-looking",
+      "heading": "6. Forward-Looking Statements",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site contains forward-looking statements, including without limitation statements regarding anticipated regulatory milestones, projected validation results, target deployment timelines, projected accuracy improvements, anticipated funding outcomes, and the future trajectory of the ViFi Research System. Such forward-looking statements are based on current expectations, assumptions, estimates, and projections and are subject to numerous known and unknown risks, uncertainties, and contingencies, many of which are beyond our control. Actual results, events, and outcomes may differ materially from those expressed or implied. We undertake no obligation to update or revise any forward-looking statement to reflect events or circumstances arising after the date hereof, except as may be required by Applicable Law. **NO REPRESENTATION OR WARRANTY IS GIVEN AS TO THE ACCURACY, COMPLETENESS, OR ACHIEVABILITY OF ANY FORWARD-LOOKING STATEMENT.**"
+        }
+      ]
+    },
+    {
+      "id": "user-conduct",
+      "heading": "7. User Conduct; Compliance with Laws",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**You agree to comply with all applicable federal, state, and local laws and regulations in your use of the Platform**, as well as with all applicable foreign laws and regulations of any jurisdiction in or from which you access the Platform. Without limiting the generality of the foregoing, you shall not, and shall not permit any third party to:"
+        },
+        {
+          "type": "ordered_list",
+          "items": [
+            "use the Platform in any manner that violates Applicable Law, infringes the Intellectual Property Rights or other rights of any third party, or breaches any contract or fiduciary duty to which you are subject;",
+            "use the Platform to transmit, store, or distribute any unlawful, harmful, threatening, abusive, harassing, defamatory, libelous, vulgar, obscene, fraudulent, invasive of another's privacy, or otherwise objectionable content;",
+            "use the Platform in any manner that could disable, overburden, damage, or impair the Site or interfere with any other party's use of the Site, including without limitation by transmitting viruses, worms, trojan horses, ransomware, or other malicious code, or by conducting denial-of-service or distributed-denial-of-service attacks;",
+            "use any robot, spider, scraper, crawler, data-mining tool, or other automated means to access, collect, or harvest data from the Site, except that public search-engine crawlers may access the Site in a manner consistent with our then-current robots.txt directives;",
+            "reverse engineer, decompile, disassemble, or otherwise attempt to derive the source code, underlying ideas, algorithms, structure, or organization of any software, model, or system underlying or accessible through the Site;",
+            "circumvent, disable, or otherwise interfere with security-related features of the Site, including without limitation features that prevent or restrict use or copying of any Content;",
+            "frame, mirror, or otherwise replicate any portion of the Site without our prior written consent;",
+            "use the Site to develop, train, or improve any artificial-intelligence model, machine-learning model, large language model, or other generative system, except as expressly permitted in writing by ViFi;",
+            "use the Site to make any clinical decision or to provide any clinical service to any patient or other individual; or",
+            "use the Site for any commercial purpose other than as expressly authorized by ViFi in writing."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ip",
+      "heading": "8. Intellectual Property",
+      "blocks": [
+        { "type": "subheading", "text": "8.1 Ownership" },
+        {
+          "type": "paragraph",
+          "text": "The Site and all Content are owned by ViFi or its licensors and are protected by copyright, trademark, trade-secret, and other Intellectual Property Rights laws of the United States and other jurisdictions. All rights in and to the Site and the Content not expressly granted to you in these Terms are reserved by ViFi and its licensors."
+        },
+        { "type": "subheading", "text": "8.2 Limited License" },
+        {
+          "type": "paragraph",
+          "text": "Subject to your continuing compliance with these Terms, ViFi grants you a limited, revocable, non-exclusive, non-transferable, non-sublicensable license to access and view the publicly available Content for your personal, non-commercial, informational use only. You may quote brief excerpts from the Content in good-faith reporting, scholarly commentary, or critique, **provided that** (i) such use constitutes fair use under 17 U.S.C. § 107 or analogous Applicable Law; (ii) the excerpt does not exceed what is reasonably necessary for the permitted purpose; and (iii) the excerpt is accompanied by clear attribution to ViFi and a link to the Site. **All other use of the Content, including without limitation reproduction, redistribution, republication, public display, public performance, modification, derivative works, commercial exploitation, and use to develop or train any artificial-intelligence or machine-learning model, is strictly prohibited absent ViFi's prior express written consent.**"
+        },
+        { "type": "subheading", "text": "8.3 Trademarks" },
+        {
+          "type": "paragraph",
+          "text": "\"ViFi,\" the ViFi name, the ViFi logo, and any related word marks, design marks, and trade dress (collectively, the \"ViFi Marks\") are the trademarks of ViFi. All other trademarks, service marks, trade names, and logos appearing on the Site are the property of their respective owners. Nothing on the Site shall be construed as granting, by implication, estoppel, or otherwise, any license or right to use any ViFi Mark or any third-party mark without the prior written permission of the applicable owner."
+        },
+        { "type": "subheading", "text": "8.4 Feedback" },
+        {
+          "type": "paragraph",
+          "text": "If you submit any suggestion, feedback, comment, idea, or proposal to ViFi (collectively, \"Feedback\"), you hereby grant to ViFi a perpetual, irrevocable, worldwide, royalty-free, fully paid-up, sublicensable, transferable license to use, reproduce, modify, adapt, prepare derivative works of, publish, distribute, display, and otherwise exploit the Feedback in any manner and for any purpose, without compensation, attribution, or accounting to you, and without restriction. You represent and warrant that you have all rights necessary to grant the foregoing license."
+        }
+      ]
+    },
+    {
+      "id": "third-party",
+      "heading": "9. Third-Party Links and Resources",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The Site may contain hyperlinks to academic publications, third-party websites, and external services that are not owned, operated, or controlled by ViFi. Such hyperlinks are provided solely for your convenience. ViFi does not endorse, sponsor, recommend, or assume any responsibility for the content, products, services, policies, practices, or availability of any third-party property. **YOUR USE OF ANY THIRD-PARTY PROPERTY IS AT YOUR SOLE RISK AND SUBJECT TO THE TERMS AND POLICIES APPLICABLE TO THAT PROPERTY.**"
+        }
+      ]
+    },
+    {
+      "id": "disclaimer",
+      "heading": "10. Disclaimer of Warranties",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**THE SITE, THE CONTENT, AND ALL INFORMATION, MATERIALS, AND SERVICES MADE AVAILABLE ON OR THROUGH THE SITE ARE PROVIDED \"AS IS,\" \"AS AVAILABLE,\" AND \"WITH ALL FAULTS,\" WITHOUT REPRESENTATION OR WARRANTY OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, AND VIFI HEREBY EXPRESSLY DISCLAIMS ANY AND ALL SUCH REPRESENTATIONS AND WARRANTIES TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, INCLUDING WITHOUT LIMITATION ALL IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, COMPLETENESS, RELIABILITY, AVAILABILITY, SECURITY, COMPATIBILITY, QUIET ENJOYMENT, AND ANY WARRANTY ARISING FROM COURSE OF DEALING, COURSE OF PERFORMANCE, OR USAGE OF TRADE.**"
+        },
+        {
+          "type": "paragraph",
+          "text": "**WITHOUT LIMITING THE FOREGOING, VIFI DOES NOT WARRANT, AND EXPRESSLY DISCLAIMS, THAT (I) THE SITE OR THE CONTENT WILL MEET YOUR REQUIREMENTS OR EXPECTATIONS; (II) THE SITE WILL OPERATE UNINTERRUPTED, SECURE, ERROR-FREE, OR FREE FROM VIRUSES OR OTHER HARMFUL COMPONENTS; (III) ANY INFORMATION OBTAINED FROM THE SITE WILL BE ACCURATE, COMPLETE, RELIABLE, OR CURRENT; (IV) ANY DEFECT IN THE SITE WILL BE CORRECTED; OR (V) ANY RESULTS DESCRIBED ON THE SITE WILL BE REPLICATED IN ANY OTHER ENVIRONMENT, ON ANY OTHER SUBJECT, IN ANY OTHER ROOM, OR ON ANY OTHER HARDWARE.** Some jurisdictions do not allow the exclusion of certain warranties; in such jurisdictions, the foregoing exclusions apply to the maximum extent permitted by Applicable Law."
+        }
+      ]
+    },
+    {
+      "id": "liability",
+      "heading": "11. Limitation of Liability",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL VIFI, ITS FOUNDERS, OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, CONTRACTORS, ADVISORS, AFFILIATES, LICENSORS, SUPPLIERS, OR SERVICE PROVIDERS (COLLECTIVELY, THE \"VIFI PARTIES\") BE LIABLE TO YOU OR TO ANY THIRD PARTY FOR ANY (A) INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES; (B) LOSS OF PROFITS, REVENUE, BUSINESS, GOODWILL, USE, DATA, CONTENT, OR OTHER INTANGIBLE LOSSES; (C) PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; OR (D) ANY DAMAGES, LOSSES, OR INJURIES (INCLUDING WITHOUT LIMITATION PERSONAL INJURY OR DEATH) ARISING OUT OF OR RELATING TO ANY CLINICAL, DIAGNOSTIC, OR TREATMENT DECISION INFLUENCED IN WHOLE OR IN PART BY THE SITE OR THE CONTENT, IN EACH CASE WHETHER ARISING UNDER CONTRACT, TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, STATUTE, OR ANY OTHER LEGAL OR EQUITABLE THEORY, EVEN IF A VIFI PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.**"
+        },
+        {
+          "type": "paragraph",
+          "text": "**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AGGREGATE LIABILITY OF THE VIFI PARTIES TO YOU FOR ANY AND ALL CLAIMS ARISING OUT OF OR RELATING TO THESE TERMS OR THE SITE, REGARDLESS OF THE FORM OR THEORY OF ACTION, SHALL NOT EXCEED THE GREATER OF (I) THE AMOUNT YOU HAVE PAID TO VIFI IN CONNECTION WITH THE SITE IN THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM, AND (II) ONE HUNDRED UNITED STATES DOLLARS (US$100.00).**"
+        },
+        {
+          "type": "paragraph",
+          "text": "You acknowledge and agree that the disclaimers, exclusions, and limitations set forth in Sections 10 and 11 are an essential basis of the bargain between you and ViFi, that ViFi would not provide the Site without such limitations, and that such limitations shall apply notwithstanding the failure of essential purpose of any limited remedy. Some jurisdictions do not allow the exclusion or limitation of incidental or consequential damages or of liability for personal injury caused by negligence; in such jurisdictions, the liability of the ViFi Parties shall be limited to the maximum extent permitted by Applicable Law."
+        }
+      ]
+    },
+    {
+      "id": "indemnification",
+      "heading": "12. Indemnification",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**You agree to defend, indemnify, and hold harmless the ViFi Parties from and against any and all Loss arising out of or relating to (i) your access to or use of the Site; (ii) your violation of these Terms; (iii) your violation of Applicable Law; (iv) your infringement, misappropriation, or violation of the Intellectual Property Rights or other rights of any third party; (v) any content you submit, post, transmit, or otherwise make available through or in connection with the Site; or (vi) any clinical, diagnostic, or treatment decision made by you or any third party in reliance on the Site or the Content.** ViFi reserves the right, at its own expense, to assume the exclusive defense and control of any matter otherwise subject to indemnification by you, in which event you shall cooperate with ViFi in asserting any available defenses. You shall not settle any claim without ViFi's prior written consent."
+        }
+      ]
+    },
+    {
+      "id": "pilot-carveout",
+      "heading": "13. Pilot Deployments and Collaborations",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Any pilot deployment, evaluation, demonstration, joint development, sponsored research, clinical study, or other collaboration involving the ViFi Research System and any hospital, health system, research institution, governmental body, investor, or other organization shall be governed by a separate, mutually executed written agreement and, where applicable, an IRB-approved protocol and a fully executed BAA. Such separate agreement shall supersede these Terms with respect to the subject matter thereof. Nothing on the Site shall constitute (a) an offer to sell, license, lease, or otherwise provide the ViFi Research System; (b) a representation or warranty regarding any future commercial product or service; or (c) a commitment to enter into any such agreement on any particular terms."
+        }
+      ]
+    },
+    {
+      "id": "modifications",
+      "heading": "14. Modifications to the Site and to These Terms",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ViFi reserves the right, at any time and in its sole discretion, to modify, suspend, discontinue, or impose limits on, in whole or in part, the Site, the Content, or any feature thereof, without notice and without liability to you or any third party. ViFi further reserves the right to amend these Terms at any time by posting the amended Terms to the Site, with a corresponding update to the \"Last Updated\" date set forth above. Material amendments will be highlighted on the Site for a reasonable period before they take effect. Your continued use of the Site after the effective date of any amendment constitutes your acceptance of the amended Terms."
+        }
+      ]
+    },
+    {
+      "id": "termination",
+      "heading": "15. Termination",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ViFi may, in its sole discretion and without prior notice or liability, suspend, restrict, or terminate your access to the Site, in whole or in part, at any time and for any reason or for no reason, including without limitation for any actual or suspected violation of these Terms or Applicable Law. You may terminate these Terms at any time by ceasing all use of the Site. The provisions of these Terms that by their nature are intended to survive termination, including without limitation Sections 8 (Intellectual Property), 10 (Disclaimer of Warranties), 11 (Limitation of Liability), 12 (Indemnification), 17 (Governing Law), 18 (Dispute Resolution), and this Section 15, shall survive any termination."
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "heading": "16. Export Controls and Sanctions",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "You represent and warrant that (i) you are not located in, organized under the laws of, or ordinarily resident in any country or territory that is the subject of comprehensive United States, European Union, or United Kingdom economic sanctions; (ii) you are not identified on the U.S. Department of Treasury's Specially Designated Nationals and Blocked Persons List, the U.S. Department of Commerce's Denied Persons List or Entity List, or any other applicable restricted-party list; and (iii) you shall comply with all Applicable Law relating to export controls, trade sanctions, and anti-corruption in connection with your use of the Site."
+        }
+      ]
+    },
+    {
+      "id": "governing-law",
+      "heading": "17. Governing Law",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "These Terms, and any dispute, claim, controversy, action, or proceeding arising out of or relating to these Terms, the Site, or the Content (a \"Dispute\"), shall be governed by and construed in accordance with the laws of the State of Delaware, U.S.A., without regard to its conflict-of-laws principles. The United Nations Convention on Contracts for the International Sale of Goods shall not apply."
+        }
+      ]
+    },
+    {
+      "id": "dispute-resolution",
+      "heading": "18. Dispute Resolution; Binding Arbitration; Class-Action Waiver",
+      "blocks": [
+        { "type": "subheading", "text": "18.1 Informal Resolution" },
+        {
+          "type": "paragraph",
+          "text": "Before initiating any formal proceeding, you agree to attempt in good faith to resolve any Dispute by sending written notice to [hello@vifi.health](mailto:hello@vifi.health) describing the Dispute and the relief sought, and by negotiating in good faith for a period of not less than sixty (60) days following such notice."
+        },
+        { "type": "subheading", "text": "18.2 Binding Arbitration" },
+        {
+          "type": "paragraph",
+          "text": "If the Dispute is not resolved within the sixty (60)-day informal-resolution period, **YOU AND VIFI EACH AGREE THAT THE DISPUTE SHALL BE RESOLVED EXCLUSIVELY BY FINAL AND BINDING ARBITRATION** administered by JAMS pursuant to its Streamlined Arbitration Rules and Procedures then in effect, before a single arbitrator. The arbitration shall take place in Wilmington, Delaware, U.S.A., or, at your election, by videoconference. The arbitrator shall apply the substantive law of the State of Delaware, shall have the authority to grant any remedy that would otherwise be available in court, and shall issue a reasoned written award. Judgment on the award may be entered in any court of competent jurisdiction. Notwithstanding the foregoing, either party may seek temporary or preliminary injunctive relief in a court of competent jurisdiction in aid of arbitration or to protect Intellectual Property Rights."
+        },
+        { "type": "subheading", "text": "18.3 Class-Action Waiver" },
+        {
+          "type": "paragraph",
+          "text": "**YOU AND VIFI EACH AGREE THAT EACH PARTY MAY BRING CLAIMS AGAINST THE OTHER ONLY IN AN INDIVIDUAL CAPACITY AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, REPRESENTATIVE, OR PRIVATE-ATTORNEY-GENERAL ACTION OR PROCEEDING.** The arbitrator shall have no authority to consolidate the claims of multiple parties or to preside over any form of representative proceeding. If this Section 18.3 is held unenforceable as to any claim, then that claim, and only that claim, shall be severed from arbitration and brought in a court of competent jurisdiction in accordance with Section 17."
+        },
+        { "type": "subheading", "text": "18.4 Limitations Period" },
+        {
+          "type": "paragraph",
+          "text": "**Any claim or cause of action arising out of or related to these Terms, the Site, or the Content must be commenced within one (1) year after the cause of action accrues; otherwise, such claim or cause of action shall be permanently barred.**"
+        }
+      ]
+    },
+    {
+      "id": "force-majeure",
+      "heading": "19. Force Majeure",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ViFi shall not be liable for any failure or delay in performance arising out of or relating to any cause beyond its reasonable control, including without limitation acts of God, natural disasters, fires, floods, earthquakes, pandemics, epidemics, public-health emergencies, war, acts of terrorism, civil unrest, governmental action, embargoes, labor disputes, power failures, network outages, denial-of-service attacks, third-party service-provider failures, and shortages of materials or transportation."
+        }
+      ]
+    },
+    {
+      "id": "miscellaneous",
+      "heading": "20. Miscellaneous",
+      "blocks": [
+        { "type": "subheading", "text": "20.1 Entire Agreement" },
+        {
+          "type": "paragraph",
+          "text": "These Terms, together with the Privacy Policy and any policies expressly incorporated herein by reference, constitute the entire agreement between you and ViFi with respect to the Site and supersede all prior or contemporaneous communications, understandings, and agreements, whether oral or written, with respect to such subject matter."
+        },
+        { "type": "subheading", "text": "20.2 Severability" },
+        {
+          "type": "paragraph",
+          "text": "If any provision of these Terms is held by a court or arbitrator of competent jurisdiction to be invalid, illegal, or unenforceable for any reason, such provision shall be enforced to the maximum extent permitted by Applicable Law, and the remaining provisions shall continue in full force and effect."
+        },
+        { "type": "subheading", "text": "20.3 No Waiver" },
+        {
+          "type": "paragraph",
+          "text": "No failure or delay by ViFi in exercising any right, power, or privilege under these Terms shall operate as a waiver thereof, nor shall any single or partial exercise preclude any other or further exercise of any right, power, or privilege."
+        },
+        { "type": "subheading", "text": "20.4 Assignment" },
+        {
+          "type": "paragraph",
+          "text": "You may not assign, delegate, or otherwise transfer these Terms or any of your rights or obligations hereunder, in whole or in part, without ViFi's prior written consent, and any purported assignment in violation of this Section shall be null and void. ViFi may freely assign or transfer these Terms, in whole or in part, without notice or consent."
+        },
+        { "type": "subheading", "text": "20.5 Relationship of the Parties" },
+        {
+          "type": "paragraph",
+          "text": "These Terms do not create any agency, partnership, joint venture, fiduciary, or employment relationship between you and ViFi. Neither party has authority to bind the other or to incur any obligation on the other's behalf."
+        },
+        { "type": "subheading", "text": "20.6 Notices" },
+        {
+          "type": "paragraph",
+          "text": "All notices to ViFi under these Terms shall be in writing and sent by electronic mail to [hello@vifi.health](mailto:hello@vifi.health), and shall be deemed given upon confirmed transmission. ViFi may provide notices to you by posting on the Site or by such other means as it may select."
+        },
+        { "type": "subheading", "text": "20.7 Headings" },
+        {
+          "type": "paragraph",
+          "text": "Section headings are provided for convenience of reference only and shall not affect the interpretation of these Terms."
+        },
+        { "type": "subheading", "text": "20.8 Language" },
+        {
+          "type": "paragraph",
+          "text": "These Terms were drafted in the English language. Any translation provided for convenience is non-binding, and the English-language version shall control in the event of any conflict."
+        }
+      ]
+    },
+    {
+      "id": "contact",
+      "heading": "21. Contact Information",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "All notices, inquiries, and correspondence regarding these Terms shall be directed to: ViFi, c/o Zach Popowitz, by electronic mail at [hello@vifi.health](mailto:hello@vifi.health)."
+        }
+      ]
+    }
+  ]
+}

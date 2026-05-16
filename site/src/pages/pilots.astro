@@ -1,0 +1,244 @@
+---
+import { getEntry } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+
+const landing = await getEntry("landing", "main");
+const c = landing.data;
+
+// Formspree drop-in: set PUBLIC_FORMSPREE_PILOTS_ID in .env (and as a
+// Vercel project Environment Variable) to a Formspree form ID, e.g.
+// "abcdwxyz" from https://formspree.io/f/abcdwxyz. When unset, we
+// deliberately render an "email us" panel instead of the form, because
+// a form with a mailto: action triggers Chrome's "Not Secure / autofill
+// disabled" warning on HTTPS pages.
+const formspreeId = import.meta.env.PUBLIC_FORMSPREE_PILOTS_ID;
+const formAction = formspreeId ? `https://formspree.io/f/${formspreeId}` : null;
+
+const meta = {
+  title: "Pilot inquiry — ViFi",
+  description:
+    "Hospitals, biomedical-engineering teams, and clinical research offices interested in hosting a wellness-grade pilot of ViFi's contactless WiFi-based patient monitoring can start the conversation here.",
+};
+---
+
+<Layout title={meta.title} description={meta.description}>
+  <SiteHeader />
+
+  <!-- ============================================================ HERO -->
+  <section class="bg-ink px-6 pt-20 pb-16 md:pt-28 md:pb-20">
+    <div class="mx-auto max-w-3xl">
+      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
+        For hospitals
+      </p>
+      <h1
+        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
+      >
+        Run a pilot.
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+        ViFi is in conversation with med-surg floor leaders, biomedical
+        engineering teams, and clinical research offices interested in
+        hosting a wellness-grade pilot of contactless WiFi-based patient
+        monitoring. Tell us a bit about your site and we'll be in touch
+        within a few days.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ WHAT A PILOT LOOKS LIKE -->
+  <section data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-20">
+    <div class="mx-auto max-w-3xl">
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        What a pilot looks like
+      </h2>
+      <ul class="mt-8 space-y-3 text-lg text-slate-300">
+        <li class="flex gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span>5–10 rooms instrumented with two ESP32-S3 boards each</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span>30–90 day duration, IRB review where applicable</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span>Runs alongside your existing monitoring; no clinical decisions are made from ViFi data</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span>Fully de-identified, on-premise data handling</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span>Output: a measurement study comparing ViFi against your existing reference</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ FORM -->
+  <section data-animate="right" class="bg-ink px-6 py-20">
+    <div class="mx-auto max-w-3xl">
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        Tell us about your site
+      </h2>
+      <p class="mt-4 text-slate-400">
+        All fields except the open notes are short. The form goes
+        straight to the founder; expect a reply within a few business days.
+      </p>
+
+      {formAction ? (
+        <form action={formAction} method="POST" class="mt-10 space-y-6">
+          <!-- Honeypot: bots fill _gotcha; Formspree silently drops those. -->
+          <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
+          <input type="hidden" name="_subject" value="ViFi pilot inquiry" />
+
+          <p class="text-xs text-slate-500">
+            Fields marked <span class="text-red-400">*</span> are required.
+          </p>
+
+          <div class="grid gap-6 md:grid-cols-2">
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">
+                Your name <span class="text-red-400" aria-hidden="true">*</span>
+              </span>
+              <input
+                type="text"
+                name="name"
+                required
+                aria-required="true"
+                autocomplete="name"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">
+                Email <span class="text-red-400" aria-hidden="true">*</span>
+              </span>
+              <input
+                type="email"
+                name="email"
+                required
+                aria-required="true"
+                autocomplete="email"
+                inputmode="email"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+          </div>
+
+          <div class="grid gap-6 md:grid-cols-2">
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">Organization</span>
+              <input
+                type="text"
+                name="organization"
+                autocomplete="organization"
+                placeholder="Hospital or health system"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">Your role</span>
+              <input
+                type="text"
+                name="role"
+                autocomplete="organization-title"
+                placeholder="e.g. VP Innovation, BME Director"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+          </div>
+
+          <div class="grid gap-6 md:grid-cols-2">
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">Approx. number of beds</span>
+              <input
+                type="text"
+                name="beds"
+                autocomplete="off"
+                placeholder="e.g. 30 med-surg beds"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">Pilot timeline</span>
+              <input
+                type="text"
+                name="timeline"
+                autocomplete="off"
+                placeholder="e.g. Q4 2026"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+          </div>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">Existing monitoring</span>
+            <input
+              type="text"
+              name="existing_monitoring"
+              autocomplete="off"
+              placeholder="What you currently use on the floor"
+              class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">Anything else?</span>
+            <textarea
+              name="notes"
+              rows="5"
+              autocomplete="off"
+              placeholder="Goals for the pilot, constraints, IRB process, anything we should know."
+              class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            ></textarea>
+          </label>
+
+          <div class="flex flex-wrap items-center gap-4 pt-2">
+            <button
+              type="submit"
+              class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+            >
+              Send pilot inquiry
+            </button>
+            <p class="text-xs text-slate-500">
+              By submitting you agree to ViFi's
+              <a href="/privacy" class="underline hover:text-paper">Privacy Policy</a>
+              and
+              <a href="/terms" class="underline hover:text-paper">Terms of Use</a>.
+            </p>
+          </div>
+        </form>
+      ) : (
+        <div class="mt-10 rounded-lg border border-slate-800 bg-slate-950 p-8 text-slate-300">
+          <p class="text-lg">
+            The pilot inquiry form is being set up. In the meantime,
+            email
+            <a
+              href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`}
+              class="text-accent underline hover:text-paper"
+            >
+              {c.links.pilot_email}
+            </a>
+            with a couple of lines about your site and we'll take it from there.
+          </p>
+          <a
+            href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`}
+            class="mt-6 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+          >
+            Email pilot inquiry →
+          </a>
+        </div>
+      )}
+    </div>
+  </section>
+
+  <SiteFooter />
+</Layout>
