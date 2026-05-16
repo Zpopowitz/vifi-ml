@@ -1,0 +1,93 @@
+---
+// Sticky header used by every page. Logo shrinks on scroll; mobile menu
+// collapses behind a hamburger. Nav items come from the landing JSON so
+// the menu is one source of truth across the whole site.
+import { getEntry } from "astro:content";
+
+const landing = await getEntry("landing", "main");
+const c = landing.data;
+---
+
+<header
+  id="site-header"
+  transition:persist
+  class="sticky top-0 z-50 border-b border-slate-800 bg-ink transition-all duration-200"
+>
+  <nav
+    id="site-nav"
+    class="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 transition-all duration-200"
+  >
+    <a href="/" class="flex items-center">
+      <img
+        id="site-logo"
+        src="/logo.png"
+        alt={c.nav.brand}
+        class="h-10 w-auto transition-all duration-200"
+      />
+    </a>
+
+    <div class="hidden gap-6 text-sm text-slate-400 md:flex">
+      {c.nav.items.map((item) => (
+        <a href={item.href} class="hover:text-paper">{item.label}</a>
+      ))}
+    </div>
+
+    <button
+      id="mobile-menu-btn"
+      class="md:hidden p-2 text-slate-400 hover:text-paper"
+      aria-label="Toggle menu"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+      </svg>
+    </button>
+  </nav>
+
+  <div id="mobile-menu" class="hidden md:hidden border-t border-slate-800 bg-ink">
+    <div class="flex flex-col text-sm text-slate-400">
+      {c.nav.items.map((item) => (
+        <a
+          href={item.href}
+          class="px-6 py-4 border-b border-slate-800 hover:text-paper hover:bg-slate-900"
+        >
+          {item.label}
+        </a>
+      ))}
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("mobile-menu-btn")?.addEventListener("click", () => {
+      document.getElementById("mobile-menu")?.classList.toggle("hidden");
+    });
+    document.querySelectorAll("#mobile-menu a").forEach((link) => {
+      link.addEventListener("click", () => {
+        document.getElementById("mobile-menu")?.classList.add("hidden");
+      });
+    });
+  </script>
+  <script is:inline>
+    const header = document.getElementById("site-header");
+    const onScroll = () => {
+      if (window.scrollY > 20) header?.classList.add("is-scrolled");
+      else header?.classList.remove("is-scrolled");
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  </script>
+
+  <style is:global>
+    #site-header.is-scrolled {
+      background-color: rgba(10, 22, 40, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    #site-header.is-scrolled #site-nav {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    #site-header.is-scrolled #site-logo {
+      height: 1.75rem;
+    }
+  </style>
+</header>

@@ -1,0 +1,244 @@
+{
+  "meta": {
+    "title": "Real-hardware results",
+    "description": "ViFi's real-hardware heart-rate methodology and numbers — 4.15 bpm cross-session HR MAE on $44 of ESP32-S3 hardware against a Polar H10 chest strap."
+  },
+  "title": "Validation Results | ViFi",
+  "intro": "This document records the methodology and numbers for ViFi's real-hardware heart-rate estimation. It is written so a technical reviewer can verify what was measured, how, and what it does and does not prove.",
+  "sections": [
+    {
+      "id": "headline",
+      "heading": "Headline",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**4.15 bpm cross-session HR mean absolute error** against a Polar H10 chest strap, on $44 of commodity ESP32-S3 hardware, single subject, single room, 4 paired captures totaling ~8 minutes of real-hardware data."
+        },
+        {
+          "type": "table",
+          "headers": ["Holdout", "Trained on", "HR MAE", "Within ±5 bpm", "Bias"],
+          "rows": [
+            ["session5", "sessions 3, 4", "3.89 bpm", "68.2%", "+0.94 bpm"],
+            ["session4", "sessions 3, 5", "4.41 bpm", "65.2%", "+3.02 bpm"],
+            ["**Mean**", "—", "**4.15 bpm**", "**66.7%**", "**+1.98 bpm**"]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The model never saw the held-out session during training. Both cross-session evaluations are on completely independent recordings."
+        }
+      ]
+    },
+    {
+      "id": "what-was-measured",
+      "heading": "What was measured",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "**Heart rate (HR), in beats per minute, every 10 seconds (5-second stride).**"
+        },
+        {
+          "type": "paragraph",
+          "text": "Each window's prediction is compared against the Polar H10 ground-truth HR at the window center, interpolated linearly between the H10's 1 Hz reading."
+        },
+        {
+          "type": "paragraph",
+          "text": "Metrics reported:"
+        },
+        {
+          "type": "bulleted_list",
+          "items": [
+            "**Mean absolute error (MAE):** average of `|predicted − true|` across all windows",
+            "**% within ±5 bpm:** fraction of windows with absolute error ≤ 5 bpm",
+            "**Bias:** mean of `(predicted − true)`, indicating systematic offset"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "how-data-collected",
+      "heading": "How the data was collected",
+      "blocks": [
+        { "type": "subheading", "text": "Hardware" },
+        {
+          "type": "table",
+          "headers": ["Component", "Spec"],
+          "rows": [
+            ["Transmitter (TX)", "ESP32-S3-DevKitC-1U-N8R8, external dual-band antenna"],
+            ["Receiver (RX)", "ESP32-S3-DevKitC-1U-N8R8, external dual-band antenna"],
+            ["Antenna pair", "2.4/5 GHz omnidirectional, vertical orientation"],
+            ["Pigtails", "IPEX1 U.FL → RP-SMA Female, 8\""],
+            ["Firmware", "Espressif ESP-IDF v6.0 `wifi_csi_rx` example, one-line patch for the `WIFI_BW_HT*` enum rename"],
+            ["Channel", "WiFi channel 11, HT40 (40 MHz bandwidth)"],
+            ["Subcarriers", "192 per packet (LLTF + HT-LTF combined)"],
+            ["Packet rate (measured)", "~67–77 Hz per session"],
+            ["Ground-truth HR", "Polar H10 chest strap"]
+          ]
+        },
+        { "type": "subheading", "text": "Setup" },
+        {
+          "type": "bulleted_list",
+          "items": [
+            "Subject seated in a chair with the TX board behind and the RX board in front (~1.5–2 m apart)",
+            "Both antennas vertical at chest height",
+            "Chest centered on the line between the two antennas",
+            "No motion; normal breathing; ~2 minutes per capture",
+            "Polar Beat phone app closed during capture (BLE single-connection)",
+            "All captures in the same room, same time-of-day"
+          ]
+        },
+        { "type": "subheading", "text": "Logging" },
+        {
+          "type": "paragraph",
+          "text": "CSI: a custom serial reader records raw bytes from the RX board's UART for exactly 120 seconds, alongside a metadata sidecar containing the measured packet rate."
+        },
+        {
+          "type": "paragraph",
+          "text": "HR: the Polar H10 streams 1 Hz HR notifications over BLE; auto-reconnects on Windows BLE drops (which happen every ~30 seconds and are handled transparently)."
+        },
+        {
+          "type": "paragraph",
+          "text": "Both run as PowerShell background jobs in parallel; total wall-clock per capture: ~2.5 minutes."
+        }
+      ]
+    },
+    {
+      "id": "captures",
+      "heading": "Captures used",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Session", "CSI packets", "HR readings", "HR mean", "HR range", "Packet rate"],
+          "rows": [
+            ["session3", "8,489", "115", "~89 bpm", "85–93", "73.7 Hz"],
+            ["session4", "8,026", "118", "~87 bpm", "80–95", "66.8 Hz"],
+            ["session5", "9,283", "123", "~88 bpm", "84–93", "77.4 Hz"]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "(Session2 was excluded from cross-session evaluation because it was captured before the metadata-sidecar feature shipped, so its packet rate had to be assumed at 100 Hz which biases the FFT analysis.)"
+        }
+      ]
+    },
+    {
+      "id": "methodology",
+      "heading": "Methodology",
+      "blocks": [
+        { "type": "subheading", "text": "Pipeline (per 10-second window)" },
+        {
+          "type": "ordered_list",
+          "items": [
+            "**Subcarrier selection.** Compute variance across 192 subcarriers in the 0.1–3 Hz physiological band. Select top 8 by variance.",
+            "**1-D envelope.** Standardize each selected subcarrier (zero mean, unit variance), then average across them.",
+            "**Bandpass filter.** Butterworth, 0.1–3 Hz.",
+            "**FFT.** 4× zero-padded, parabolic peak interpolation in respiratory (0.15–0.6 Hz) and cardiac (0.9–1.8 Hz) bands.",
+            "**Feature extraction.** 9-dim vector of peak frequencies, peak ratios, envelope statistics, and total band energy.",
+            "**XGBoost regression.** Two regressors (HR, RR), trained on stacked feature matrix."
+          ]
+        },
+        { "type": "subheading", "text": "Sample-rate handling" },
+        {
+          "type": "paragraph",
+          "text": "When ESP-IDF doesn't emit per-line timestamps (the default configuration), the parser synthesizes a uniform timestamp grid. Default 100 Hz was wrong — the watchdog throttles real packet rate to ~67–77 Hz. The capture tool writes a metadata sidecar with the measured rate; the parser auto-loads the sidecar to use the correct synthesized fs. This single correction is the difference between MAE 24 bpm (wrong assumed rate) and MAE 4 bpm (correct rate, after retraining)."
+        },
+        { "type": "subheading", "text": "Cross-session evaluation" },
+        {
+          "type": "paragraph",
+          "text": "The retraining tool accepts multiple paired captures and trains an XGBoost regressor on the union of all of them. To produce an honest generalization estimate, one session is held out from training, the model is retrained on the remaining sessions, then evaluated on the holdout."
+        },
+        {
+          "type": "paragraph",
+          "text": "The XGBoost regressor *never* sees the held-out session during training. Predictions on the holdout are pure generalization, not memorization."
+        }
+      ]
+    },
+    {
+      "id": "proves",
+      "heading": "What this proves",
+      "blocks": [
+        {
+          "type": "bulleted_list",
+          "items": [
+            "The end-to-end pipeline (capture → parse → feature extraction → regression) recovers HR from real ESP32-S3 CSI within ~4 bpm.",
+            "The signal is genuinely present in commodity-WiFi CSI, not an artifact of the synthetic pipeline.",
+            "Held-out cross-session validation is non-trivial — random-window splits leak across sessions and report misleadingly low MAEs (1.5 bpm in the in-sample test). The 4.15 bpm number is the honest one.",
+            "Hardware that costs 50× less than the academic baseline (Intel 5300 NIC at ~$500) reaches a result within 2.5× of PhaseBeat's 1.5 bpm on a much smaller dataset."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scope",
+      "heading": "Scope of this study",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "These are the boundaries of the current dataset and the milestones queued up to extend each one. The pipeline and tooling are designed to scale into all of them — the work ahead is data collection and validation."
+        },
+        {
+          "type": "bulleted_list",
+          "items": [
+            "**Multi-subject coverage.** Captures so far are from the founder. Multi-subject validation across 10+ participants is the next milestone — see the [roadmap](/roadmap).",
+            "**Multi-room coverage.** All captures in one room. Expanding to additional rooms is on the immediate roadmap.",
+            "**Subjects in motion.** Validated for stationary subjects today. Walking, fidgeting, and repositioning are next on the test plan.",
+            "**Heart-rate range.** Subject HR was 80–100 bpm. Resting (~60), elevated (~130), and arrhythmia ranges are upcoming test conditions.",
+            "**Cross-subject held-out validation.** Sessions are independent recordings of the same subject; cross-subject holdout arrives with the multi-subject dataset.",
+            "**Regulatory grade.** This is a research-grade result. The path to FDA 510(k) Class II clearance is mapped on the [roadmap](/roadmap)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "literature",
+      "heading": "Comparison to literature",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Work", "Hardware", "HR MAE", "Subjects", "Conditions"],
+          "rows": [
+            ["PhaseBeat (Wang et al., IEEE INFOCOM 2017)", "Intel 5300 NIC (~$500)", "~1.5 bpm", "multiple", "seated, controlled"],
+            ["FullBreathe (Zeng et al., UbiComp 2018)", "Intel 5300 NIC", "sub-bpm RR", "multiple", "varied orientation"],
+            ["ResBeat (Zhang et al., 2020)", "Intel 5300 NIC", "sub-bpm joint HR+RR", "multiple", "seated, controlled"],
+            ["**ViFi**", "**2x ESP32-S3 (~$20)**", "**4.15 bpm cross-session**", "**1**", "**seated, single room**"]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "ViFi's contribution is not algorithmic novelty (the signal-processing approach is from these papers). It is hardware-cost reduction by ~25× and the application-layer engineering (capture pipeline, metadata sidecar, leave-one-session-out tooling) that makes the result reproducible end-to-end."
+        }
+      ]
+    },
+    {
+      "id": "path-to-higher-accuracy",
+      "heading": "Path to higher accuracy",
+      "blocks": [
+        {
+          "type": "table",
+          "headers": ["Effort", "Expected MAE drop", "Status"],
+          "rows": [
+            ["Multi-subject dataset (10+ subjects)", "4.15 → 2.5–3 bpm", "Summer 2026 (funding-dependent)"],
+            ["Multi-room dataset (5+ rooms)", "further generalization", "Summer 2026 (funding-dependent)"],
+            ["Phase-domain features (CFO/SFO calibration)", "→ 1.5–2 bpm", "Winter 2026 – Spring 2027"],
+            ["4-receiver array + multi-antenna averaging", "further improvement", "Mid–Late 2027"],
+            ["Higher CSI packet rate (firmware patch)", "marginal", "2028+"]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "See [the roadmap](/roadmap) for the full sequence."
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "heading": "Engineering details",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The full code — DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, and 102-test suite — is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
+        }
+      ]
+    }
+  ]
+}

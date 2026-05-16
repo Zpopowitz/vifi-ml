@@ -1,0 +1,190 @@
+---
+import { getEntry } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+
+const landing = await getEntry("landing", "main");
+const c = landing.data;
+
+// Formspree drop-in: set PUBLIC_FORMSPREE_CONTACT_ID in .env (and as a
+// Vercel project Environment Variable) to a Formspree form ID. When
+// unset, render an "email us" panel instead of the form, because a form
+// with a mailto: action triggers Chrome's "Not Secure / autofill
+// disabled" warning on HTTPS pages.
+const formspreeId = import.meta.env.PUBLIC_FORMSPREE_CONTACT_ID;
+const formAction = formspreeId ? `https://formspree.io/f/${formspreeId}` : null;
+
+const reasons = [
+  "Investor inquiry",
+  "Press / media",
+  "Technical review (NDA)",
+  "Research collaboration",
+  "General question",
+  "Other",
+];
+
+const meta = {
+  title: "Contact — ViFi",
+  description:
+    "Get in touch with ViFi. For investor inquiries, press, technical review under NDA, research collaborations, or general questions about contactless WiFi-based patient monitoring.",
+};
+---
+
+<Layout title={meta.title} description={meta.description}>
+  <SiteHeader />
+
+  <!-- ============================================================ HERO -->
+  <section class="bg-ink px-6 pt-20 pb-16 md:pt-28 md:pb-20">
+    <div class="mx-auto max-w-3xl">
+      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
+        Contact
+      </p>
+      <h1
+        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
+      >
+        Get in touch.
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+        For investor questions, press, technical review under NDA, or
+        research collaborations. If you're a hospital or health-system
+        partner interested in a pilot, the
+        <a href="/pilots" class="text-accent underline hover:text-paper">pilot inquiry form</a>
+        is the right place to start.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ FORM -->
+  <section data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-20">
+    <div class="mx-auto max-w-3xl">
+      <h2
+        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+      >
+        Send a message
+      </h2>
+
+      {formAction ? (
+        <form action={formAction} method="POST" class="mt-10 space-y-6">
+          <!-- Honeypot: bots fill _gotcha; Formspree silently drops those. -->
+          <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
+          <input type="hidden" name="_subject" value="ViFi contact inquiry" />
+
+          <p class="text-xs text-slate-500">
+            Fields marked <span class="text-red-400">*</span> are required.
+          </p>
+
+          <div class="grid gap-6 md:grid-cols-2">
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">
+                Your name <span class="text-red-400" aria-hidden="true">*</span>
+              </span>
+              <input
+                type="text"
+                name="name"
+                required
+                aria-required="true"
+                autocomplete="name"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+            <label class="block">
+              <span class="text-sm font-medium text-slate-300">
+                Email <span class="text-red-400" aria-hidden="true">*</span>
+              </span>
+              <input
+                type="email"
+                name="email"
+                required
+                aria-required="true"
+                autocomplete="email"
+                inputmode="email"
+                class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
+          </div>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">
+              Reason for contacting <span class="text-red-400" aria-hidden="true">*</span>
+            </span>
+            <select
+              name="reason"
+              required
+              aria-required="true"
+              class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              <option value="" disabled selected>Select one…</option>
+              {reasons.map((r) => <option value={r}>{r}</option>)}
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">
+              Note <span class="text-red-400" aria-hidden="true">*</span>
+            </span>
+            <textarea
+              name="note"
+              rows="6"
+              required
+              aria-required="true"
+              autocomplete="off"
+              placeholder="A few sentences about what's on your mind."
+              class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            ></textarea>
+          </label>
+
+          <div class="flex flex-wrap items-center gap-4 pt-2">
+            <button
+              type="submit"
+              class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+            >
+              Send message
+            </button>
+            <p class="text-xs text-slate-500">
+              By submitting you agree to ViFi's
+              <a href="/privacy" class="underline hover:text-paper">Privacy Policy</a>
+              and
+              <a href="/terms" class="underline hover:text-paper">Terms of Use</a>.
+            </p>
+          </div>
+        </form>
+      ) : (
+        <div class="mt-10 rounded-lg border border-slate-800 bg-ink p-8 text-slate-300">
+          <p class="text-lg">
+            The contact form is being set up. In the meantime, email
+            <a
+              href={`mailto:${c.links.contact_email}`}
+              class="text-accent underline hover:text-paper"
+            >
+              {c.links.contact_email}
+            </a>
+            and we'll get back to you.
+          </p>
+          <a
+            href={`mailto:${c.links.contact_email}`}
+            class="mt-6 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
+          >
+            Email us →
+          </a>
+        </div>
+      )}
+
+      {c.links.linkedin && (
+        <p class="mt-10 text-sm text-slate-500">
+          You can also follow ViFi on
+          <a
+            href={c.links.linkedin}
+            target="_blank"
+            rel="noopener"
+            class="text-accent underline hover:text-paper"
+          >
+            LinkedIn
+          </a>.
+        </p>
+      )}
+    </div>
+  </section>
+
+  <SiteFooter />
+</Layout>

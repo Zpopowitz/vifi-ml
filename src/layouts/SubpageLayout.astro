@@ -1,0 +1,188 @@
+---
+import Layout from "./Layout.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+
+interface Block {
+  type: "paragraph" | "subheading" | "bulleted_list" | "ordered_list" | "table";
+  text?: string;
+  items?: string[];
+  headers?: string[];
+  rows?: string[][];
+}
+
+interface Section {
+  id?: string;
+  eyebrow?: string;
+  heading: string;
+  blocks: Block[];
+}
+
+interface Props {
+  page: {
+    meta: { title: string; description: string };
+    title: string;
+    intro?: string;
+    sections: Section[];
+  };
+}
+
+const { page } = Astro.props;
+
+// Inline-markdown renderer. Handles the small set of inline syntax used
+// across the subpage JSON: **bold**, *italic*, `code`, [text](url).
+// Order matters — code spans first to protect their contents from other
+// substitutions, then links, then bold, then italic.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderInline(text: string): string {
+  const codeSpans: string[] = [];
+  let s = escapeHtml(text).replace(/`([^`]+)`/g, (_m, code) => {
+    codeSpans.push(code);
+    return ` CODE${codeSpans.length - 1} `;
+  });
+
+  s = s.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (_m, label, href) => `<a href="${href}">${label}</a>`,
+  );
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+
+  s = s.replace(/ CODE(\d+) /g, (_m, i) => `<code>${codeSpans[Number(i)]}</code>`);
+  return s;
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+const proseClasses =
+  "prose prose-invert max-w-none prose-headings:tracking-tight prose-h3:mt-8 prose-h3:text-xl prose-a:text-accent hover:prose-a:text-accentDark prose-strong:text-paper prose-code:text-accent prose-code:before:content-none prose-code:after:content-none prose-code:rounded prose-code:bg-slate-800 prose-code:px-1 prose-code:py-0.5 prose-li:marker:text-accent";
+---
+
+<Layout title={`${page.meta.title} — ViFi`} description={page.meta.description}>
+  <SiteHeader />
+
+  <!-- ============================================================ HERO -->
+  <section class="bg-ink px-6 pt-20 pb-20 md:pt-28 md:pb-24">
+    <div class="mx-auto max-w-4xl">
+      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
+        {page.meta.title}
+      </p>
+      <h1
+        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
+      >
+        {page.title}
+      </h1>
+      {page.intro && (
+        <p class="mt-8 max-w-3xl text-lg leading-relaxed text-slate-300 md:text-xl">
+          {page.intro}
+        </p>
+      )}
+    </div>
+  </section>
+
+  <!-- ============================================================ SECTIONS -->
+  {page.sections.map((section, i) => {
+    const isDark = i % 2 === 0;
+    const sectionClasses = isDark
+      ? "border-y border-slate-800 bg-slate-950 px-6 py-20 md:py-24"
+      : "bg-ink px-6 py-20 md:py-24";
+    const animateDir = i % 2 === 0 ? "left" : "right";
+    const sectionId = section.id ?? slugify(section.heading);
+    return (
+      <section id={sectionId} data-animate={animateDir} class={sectionClasses}>
+        <div class="mx-auto max-w-3xl">
+          {section.eyebrow && (
+            <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+              {section.eyebrow}
+            </p>
+          )}
+          <h2
+            class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
+          >
+            {section.heading}
+          </h2>
+
+          <div class={`mt-8 ${proseClasses}`}>
+            {section.blocks.map((b) => {
+              if (b.type === "paragraph" && b.text) {
+                return <p set:html={renderInline(b.text)} />;
+              }
+              if (b.type === "subheading" && b.text) {
+                return <h3>{b.text}</h3>;
+              }
+              if (b.type === "bulleted_list" && b.items) {
+                return (
+                  <ul>
+                    {b.items.map((it) => <li set:html={renderInline(it)} />)}
+                  </ul>
+                );
+              }
+              if (b.type === "ordered_list" && b.items) {
+                return (
+                  <ol>
+                    {b.items.map((it) => <li set:html={renderInline(it)} />)}
+                  </ol>
+                );
+              }
+              if (b.type === "table" && b.headers && b.rows) {
+                return (
+                  <div class="not-prose my-8 overflow-x-auto rounded-lg border border-slate-800">
+                    <table class="w-full text-sm">
+                      <thead class={isDark ? "bg-ink text-left text-slate-500" : "bg-slate-950 text-left text-slate-500"}>
+                        <tr>
+                          {b.headers.map((h) => (
+                            <th class="px-4 py-3 font-medium" set:html={renderInline(h)} />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody class={isDark ? "divide-y divide-slate-800 bg-slate-950" : "divide-y divide-slate-800 bg-ink"}>
+                        {b.rows.map((row) => (
+                          <tr class="text-slate-300">
+                            {row.map((cell, ci) => (
+                              <td
+                                class={ci === 0 ? "px-4 py-3 font-medium text-paper" : "px-4 py-3"}
+                                set:html={renderInline(cell)}
+                              />
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+              return null;
+            })}
+          </div>
+        </div>
+      </section>
+    );
+  })}
+
+  <!-- ============================================================ BACK CTA -->
+  <section class="bg-ink px-6 py-16">
+    <div class="mx-auto max-w-3xl text-center">
+      <a
+        href="/"
+        class="inline-block rounded-md border border-slate-700 px-6 py-3 text-sm font-medium text-paper transition hover:border-accent"
+      >
+        ← Back to vifi.health
+      </a>
+    </div>
+  </section>
+
+  <SiteFooter />
+</Layout>
