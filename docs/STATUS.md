@@ -74,7 +74,7 @@ home LAN.
 | Vernier GDX-RB BLE | Pi 5 | Same |
 | Session orchestrator (`run_paired_session.py`) | Pi 5 | All sensors local to one host |
 | Bus (Redis) + inference + dashboard | Laptop (WSL Docker Compose) | Dev/analysis stays on the dev machine |
-| Pi → laptop Redis link | LAN (`redis://192.168.43.158:6379/0`) | Docker Desktop auto-binds `0.0.0.0:6379` on Windows |
+| Pi → laptop Redis link | LAN (`redis://S-PF5KTJNF.local:6379/0`) | Docker Desktop auto-binds `0.0.0.0:6379` on Windows; Pi resolves `.local` via avahi |
 | Browser (dashboard) | Laptop | http://localhost:8501 |
 
 WSL2 portproxy is **not** needed — Docker Desktop in WSL2 mode binds
@@ -112,8 +112,8 @@ docker compose ps          # all 4 containers should be Up + healthy
 ### One-time setup — Pi 5 (edge / RX / orchestrator)
 
 ```bash
-# From WSL, SSH in
-ssh zpopowitz@vifi-pi-room1.local
+# From WSL, SSH in (uses ~/.ssh/config alias `pi`)
+ssh pi
 
 # On the Pi
 cd ~/vifi-ml
@@ -123,7 +123,7 @@ pip install pyserial redis httpx numpy scipy pandas \
             bleak godirect matplotlib xgboost scikit-learn
 
 # Persist the bus URL so all tools find Redis on the laptop
-echo 'export VIFI_BUS_URL="redis://192.168.43.158:6379/0"' >> ~/.bashrc
+echo 'export VIFI_BUS_URL="redis://S-PF5KTJNF.local:6379/0"' >> ~/.bashrc
 source ~/.bashrc
 
 # Make sure user is in dialout for serial access
@@ -135,7 +135,7 @@ Real model artifacts are gitignored. Sync from laptop:
 
 ```bash
 # From WSL
-scp -r ~/vifi-ml/models_real zpopowitz@vifi-pi-room1.local:~/vifi-ml/
+scp -r ~/vifi-ml/models_real pi:~/vifi-ml/
 
 # On the Pi (first_capture_report hardcodes models/ path; flat-copy
 # the artifacts into it as a stop-gap)
@@ -211,7 +211,7 @@ is hardcoded to `models/`.
 
 ```bash
 # From WSL
-rsync -av zpopowitz@vifi-pi-room1.local:~/vifi-ml/data/captures/founder/ \
+rsync -av pi:~/vifi-ml/data/captures/founder/ \
           ~/vifi-ml/data/captures/founder/
 ```
 
