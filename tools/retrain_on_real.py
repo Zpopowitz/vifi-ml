@@ -36,6 +36,11 @@ from calibration import (  # noqa: E402
     apply_calibration,
     compute_calibration_vector,
 )
+from config import (  # noqa: E402
+    PCA_COMPONENTS_REMOVED,
+    PCA_UPDATE_EVERY_S,
+    PCA_WINDOW_S,
+)
 from preprocess import (  # noqa: E402
     FEATURE_NAMES,
     FEATURE_SET_VERSION,
@@ -234,6 +239,13 @@ def main() -> None:
         "seed": args.seed,
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
+        # Multipath A1 hyperparams (PCA subspace decomposition).
+        # Worker compares these to runtime env at boot and refuses to
+        # load a model with a different K — see
+        # `tools/inference_worker.py::_resolve_pca_k_from_metadata`.
+        "pca_k": PCA_COMPONENTS_REMOVED,
+        "pca_window_s": PCA_WINDOW_S,
+        "pca_update_every_s": PCA_UPDATE_EVERY_S,
         "metrics": {"hr_mae": mae, "hr_acc_within_5": acc},
     }
 

@@ -6,7 +6,11 @@ This document records the methodology and numbers for ViFi's real-hardware heart
 
 ## Headline
 
-**4.15 bpm cross-session HR mean absolute error** against a Polar H10 chest strap, on $50 of commodity ESP32-S3 hardware, single subject, single room, 4 paired captures totaling ~8 minutes of real-hardware data.
+**Within domain:** 4.15 bpm cross-session HR mean absolute error against a Polar H10 chest strap, on $50 of commodity ESP32-S3 hardware, single subject, single room, single antenna pair, 4 paired captures totaling ~8 minutes of real-hardware data.
+
+**Out of domain (2026-05-16, bedroom_1, patch antennas, single session):** 17.77 bpm HR MAE. Predictions clustered at 86–90 bpm while true HR ran 95–112 bpm — the model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus and is documented in detail in [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). The architectural response — rolling-PCA subspace decomposition, adaptive baseline EMA, reference antenna, and longer-horizon model upgrades — is enumerated in [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
+
+### Within-domain LOSO results
 
 | Holdout | Trained on | HR MAE | Within ±5 bpm | Bias |
 |---|---|---|---|---|
@@ -14,7 +18,7 @@ This document records the methodology and numbers for ViFi's real-hardware heart
 | session4 | sessions 3, 5 | 4.41 bpm | 65.2% | +3.02 bpm |
 | **Mean** | — | **4.15 bpm** | **66.7%** | **+1.98 bpm** |
 
-The model never saw the held-out session during training. Both cross-session evaluations are on completely independent recordings.
+The model never saw the held-out session during training. Both cross-session evaluations are on completely independent recordings, but use the same antenna pair in the same room. Cross-environment generalization (different antenna, different room) is the open problem — see Out-of-Domain note above.
 
 ---
 

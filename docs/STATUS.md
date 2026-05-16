@@ -10,8 +10,11 @@ catches), see `docs/AUDIT_PLAN.md`.
 
 ## Last updated
 
-2026-05-07. Reflects everything through PR-K (Prometheus metrics in
-inference_worker) + PR-I (CSI quality gate).
+2026-05-16. Reflects everything through PR-K + PR-I, plus the first
+home pilot session in `bedroom_1` and the topology shift to Pi-5-
+orchestrated sessions. See `docs/HOME_PILOT_LOG.md` for the empirical
+session log and `docs/FUTURE_ARCHITECTURE.md` for the cross-environment
+research roadmap that came out of that session.
 
 ---
 
@@ -55,12 +58,45 @@ time on phantom problems.
 
 ---
 
+## Deployment topology (post-2026-05-16)
+
+Sessions are now **Pi-5-orchestrated**, not laptop-orchestrated. The
+laptop runs the dev/inference stack (Redis + api + inference_worker +
+audit_subscriber + dashboard via Docker Compose). The Pi 5 holds the
+ESP32 RX, pairs with the Polar H10 + Vernier GDX-RB over BLE, runs the
+session orchestrator, and publishes CSI to the laptop's Redis over the
+home LAN.
+
+| Layer | Host | Notes |
+|---|---|---|
+| ESP32 RX serial capture | Pi 5 (`/dev/ttyUSB0`) | Edge box matches the pilot deployment model |
+| Polar H10 BLE | Pi 5 | More reliable than laptop BLE on managed laptops |
+| Vernier GDX-RB BLE | Pi 5 | Same |
+| Session orchestrator (`run_paired_session.py`) | Pi 5 | All sensors local to one host |
+| Bus (Redis) + inference + dashboard | Laptop (WSL Docker Compose) | Dev/analysis stays on the dev machine |
+| Pi → laptop Redis link | LAN (`redis://192.168.43.158:6379/0`) | Docker Desktop auto-binds `0.0.0.0:6379` on Windows |
+| Browser (dashboard) | Laptop | http://localhost:8501 |
+
+WSL2 portproxy is **not** needed — Docker Desktop in WSL2 mode binds
+container ports to Windows on `0.0.0.0` automatically. If you set up a
+`netsh interface portproxy add` rule pointing at the WSL IP, it will
+race with Docker Desktop's binding and break the Pi → laptop link.
+Delete with `netsh interface portproxy delete v4tov4 listenport=6379
+listenaddress=0.0.0.0`.
+
+If Windows' "Futterpop 2" (or your home WiFi) is tagged `Public`, the
+firewall blocks inbound 6379 even with a permissive rule. Flip to
+`Private` via `Set-NetConnectionProfile -Name "<wifi-name>" -
+NetworkCategory Private` (PowerShell as Admin; may be blocked on
+corporate-managed laptops, in which case fall back to Tailscale).
+
+---
+
 ## Operator commands you'll need at home
 
-### One-time setup
+### One-time setup — laptop (WSL)
 
 ```bash
-# WSL host
 cd ~/vifi-ml
 source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
@@ -68,9 +104,45 @@ pip install -r requirements.txt -r requirements-dev.txt
 # Generate secrets (creates .env with chmod 600)
 ./tools/setup_keys.sh
 
-# Windows side: BLE deps + matplotlib for analyze_session plots
-.venv-win\Scripts\Activate.ps1
-pip install bleak redis godirect matplotlib
+# Bring up Redis + api + inference + audit + dashboard
+docker compose up -d
+docker compose ps          # all 4 containers should be Up + healthy
+```
+
+### One-time setup — Pi 5 (edge / RX / orchestrator)
+
+```bash
+# From WSL, SSH in
+ssh zpopowitz@vifi-pi-room1.local
+
+# On the Pi
+cd ~/vifi-ml
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pyserial redis httpx numpy scipy pandas \
+            bleak godirect matplotlib xgboost scikit-learn
+
+# Persist the bus URL so all tools find Redis on the laptop
+echo 'export VIFI_BUS_URL="redis://192.168.43.158:6379/0"' >> ~/.bashrc
+source ~/.bashrc
+
+# Make sure user is in dialout for serial access
+sudo usermod -aG dialout zpopowitz
+# (log out + back in for this to take effect)
+```
+
+Real model artifacts are gitignored. Sync from laptop:
+
+```bash
+# From WSL
+scp -r ~/vifi-ml/models_real zpopowitz@vifi-pi-room1.local:~/vifi-ml/
+
+# On the Pi (first_capture_report hardcodes models/ path; flat-copy
+# the artifacts into it as a stop-gap)
+cd ~/vifi-ml
+mkdir -p models
+cp models_real/hr_model.json models_real/mahalanobis.json \
+   models_real/metadata.json models/
 ```
 
 ### Bring up the live stack
@@ -84,36 +156,64 @@ docker compose ps            # all 4 containers should be Up + healthy
 Browser: http://localhost:8501 → log in with the API key from
 `.env`.
 
-### Pre-capture sanity (before each session)
+### Pre-capture sanity (before each session) — run on Pi
 
 ```bash
 python -m tools.preflight \
+  --bus-url $VIFI_BUS_URL \
   --csi-port /dev/ttyUSB0 \
   --h10-address 24:AC:AC:11:97:DB \
   --vernier-name-contains GDX-RB
 ```
 
 Catches the four common failure modes (Redis dead, ESP32 silent,
-Polar paired to phone, Vernier asleep) in one command.
+Polar paired to phone, Vernier asleep) in one command. The `--bus-url`
+flag is needed because `preflight` doesn't auto-read `VIFI_BUS_URL`.
 
-### Run a paired session with full geometry metadata
+### Run a paired session with full geometry metadata — run on Pi
 
 ```bash
 python tools/run_paired_session.py \
-  --subject-id founder --room-id home_office \
+  --subject-id founder --room-id bedroom_1 \
   --posture seated --csi-port /dev/ttyUSB0 \
   --h10-address 24:AC:AC:11:97:DB \
   --duration 600 \
-  --tx-rx-distance-m 2.0 \
-  --subject-to-tx-distance-m 1.0 \
+  --tx-rx-distance-m 3.0 \
+  --subject-to-tx-distance-m 1.5 \
   --subject-on-axis true \
-  --antenna-type external_dipole \
+  --antenna-type patch \
   --antenna-height-cm 110 \
-  --notes "session1 baseline"
+  --notes "session1 home - bedroom_1 - ALFA patches at 3m"
 ```
 
 The geometry flags get persisted to `session.json` for downstream
-quality gate + stratified eval.
+quality gate + stratified eval. `--antenna-type` accepts
+`{pcb_trace, external_dipole, patch}` — use `patch` for the ALFA
+APA-M25 directional patch antennas. The orchestrator auto-discovers the
+Vernier belt; no `--vernier-name-contains` flag (it doesn't exist on
+`run_paired_session.py`, only on `preflight`).
+
+### First-capture quick eval (Pi) — sanity check before retrain
+
+```bash
+python tools/first_capture_report.py \
+  --capture data/captures/founder/session_<TS>/capture.txt \
+  --hr-log data/captures/founder/session_<TS>/hr_log.csv \
+  --calibration-mode per_session
+```
+
+Reports HR MAE vs Polar across all 10 s windows + first-10-windows
+detail table. Requires `models/hr_model.json` etc. to exist (see
+"sync from laptop" step above). No `--model-dir` flag exists; path
+is hardcoded to `models/`.
+
+### Sync captures back to the laptop for retraining
+
+```bash
+# From WSL
+rsync -av zpopowitz@vifi-pi-room1.local:~/vifi-ml/data/captures/founder/ \
+          ~/vifi-ml/data/captures/founder/
+```
 
 ### Post-capture quality gate
 
@@ -219,6 +319,9 @@ Worker metrics include `vifi_inference_packets_total`,
 
 | Need to … | File |
 |---|---|
+| **Empirical session results from home pilot** | `docs/HOME_PILOT_LOG.md` |
+| **Cross-environment research roadmap** | `docs/FUTURE_ARCHITECTURE.md` |
+| **Emerald comparison + IP / FTO posture** | `docs/COMPETITIVE_LANDSCAPE.md` |
 | Daily BLE-only capture flow | `docs/QUICKSTART.md` |
 | Hardware decisions / Pi / antennas | `docs/DEPLOYMENT.md` |
 | ESP32 firmware flashing | `docs/ESP32_SETUP.md` |
