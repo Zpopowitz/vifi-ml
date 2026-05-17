@@ -268,7 +268,10 @@ const sectionsWithSlugs = page.sections.map((s) => ({
   }
   .section-header {
     position: sticky;
-    top: 32px;
+    /* Clears the 63px sticky .site-header with a 25px breathing gap.
+       Matches html { scroll-padding-top: 88px } in Layout.astro so the
+       sticky rail label lines up exactly where anchor jumps land. */
+    top: 88px;
   }
   .section-eyebrow {
     font-family: "JetBrains Mono", ui-monospace, monospace;

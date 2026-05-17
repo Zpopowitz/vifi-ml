@@ -173,7 +173,21 @@ const url = Astro.site
     scroll-behavior: smooth;
     overflow-x: clip;
     color-scheme: light dark;
+    /* Initial-load anchor jumps (e.g. /#proof-heading typed directly)
+       use scroll-padding-top; in-app hash changes use scroll-margin
+       on the target (below). Both paths need to clear the 63px
+       sticky header. */
+    scroll-padding-top: 88px;
   }
+
+  /* Anchor-target offset — works for both fresh loads AND
+     post-load hash changes (location.hash = '...', anchor-link
+     click). Chrome honors scroll-padding-top only on initial scroll
+     into view; scroll-margin-top on the target wins in every case. */
+  :where([id]) {
+    scroll-margin-top: 88px;
+  }
+
   body {
     background: var(--paper);
     color: var(--ink);
