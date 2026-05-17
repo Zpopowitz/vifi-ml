@@ -49,3 +49,4 @@ site/node_modules/
 site/.astro/
 site/dist/
 site/.vercel/
+.gstack/
