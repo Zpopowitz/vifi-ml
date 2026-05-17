@@ -236,7 +236,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "The full code (DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, 102-test suite) is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
+          "text": "The full code (DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, 102-test suite) is kept private during pre-clearance development. **Available for technical review** by investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
         }
       ]
     }
