@@ -188,6 +188,19 @@ const url = Astro.site
     scroll-margin-top: 88px;
   }
 
+  /* Theme-switch suppression. The toggle adds .theme-switching to
+     <html> while it flips data-theme, then removes it after two rAFs.
+     The descendant-everything selector kills every transition (and
+     SVG animation) so the swap reads as instant rather than as a
+     ~250ms wash where the page fades through a gray mid-state. */
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
   body {
     background: var(--paper);
     color: var(--ink);

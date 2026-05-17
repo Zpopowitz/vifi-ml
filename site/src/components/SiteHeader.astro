@@ -64,8 +64,24 @@ function isActive(href: string): boolean {
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
     function applyTheme(t) {
-      document.documentElement.setAttribute("data-theme", t);
+      // Suppress CSS transitions during the theme switch so the page
+      // doesn't visibly fade through a desaturated mid-state. Without
+      // this, .site-header (bg 200ms), body (bg+color 240ms), brand
+      // (color 200ms), btn (bg+color+border 180ms), etc all animate
+      // in parallel and the user sees a ~250ms wash where everything
+      // is blending between light and dark values.
+      var root = document.documentElement;
+      root.classList.add("theme-switching");
+      root.setAttribute("data-theme", t);
       try { localStorage.setItem("vifi-theme", t); } catch (_) {}
+      // Force a paint with transitions disabled, then re-enable.
+      // rAF×2 (next-frame, then next-next-frame) guarantees the new
+      // colors have been laid down before transitions come back.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          root.classList.remove("theme-switching");
+        });
+      });
     }
     function bindToggle() {
       var btn = document.getElementById("theme-toggle");
