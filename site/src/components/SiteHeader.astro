@@ -201,10 +201,14 @@ function isActive(href: string): boolean {
   .primary-nav a:hover { color: var(--accent); }
   .primary-nav a:visited { color: var(--muted); }
   .primary-nav a:visited:hover { color: var(--accent-visited); }
-  /* Current-page highlight — paper-2 pill, ink text. Subtle but unmissable. */
+  /* Current-page highlight — paper-3 pill (one step deeper than the
+     surrounding paper-2 nav region) plus a quiet accent underline. The
+     underline carries the brand teal so the indicator reads even when
+     the pill background is subtle on a tinted hero. */
   .primary-nav a[aria-current="page"] {
     color: var(--ink);
-    background: var(--paper-2);
+    background: var(--paper-3);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   .primary-nav a[aria-current="page"]:hover {
     color: var(--accent);

@@ -56,6 +56,16 @@ function renderInline(text: string): string {
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
 
+  // Status checkmark — leading ✓ (with optional trailing em-dash) gets
+  // wrapped in <span class="check"> so the editorial-table can paint it
+  // in --signal (emerald). This is the documented DESIGN.md exception
+  // where signal-color is valid outside of HR/ECG figures: a verified-
+  // data indicator.
+  s = s.replace(
+    /^✓(\s+—)?/,
+    (_m, dash) => `<span class="check">✓${dash ?? ""}</span>`,
+  );
+
   s = s.replace(/ CODE(\d+) /g, (_m, i) => `<code>${codeSpans[Number(i)]}</code>`);
   return s;
 }
@@ -418,6 +428,13 @@ const sectionsWithSlugs = page.sections.map((s) => ({
   .editorial-table td code {
     font-family: "JetBrains Mono", monospace;
     font-size: 0.95em;
+  }
+  /* Verified-data checkmark — emerald signal. DESIGN.md reserves --signal
+     for HR/ECG figures and verified-data indicators; this is the latter. */
+  .editorial-table .check {
+    color: var(--signal);
+    font-weight: 600;
+    margin-right: 2px;
   }
   .editorial-table tbody tr {
     transition: background-color 180ms ease-out;
