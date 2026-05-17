@@ -38,6 +38,20 @@ const url = Astro.site
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
+    <!-- Theme bootstrap — runs synchronously before CSS evaluates to prevent
+         flash-of-wrong-theme. Manual preference from localStorage wins over
+         prefers-color-scheme. -->
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem("vifi-theme");
+          if (t === "dark" || t === "light") {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        } catch (_) { /* localStorage unavailable — fall back to OS preference */ }
+      })();
+    </script>
+
     <title>{title}</title>
     <meta name="description" content={description} />
 
@@ -106,8 +120,10 @@ const url = Astro.site
   }
 
   /* ============ DESIGN.md TOKENS — dark ============ */
+  /* Apply dark tokens when the OS prefers dark UNLESS the user has manually
+     forced light via the theme toggle (data-theme="light"). */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --paper:        #131715;
       --paper-2:      #1C211D;
       --paper-3:      #252A26;
@@ -126,11 +142,31 @@ const url = Astro.site
     }
   }
 
+  /* Explicit dark override wins over OS preference */
+  :root[data-theme="dark"] {
+    --paper:        #131715;
+    --paper-2:      #1C211D;
+    --paper-3:      #252A26;
+    --ink:          #E8E4D8;
+    --ink-2:        #C8C2B0;
+    --muted:        #8A8478;
+    --rule:         #2D3330;
+    --accent:       #4DA3BA;
+    --accent-2:     #6EBED4;
+    --accent-visited: #8B9FB8;
+    --signal:       #2EBB7D;
+    --signal-glow:  #34D399;
+    --trace:        var(--ink-2);
+    --trace-opacity: 0.30;
+    --row-hover:    rgba(232, 228, 216, 0.035);
+  }
+
   @media (prefers-contrast: more) {
     :root { --muted: #2A2A2A; --rule: #6A6A6A; --trace-opacity: 0.65; }
     @media (prefers-color-scheme: dark) {
-      :root { --muted: #DDDDDD; --rule: #888888; }
+      :root:not([data-theme="light"]) { --muted: #DDDDDD; --rule: #888888; }
     }
+    :root[data-theme="dark"] { --muted: #DDDDDD; --rule: #888888; }
   }
 
   html {

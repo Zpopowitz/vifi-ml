@@ -1,7 +1,7 @@
 ---
-// Editorial Lab header: monogram + wordmark on the left, minimal nav on the right.
-// No sticky, no scroll-shrink, no mobile hamburger — at narrow widths the nav
-// stacks below the brand. Honest to the zen aesthetic.
+// Editorial Lab header: monogram + wordmark on the left, minimal nav and
+// theme toggle on the right. No sticky, no scroll-shrink. At narrow widths
+// the nav stacks below the brand.
 import { getEntry } from "astro:content";
 
 const landing = await getEntry("landing", "main");
@@ -20,22 +20,80 @@ const c = landing.data;
       </svg>
       <span class="brand-text">vifi<span class="dot">.</span>health</span>
     </a>
-    <nav class="primary-nav" aria-label="Primary">
-      {c.nav.items.filter((i) => i.href !== "/").map((item) => (
-        <a href={item.href}>{item.label}</a>
-      ))}
-    </nav>
+
+    <div class="header-right">
+      <nav class="primary-nav" aria-label="Primary">
+        {c.nav.items.filter((i) => i.href !== "/").map((item) => (
+          <a href={item.href}>{item.label}</a>
+        ))}
+      </nav>
+
+      <button
+        id="theme-toggle"
+        class="theme-toggle"
+        type="button"
+        aria-label="Toggle dark mode"
+        title="Toggle light/dark theme"
+      >
+        <!-- Sun icon (shown in dark mode — click to go light) -->
+        <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <!-- Moon icon (shown in light mode — click to go dark) -->
+        <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
+
+<script is:inline>
+  // Theme toggle wiring. Runs after the inline bootstrap in Layout.astro
+  // has already set data-theme from localStorage. The bootstrap prevents
+  // flash; this script just handles future clicks.
+  (function () {
+    function getCurrentTheme() {
+      var explicit = document.documentElement.getAttribute("data-theme");
+      if (explicit === "dark" || explicit === "light") return explicit;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(t) {
+      document.documentElement.setAttribute("data-theme", t);
+      try { localStorage.setItem("vifi-theme", t); } catch (_) { /* private mode */ }
+    }
+
+    function bindToggle() {
+      var btn = document.getElementById("theme-toggle");
+      if (!btn || btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function () {
+        var next = getCurrentTheme() === "dark" ? "light" : "dark";
+        applyTheme(next);
+      });
+    }
+
+    // Bind on initial load AND after Astro view transitions (header persists
+    // but the script may need re-binding in fresh DOM contexts).
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", bindToggle);
+    } else {
+      bindToggle();
+    }
+    document.addEventListener("astro:page-load", bindToggle);
+  })();
+</script>
 
 <style>
   .site-header {
     padding: 28px 0;
   }
   .container {
-    max-width: 1160px;
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 0 32px;
+    padding: 0 40px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -66,6 +124,11 @@ const c = landing.data;
   }
   .brand-text .dot { color: var(--signal); }
 
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
   .primary-nav { display: flex; gap: 28px; flex-wrap: wrap; }
   .primary-nav a {
     font-family: "Inter Tight", system-ui, sans-serif;
@@ -79,12 +142,54 @@ const c = landing.data;
   .primary-nav a:visited { color: var(--muted); }
   .primary-nav a:visited:hover { color: var(--accent-visited); }
 
+  /* ============ THEME TOGGLE ============ */
+  .theme-toggle {
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 180ms ease-out, border-color 180ms ease-out;
+    padding: 0;
+  }
+  .theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+  /* Show moon by default (light mode → click to go dark). Hide sun. */
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+
+  /* When dark mode is active (either by OS or by manual data-theme="dark"),
+     show sun (click to go light), hide moon. */
+  :global(:root[data-theme="dark"]) .theme-toggle .icon-sun { display: block; }
+  :global(:root[data-theme="dark"]) .theme-toggle .icon-moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .theme-toggle .icon-sun { display: block; }
+    :global(:root:not([data-theme="light"])) .theme-toggle .icon-moon { display: none; }
+  }
+
   @media (max-width: 480px) {
     .container {
       flex-direction: column;
       align-items: flex-start;
       gap: 14px;
     }
+    .header-right { width: 100%; justify-content: space-between; }
     .primary-nav { gap: 16px; }
     .primary-nav a { font-size: 13px; }
   }
