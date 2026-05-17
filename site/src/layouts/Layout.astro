@@ -40,15 +40,26 @@ const url = Astro.site
 
     <!-- Theme bootstrap. Runs synchronously before CSS evaluates to prevent
          flash-of-wrong-theme. Manual preference from localStorage wins over
-         prefers-color-scheme. -->
+         prefers-color-scheme.
+         The astro:before-swap listener re-stamps data-theme onto the incoming
+         document during view transitions. Without it, ViewTransitions syncs
+         html attributes from the new server-rendered page (which has no
+         data-theme), and OS-dark users see their light-mode choice revert
+         on every navigation. -->
     <script is:inline>
       (function () {
-        try {
-          var t = localStorage.getItem("vifi-theme");
-          if (t === "dark" || t === "light") {
-            document.documentElement.setAttribute("data-theme", t);
-          }
-        } catch (_) { /* localStorage unavailable; fall back to OS preference */ }
+        function readTheme() {
+          try {
+            var t = localStorage.getItem("vifi-theme");
+            return (t === "dark" || t === "light") ? t : null;
+          } catch (_) { return null; }
+        }
+        var t = readTheme();
+        if (t) document.documentElement.setAttribute("data-theme", t);
+        document.addEventListener("astro:before-swap", function (e) {
+          var saved = readTheme();
+          if (saved) e.newDocument.documentElement.setAttribute("data-theme", saved);
+        });
       })();
     </script>
 
