@@ -1,6 +1,6 @@
 # ViFi — Contactless Patient Monitoring (notes for Claude)
 
-Headline: **4.15 bpm cross-session HR MAE on $50 of ESP32-S3 hardware** vs Polar H10 ground truth, leave-one-session-out across 4 paired captures, single subject. Pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz → 4× zero-padded FFT → parabolic peak refinement → 9-dim feature vector → XGBoost.
+Headline: **4.15 bpm cross-session HR MAE on $50 of ESP32-S3 hardware** vs Polar H10 ground truth, leave-one-session-out across 3 paired captures (LOSO), single subject. Pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz → 4× zero-padded FFT → parabolic peak refinement → 9-dim feature vector → XGBoost.
 
 Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree with this file, those win.
 

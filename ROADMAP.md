@@ -30,14 +30,14 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 
 ---
 
-## In flight (next 4 weeks)
+## In flight (next 8–12 weeks)
 
 | Milestone | Target | Deliverable |
 |---|---|---|
-| Multi-subject HR validation | May 2026 | 10+ subjects, varied HR ranges, target cross-subject MAE <3 bpm |
-| Multi-room validation | May 2026 | 3+ rooms, fixed subject, measure setup-specific bias |
-| Walk-in detection validation | May 2026 | Run `docs/multi_subject_test_protocol.md`, validate `tools/multi_subject_test.py` thresholds |
-| Respiratory-rate paired captures | May 2026 | Vernier belt arrives; first paired CSI + RR sessions |
+| Multi-subject HR validation | Q3 2026 | 10+ subjects, varied HR ranges, target cross-subject MAE <3 bpm |
+| Multi-room validation | Q3 2026 | 3+ rooms, fixed subject, measure setup-specific bias |
+| Walk-in detection validation | Q3 2026 | Run `docs/multi_subject_test_protocol.md`, validate `tools/multi_subject_test.py` thresholds |
+| Respiratory-rate paired captures | Q3 2026 | Vernier belt arrives; first paired CSI + RR sessions |
 
 ---
 

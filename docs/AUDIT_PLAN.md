@@ -62,11 +62,11 @@ fsync hook, pseudonymization. Verification replay tool exists.
   pytest+coverage, security (pip-audit + bandit), SBOM (CycloneDX),
   Docker build + Trivy.
 
-**Testing baseline**: 43 test files, 352 test functions, 6,107
+**Testing baseline**: 53 test files, 429 test functions, 8,232
 test lines. Property-based tests for security/audit. Coverage
 floor 38% in `pyproject.toml` (acknowledged below current ~41%).
 
-**Documentation**: 16 docs in `docs/`, including `QUICKSTART.md`,
+**Documentation**: 21 docs in `docs/`, including `QUICKSTART.md`,
 `DEPLOYMENT.md`, `ESP32_SETUP.md`, `HIPAA_PILOT_CHECKLIST.md`,
 plus `ARCHITECTURE.md`, `MODEL_CARD.md`, `SECURITY.md`,
 `COMPLIANCE.md`. Cross-linked from README and CLAUDE.md.

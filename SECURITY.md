@@ -169,13 +169,10 @@ review-blocking issue.
 
 These are tracked in `ROADMAP.md` and `COMPLIANCE.md`:
 
-1. **GitHub CodeQL SAST** — disabled because Code Scanning on
-   private repos requires GitHub Advanced Security (Enterprise-only).
-   `bandit` runs as the open-source replacement in the `security`
-   CI job. Re-add `.github/workflows/codeql.yml` if the repo goes
-   public or if the org upgrades to GHAS.
-2. **Software Bill of Materials (SBOM)** — generate CycloneDX in CI on
-   every release tag.
+1. **GitHub CodeQL SAST** — `bandit` runs as the open-source
+   alternative in the `security` CI job. CodeQL is available on this
+   public repo for free; re-add `.github/workflows/codeql.yml` to
+   layer it on top of bandit.
 2. **Vulnerability scanning in CI** — `pip-audit` and `trivy image`.
 3. **Mutual TLS for service-to-service** — currently inter-container
    traffic relies on the compose network being private.

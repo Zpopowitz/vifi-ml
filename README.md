@@ -1,6 +1,6 @@
 # ViFi — Contactless Hospital Vitals from WiFi Signals
 
-> **Real-hardware result:** **4.15 bpm cross-session HR MAE within domain** (Polar H10 ground truth, leave-one-session-out across 4 paired captures, single subject, single room, single antenna pair, **~$50 of commodity ESP32-S3 hardware**).
+> **Real-hardware result:** **4.15 bpm cross-session HR MAE within domain** (Polar H10 ground truth, leave-one-session-out across 3 paired captures (LOSO), single subject, single room, single antenna pair, **~$50 of commodity ESP32-S3 hardware**).
 >
 > **Cross-environment caveat (2026-05-16):** in a new room with patch antennas — a first-time deployment outside the training distribution — MAE collapsed to **17.77 bpm**. The model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus and is the open problem ViFi's next milestones address. Full empirical record: [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). Architectural response: [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
 
@@ -17,7 +17,7 @@ ViFi turns a pair of off-the-shelf WiFi chips into a contactless patient monitor
 | Within ±5 bpm (within domain) | 65–68% | Per-window, on never-seen test session |
 | Bias (within domain) | +0.94 / +3.02 bpm | Slight positive offset, ~2 bpm avg |
 | Hardware cost per node pair | **~$50** | 2x ESP32-S3 + antennas + pigtails |
-| Dataset | 4 paired captures, 1 subject, 1 room, 1 antenna type | ~8 minutes total real-hardware data |
+| Dataset | 3 paired captures (LOSO), 1 subject, 1 room, 1 antenna type | ~6 minutes total real-hardware data |
 | Comparison: PhaseBeat (INFOCOM 2017) | 1.5 bpm | Intel 5300 NIC ($500/node), within domain |
 
 Full methodology: [RESULTS.md](./RESULTS.md). Roadmap: [ROADMAP.md](./ROADMAP.md).
@@ -352,7 +352,7 @@ vifi-ml/
 │   ├── capture_session.ps1
 │   └── preflight_check.ps1
 │
-└── tests/                     # 102-test suite (pytest)
+└── tests/                     # 429-test suite (pytest)
 ```
 
 ---
@@ -360,7 +360,7 @@ vifi-ml/
 ## Tests
 
 ```bash
-pytest -v        # 102-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
+pytest -v        # 429-test suite: pipeline, API, calibration, OOD, audit log, orchestrator
 ./test_deploy.sh # deploy.sh static checks
 ```
 
@@ -368,7 +368,7 @@ pytest -v        # 102-test suite: pipeline, API, calibration, OOD, audit log, o
 
 ## Status, stated honestly
 
-**What works on real hardware:** HR estimation at 4.15 bpm cross-session MAE on a single subject across 4 paired captures.
+**What works on real hardware:** HR estimation at 4.15 bpm cross-session MAE on a single subject across 3 paired captures (LOSO).
 
 **What does not yet exist:**
 - Multi-subject validation (current dataset is the founder)
