@@ -163,6 +163,28 @@ def get_rate_limit() -> str:
     return os.environ.get("VIFI_RATE_LIMIT", "60/minute")
 
 
+def get_per_route_rate_limits() -> dict[str, str]:
+    """Per-route rate limit overrides.
+
+    Heavy endpoints get tighter caps than the global default. The
+    default global rate is 60/min, but /predict/capture accepts a
+    50 MB body: 60 calls/min = 3 GB/min per client of memory pressure
+    on the worker. 10/min keeps that breathable while still letting
+    a real user POST a session every six seconds.
+
+    Operator override: VIFI_PER_ROUTE_RATE_LIMITS="/path1=10/minute,/path2=5/minute".
+    """
+    defaults = {"/predict/capture": "10/minute"}
+    raw = os.environ.get("VIFI_PER_ROUTE_RATE_LIMITS", "")
+    overrides: dict[str, str] = {}
+    for entry in (e.strip() for e in raw.split(",") if e.strip()):
+        if "=" not in entry:
+            continue
+        path, spec = entry.split("=", 1)
+        overrides[path.strip()] = spec.strip()
+    return {**defaults, **overrides}
+
+
 def reveal_errors() -> bool:
     return os.environ.get("VIFI_REVEAL_ERRORS", "false").lower() == "true"
 
@@ -459,6 +481,22 @@ async def redacted_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content=body)
 
 
+def safe_http_400(public_message: str, exc: Exception | None = None) -> HTTPException:
+    """Build a 400 HTTPException with a generic public message.
+
+    Detail of the underlying exception (often a numpy error revealing
+    shape/dtype/library internals) is logged server-side, not sent on
+    the wire — unless VIFI_REVEAL_ERRORS=true (dev only). Use this
+    instead of raising bare HTTPException(400, detail=f"...{exc}").
+    """
+    if exc is not None:
+        log.warning("400 %s: %s", public_message, exc)
+    detail = public_message
+    if reveal_errors() and exc is not None:
+        detail = f"{public_message}: {type(exc).__name__}: {exc}"
+    return HTTPException(status_code=400, detail=detail)
+
+
 # ---------------------------------------------------------------------------
 # Boot-time validation
 # ---------------------------------------------------------------------------
@@ -579,13 +617,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         count, window = parse_rate_limit(spec or get_rate_limit())
         self._limiter = _LRUFixedWindowLimiter(count, window)
+        # Per-route overrides. Heavy endpoints (50 MB body) get tighter
+        # caps than the global default — see get_per_route_rate_limits.
+        self._route_limiters: dict[str, _LRUFixedWindowLimiter] = {}
+        for path, route_spec in get_per_route_rate_limits().items():
+            rc, rw = parse_rate_limit(route_spec)
+            self._route_limiters[path] = _LRUFixedWindowLimiter(rc, rw)
 
     async def dispatch(self, request: Request, call_next):
         normalized = _normalize_path(request.url.path)
         if normalized in PUBLIC_PATHS:
             return await call_next(request)
         client_ip = _client_ip(request)
-        ok, retry_after = self._limiter.check((client_ip, normalized))
+        limiter = self._route_limiters.get(normalized, self._limiter)
+        ok, retry_after = limiter.check((client_ip, normalized))
         if not ok:
             # Float-precision Retry-After (I065).
             return JSONResponse(
