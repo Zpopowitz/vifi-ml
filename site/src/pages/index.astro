@@ -49,7 +49,7 @@ const c = entry.data;
             <div class={`comparison-row ${row.highlight ? "featured" : ""}`} role="row">
               <div class="row-name" role="cell">
                 {row.highlight
-                  ? <span class="featured-mark">{row.system} <span class="cite">this work</span></span>
+                  ? <span class="featured-mark">{row.system}</span>
                   : <>{row.system}{row.system.startsWith("PhaseBeat") && <span class="cite">INFOCOM '17</span>}</>
                 }
               </div>
@@ -382,13 +382,28 @@ const c = entry.data;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* Featured row (ViFi) — background fill, accent left stripe, all values
+     in ink color so the row reads as THE result, not just one option. */
+  .comparison-row.featured {
+    background: var(--paper-2);
+    position: relative;
+  }
+  .comparison-row.featured::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .comparison-row.featured:hover { background: var(--paper-3); }
   .comparison-row.featured .row-name .featured-mark {
     font-style: italic;
     font-variation-settings: "SOFT" 80, "opsz" 28;
-    border-bottom: 1px solid var(--ink);
-    padding-bottom: 1px;
-    display: inline-block;
+    color: var(--ink);
   }
+  .comparison-row.featured .row-hardware,
   .comparison-row.featured .row-mae,
   .comparison-row.featured .row-cost {
     color: var(--ink);
