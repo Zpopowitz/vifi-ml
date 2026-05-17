@@ -5,39 +5,85 @@ const landing = await getEntry("landing", "main");
 const c = landing.data;
 ---
 
-<footer transition:persist class="border-t border-slate-800 bg-ink px-6 py-12">
-  <div
-    class="mx-auto flex max-w-6xl flex-col gap-6 text-sm text-slate-500 md:flex-row md:justify-between"
-  >
-    <div class="space-y-2">
-      <p class="font-semibold text-paper">{c.footer.disclaimer_title}</p>
-      <p class="max-w-prose">{c.footer.disclaimer_body}</p>
-    </div>
-    <div class="space-y-1 md:text-right">
-      <p>{c.footer.copyright}</p>
-      <p>
-        <a href={`mailto:${c.links.contact_email}`} class="hover:text-paper">
-          {c.links.contact_email}
-        </a>
-      </p>
-      <p class="flex flex-wrap gap-x-3 md:justify-end">
+<footer class="site-footer" transition:persist>
+  <div class="container">
+    <p class="disclaimer">{c.footer.disclaimer_title} {c.footer.disclaimer_body}</p>
+    <div class="meta">
+      <p class="contact">
+        <a href={`mailto:${c.links.contact_email}`}>{c.links.contact_email}</a>
         {c.links.linkedin && (
           <>
-            <a
-              href={c.links.linkedin}
-              target="_blank"
-              rel="noopener"
-              class="hover:text-paper"
-            >
-              LinkedIn
-            </a>
-            <span aria-hidden="true">·</span>
+            <span class="sep" aria-hidden="true">·</span>
+            <a href={c.links.linkedin} target="_blank" rel="noopener">LinkedIn</a>
           </>
         )}
-        <a href="/privacy" class="hover:text-paper">Privacy</a>
-        <span aria-hidden="true">·</span>
-        <a href="/terms" class="hover:text-paper">Terms</a>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="/privacy">Privacy</a>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="/terms">Terms</a>
       </p>
+      <p class="copyright">{c.footer.copyright}</p>
     </div>
+    <p class="colophon">vifi.health<span class="sep">·</span>v0.6.0<span class="sep">·</span>2026-05-16<span class="sep">·</span>set in Fraunces, Source Serif 4, Inter Tight, JetBrains Mono</p>
   </div>
 </footer>
+
+<style>
+  .site-footer {
+    padding: 64px 0 80px;
+    border-top: 1px solid var(--rule);
+    margin-top: 0;
+  }
+  .container {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+  .disclaimer {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 65ch;
+    margin-bottom: 28px;
+  }
+  .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+  .contact, .copyright {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0;
+  }
+  .contact a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: color 180ms;
+  }
+  .contact a:hover { color: var(--accent-2); }
+  .contact a:visited { color: var(--accent-visited); }
+  .sep { color: var(--rule); margin: 0 8px; }
+  .copyright { color: var(--muted); }
+  .colophon {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    margin: 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+  }
+  .colophon .sep { color: var(--rule); margin: 0 8px; }
+
+  @media (max-width: 600px) {
+    .meta { flex-direction: column; gap: 8px; }
+    .contact { display: flex; flex-wrap: wrap; gap: 4px 0; }
+    .contact .sep { margin: 0 6px; }
+  }
+</style>

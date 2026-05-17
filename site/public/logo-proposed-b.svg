@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" role="img" aria-label="ViFi">
+  <title>ViFi — separated &amp; simplified (Concept B)</title>
+  <!--
+    Concept B — separated and simplified.
+    The wordmark stands alone. The ECG pulse becomes an underline / baseline
+    signal that extends past the wordmark on both sides — the wordmark sits
+    ON the signal, like a label on a printed EKG strip.
+    NO WiFi arcs in the primary banner mark (reserved for a square monogram).
+    Cleaner, more confident, more obviously "publishing/research" register.
+  -->
+  <defs>
+    <style>
+      .wordmark { fill: #1A1A1A; }
+      .signal { stroke: #0E9F66; fill: none; }
+      .dark-mode .wordmark { fill: #F4EFE4; }
+      .dark-mode .signal { stroke: #34D399; }
+    </style>
+  </defs>
+
+  <!-- Wordmark "ViFi" — same letterforms as Concept A, centered higher -->
+  <!-- V -->
+  <path class="wordmark" d="M 170 60 L 235 210 L 260 210 L 325 60 L 280 60 L 247 145 L 214 60 Z" />
+  <!-- i (first) -->
+  <rect class="wordmark" x="355" y="60" width="32" height="150" />
+  <rect class="wordmark" x="355" y="25" width="32" height="22" />
+  <!-- F -->
+  <rect class="wordmark" x="440" y="60" width="32" height="150" />
+  <rect class="wordmark" x="440" y="60" width="120" height="32" />
+  <rect class="wordmark" x="440" y="110" width="90" height="28" />
+  <!-- i (second) -->
+  <rect class="wordmark" x="615" y="60" width="32" height="150" />
+  <rect class="wordmark" x="615" y="25" width="32" height="22" />
+
+  <!-- ECG baseline — runs full width, wordmark sits on top of it -->
+  <path class="signal" stroke-width="3.5" stroke-linejoin="miter" stroke-linecap="butt"
+        d="M 30 220
+           L 130 220
+           L 145 212
+           L 160 228
+           L 178 180
+           L 198 255
+           L 213 220
+           L 230 216
+           L 470 216
+           L 485 220
+           L 540 220
+           L 555 212
+           L 570 228
+           L 588 180
+           L 608 255
+           L 623 220
+           L 770 220" />
+</svg>

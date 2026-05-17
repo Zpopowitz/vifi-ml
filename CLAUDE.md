@@ -33,3 +33,23 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - SpO2, body temperature, BP, ECG waveform — wrong physics for WiFi CSI.
 - FDA filings (Stage 5, post-funding).
 - Hospital sales (post-pilot).
+
+## Design System
+
+Read [`DESIGN.md`](./DESIGN.md) before any visual, UI, or copy change on
+`vifi.health` (lives at `site/`). It defines typography, color tokens, spacing
+scale, layout rules, motion approach, brand identity, page-level voice, and the
+versioning + numbers pattern. Do not deviate from these without explicit user
+approval.
+
+Key tokens at a glance:
+- Primary brand accent: `--accent: #1D5C6E` (deep teal) — CTAs, links, hover
+- Semantic signal color: `--signal: #0E9F66` (emerald) — ECG / HR data ONLY,
+  reserved for figures and the logo. Never use for general UI.
+- Display font: Fraunces (variable serif). Body: Source Serif 4. UI: Inter Tight.
+  Data/version: JetBrains Mono with `tabular-nums`.
+- Specific numbers (MAE, session counts, subject counts) belong on deep pages
+  with provenance — NOT on the homepage as bragging claims.
+
+In QA mode, flag code that uses `--signal` for non-data UI, uses hex literals
+instead of tokens, or introduces typefaces outside the 4 declared families.

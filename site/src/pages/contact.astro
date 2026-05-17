@@ -7,11 +7,6 @@ import SiteFooter from "../components/SiteFooter.astro";
 const landing = await getEntry("landing", "main");
 const c = landing.data;
 
-// Formspree drop-in: set PUBLIC_FORMSPREE_CONTACT_ID in .env (and as a
-// Vercel project Environment Variable) to a Formspree form ID. When
-// unset, render an "email us" panel instead of the form, because a form
-// with a mailto: action triggers Chrome's "Not Secure / autofill
-// disabled" warning on HTTPS pages.
 const formspreeId = import.meta.env.PUBLIC_FORMSPREE_CONTACT_ID;
 const formAction = formspreeId ? `https://formspree.io/f/${formspreeId}` : null;
 
@@ -32,159 +27,309 @@ const meta = {
 ---
 
 <Layout title={meta.title} description={meta.description}>
+  <a href="#main" class="skip-link">Skip to content</a>
   <SiteHeader />
 
-  <!-- ============================================================ HERO -->
-  <section class="bg-ink px-6 pt-20 pb-16 md:pt-28 md:pb-20">
-    <div class="mx-auto max-w-3xl">
-      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
-        Contact
-      </p>
-      <h1
-        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
-      >
-        Get in touch.
-      </h1>
-      <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
-        For investor questions, press, technical review under NDA, or
-        research collaborations. If you're a hospital or health-system
-        partner interested in a pilot, the
-        <a href="/pilots" class="text-accent underline hover:text-paper">pilot inquiry form</a>
-        is the right place to start.
-      </p>
-    </div>
-  </section>
-
-  <!-- ============================================================ FORM -->
-  <section data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-20">
-    <div class="mx-auto max-w-3xl">
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        Send a message
-      </h2>
-
-      {formAction ? (
-        <form action={formAction} method="POST" class="mt-10 space-y-6">
-          <!-- Honeypot: bots fill _gotcha; Formspree silently drops those. -->
-          <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
-          <input type="hidden" name="_subject" value="ViFi contact inquiry" />
-
-          <p class="text-xs text-slate-500">
-            Fields marked <span class="text-red-400">*</span> are required.
-          </p>
-
-          <div class="grid gap-6 md:grid-cols-2">
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">
-                Your name <span class="text-red-400" aria-hidden="true">*</span>
-              </span>
-              <input
-                type="text"
-                name="name"
-                required
-                aria-required="true"
-                autocomplete="name"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">
-                Email <span class="text-red-400" aria-hidden="true">*</span>
-              </span>
-              <input
-                type="email"
-                name="email"
-                required
-                aria-required="true"
-                autocomplete="email"
-                inputmode="email"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-          </div>
-
-          <label class="block">
-            <span class="text-sm font-medium text-slate-300">
-              Reason for contacting <span class="text-red-400" aria-hidden="true">*</span>
-            </span>
-            <select
-              name="reason"
-              required
-              aria-required="true"
-              class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="" disabled selected>Select one…</option>
-              {reasons.map((r) => <option value={r}>{r}</option>)}
-            </select>
-          </label>
-
-          <label class="block">
-            <span class="text-sm font-medium text-slate-300">
-              Note <span class="text-red-400" aria-hidden="true">*</span>
-            </span>
-            <textarea
-              name="note"
-              rows="6"
-              required
-              aria-required="true"
-              autocomplete="off"
-              placeholder="A few sentences about what's on your mind."
-              class="mt-2 w-full rounded-md border border-slate-700 bg-ink px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            ></textarea>
-          </label>
-
-          <div class="flex flex-wrap items-center gap-4 pt-2">
-            <button
-              type="submit"
-              class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-            >
-              Send message
-            </button>
-            <p class="text-xs text-slate-500">
-              By submitting you agree to ViFi's
-              <a href="/privacy" class="underline hover:text-paper">Privacy Policy</a>
-              and
-              <a href="/terms" class="underline hover:text-paper">Terms of Use</a>.
-            </p>
-          </div>
-        </form>
-      ) : (
-        <div class="mt-10 rounded-lg border border-slate-800 bg-ink p-8 text-slate-300">
-          <p class="text-lg">
-            The contact form is being set up. In the meantime, email
-            <a
-              href={`mailto:${c.links.contact_email}`}
-              class="text-accent underline hover:text-paper"
-            >
-              {c.links.contact_email}
-            </a>
-            and we'll get back to you.
-          </p>
-          <a
-            href={`mailto:${c.links.contact_email}`}
-            class="mt-6 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-          >
-            Email us →
-          </a>
-        </div>
-      )}
-
-      {c.links.linkedin && (
-        <p class="mt-10 text-sm text-slate-500">
-          You can also follow ViFi on
-          <a
-            href={c.links.linkedin}
-            target="_blank"
-            rel="noopener"
-            class="text-accent underline hover:text-paper"
-          >
-            LinkedIn
-          </a>.
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="subpage-hero">
+      <div class="container container-prose">
+        <p class="eyebrow">Contact</p>
+        <h1 class="display">Get in&nbsp;touch.</h1>
+        <p class="intro">
+          For investor questions, press, technical review under NDA, or
+          research collaborations. If you're a hospital or health-system
+          partner interested in a pilot, the
+          <a href="/pilots" class="inline-link">pilot inquiry form</a>
+          is the right place to start.
         </p>
-      )}
-    </div>
-  </section>
+      </div>
+    </section>
+
+    <!-- ============ FORM ============ -->
+    <section class="contact-form-section" aria-labelledby="form-heading">
+      <div class="container container-prose">
+        <p class="section-eyebrow">Send a note</p>
+        <h2 id="form-heading" class="section-heading">A few sentences will do.</h2>
+
+        {formAction ? (
+          <form action={formAction} method="POST" class="editorial-form">
+            <input type="text" name="_gotcha" class="honeypot" tabindex="-1" autocomplete="off" />
+            <input type="hidden" name="_subject" value="ViFi contact inquiry" />
+
+            <p class="required-note">Fields marked <span class="req">*</span> are required.</p>
+
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Your name <span class="req" aria-hidden="true">*</span></span>
+                <input type="text" name="name" required aria-required="true" autocomplete="name" />
+              </label>
+              <label class="field">
+                <span class="field-label">Email <span class="req" aria-hidden="true">*</span></span>
+                <input type="email" name="email" required aria-required="true" autocomplete="email" inputmode="email" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span class="field-label">Reason for contacting <span class="req" aria-hidden="true">*</span></span>
+              <select name="reason" required aria-required="true">
+                <option value="" disabled selected>Select one…</option>
+                {reasons.map((r) => <option value={r}>{r}</option>)}
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Note <span class="req" aria-hidden="true">*</span></span>
+              <textarea name="note" rows="6" required aria-required="true" autocomplete="off" placeholder="A few sentences about what's on your mind."></textarea>
+            </label>
+
+            <div class="submit-row">
+              <button type="submit" class="btn btn-primary">Send message →</button>
+              <p class="legal-note">
+                By submitting you agree to ViFi's
+                <a href="/privacy">Privacy Policy</a> and
+                <a href="/terms">Terms of Use</a>.
+              </p>
+            </div>
+          </form>
+        ) : (
+          <div class="email-fallback">
+            <p>
+              The contact form is being set up. In the meantime, email
+              <a href={`mailto:${c.links.contact_email}`}>{c.links.contact_email}</a>
+              and we'll get back to you.
+            </p>
+            <a href={`mailto:${c.links.contact_email}`} class="btn btn-primary">
+              Email us →
+            </a>
+          </div>
+        )}
+
+        {c.links.linkedin && (
+          <p class="aside">
+            You can also follow ViFi on
+            <a href={c.links.linkedin} target="_blank" rel="noopener" class="inline-link">LinkedIn</a>.
+          </p>
+        )}
+      </div>
+    </section>
+  </main>
 
   <SiteFooter />
 </Layout>
+
+<style>
+  .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  .container-prose { max-width: 720px; }
+
+  /* ============ HERO ============ */
+  .subpage-hero { padding: 100px 0 80px; }
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+  h1.display {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(40px, 5.5vw, 68px);
+    line-height: 1.04;
+    letter-spacing: -0.024em;
+    color: var(--ink);
+    max-width: 14ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 144;
+    margin: 0 0 28px 0;
+  }
+  .intro {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    text-wrap: pretty;
+    margin: 0;
+  }
+  .inline-link {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 4px;
+    transition: text-decoration-color 180ms;
+  }
+  .inline-link:hover { text-decoration-color: var(--accent); }
+  .inline-link:visited { color: var(--accent-visited); }
+
+  /* ============ FORM SECTION ============ */
+  .contact-form-section {
+    padding: 80px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .section-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  h2.section-heading {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(28px, 3.8vw, 44px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 22ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 72;
+    margin: 0 0 36px 0;
+  }
+
+  /* ============ FORM ============ */
+  .editorial-form { margin: 0; }
+  .honeypot { display: none; }
+  .required-note {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0 0 24px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .req { color: var(--accent); font-weight: 600; }
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .field { display: block; margin-bottom: 24px; }
+  .field:last-of-type { margin-bottom: 0; }
+  .field-row .field { margin-bottom: 0; }
+  .field-label {
+    display: block;
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+  .field input,
+  .field textarea,
+  .field select {
+    width: 100%;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 12px 14px;
+    transition: border-color 180ms ease-out, background-color 180ms ease-out;
+  }
+  .field input::placeholder,
+  .field textarea::placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .field input:focus,
+  .field textarea:focus,
+  .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--paper);
+  }
+  .field input:focus-visible,
+  .field textarea:focus-visible,
+  .field select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .field textarea {
+    resize: vertical;
+    font-family: "Source Serif 4", Georgia, serif;
+  }
+
+  .submit-row {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 14px 22px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--paper);
+    cursor: pointer;
+    transition: background-color 180ms, border-color 180ms;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+  }
+  .btn:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .legal-note {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0;
+    max-width: 40ch;
+  }
+  .legal-note a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+  .legal-note a:hover { text-decoration-color: var(--accent); }
+
+  .email-fallback {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 32px;
+  }
+  .email-fallback p {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    margin: 0 0 24px 0;
+    max-width: 60ch;
+  }
+  .email-fallback p a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+  }
+  .email-fallback p a:hover { text-decoration-color: var(--accent); }
+
+  .aside {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+    margin: 56px 0 0 0;
+  }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 600px) {
+    .subpage-hero { padding: 56px 0 48px; }
+    .contact-form-section { padding: 56px 0; }
+    .field-row { grid-template-columns: 1fr; gap: 0; }
+    .field-row .field { margin-bottom: 24px; }
+  }
+</style>

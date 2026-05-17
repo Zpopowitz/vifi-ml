@@ -8,11 +8,9 @@ const landing = await getEntry("landing", "main");
 const c = landing.data;
 
 // Formspree drop-in: set PUBLIC_FORMSPREE_PILOTS_ID in .env (and as a
-// Vercel project Environment Variable) to a Formspree form ID, e.g.
-// "abcdwxyz" from https://formspree.io/f/abcdwxyz. When unset, we
-// deliberately render an "email us" panel instead of the form, because
-// a form with a mailto: action triggers Chrome's "Not Secure / autofill
-// disabled" warning on HTTPS pages.
+// Vercel project Environment Variable). Without it, render an email-us
+// panel so we don't trigger Chrome's "Not Secure / autofill disabled"
+// warning on a mailto: action.
 const formspreeId = import.meta.env.PUBLIC_FORMSPREE_PILOTS_ID;
 const formAction = formspreeId ? `https://formspree.io/f/${formspreeId}` : null;
 
@@ -24,221 +22,358 @@ const meta = {
 ---
 
 <Layout title={meta.title} description={meta.description}>
+  <a href="#main" class="skip-link">Skip to content</a>
   <SiteHeader />
 
-  <!-- ============================================================ HERO -->
-  <section class="bg-ink px-6 pt-20 pb-16 md:pt-28 md:pb-20">
-    <div class="mx-auto max-w-3xl">
-      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
-        For hospitals
-      </p>
-      <h1
-        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
-      >
-        Run a pilot.
-      </h1>
-      <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
-        ViFi is in conversation with med-surg floor leaders, biomedical
-        engineering teams, and clinical research offices interested in
-        hosting a wellness-grade pilot of contactless WiFi-based patient
-        monitoring. Tell us a bit about your site and we'll be in touch
-        within a few days.
-      </p>
-    </div>
-  </section>
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="subpage-hero">
+      <div class="container container-prose">
+        <p class="eyebrow">For hospitals</p>
+        <h1 class="display">Run a&nbsp;pilot.</h1>
+        <p class="intro">
+          ViFi is in conversation with med-surg floor leaders, biomedical
+          engineering teams, and clinical research offices interested in
+          hosting a wellness-grade pilot of contactless WiFi-based patient
+          monitoring. Tell us about your site and we'll be in touch within
+          a few days.
+        </p>
+      </div>
+    </section>
 
-  <!-- ============================================================ WHAT A PILOT LOOKS LIKE -->
-  <section data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-20">
-    <div class="mx-auto max-w-3xl">
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        What a pilot looks like
-      </h2>
-      <ul class="mt-8 space-y-3 text-lg text-slate-300">
-        <li class="flex gap-3">
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-          <span>5–10 rooms instrumented with two ESP32-S3 boards each</span>
-        </li>
-        <li class="flex gap-3">
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-          <span>30–90 day duration, IRB review where applicable</span>
-        </li>
-        <li class="flex gap-3">
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-          <span>Runs alongside your existing monitoring; no clinical decisions are made from ViFi data</span>
-        </li>
-        <li class="flex gap-3">
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-          <span>Fully de-identified, on-premise data handling</span>
-        </li>
-        <li class="flex gap-3">
-          <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-          <span>Output: a measurement study comparing ViFi against your existing reference</span>
-        </li>
-      </ul>
-    </div>
-  </section>
+    <!-- ============ WHAT A PILOT LOOKS LIKE ============ -->
+    <section class="pilot-shape" aria-labelledby="pilot-shape-heading">
+      <div class="container container-prose">
+        <p class="section-eyebrow">What's included</p>
+        <h2 id="pilot-shape-heading" class="section-heading">What a pilot looks&nbsp;like.</h2>
+        <ul class="pilot-bullets">
+          <li>5–10 rooms instrumented with two ESP32-S3 boards each</li>
+          <li>30–90 day duration, IRB review where applicable</li>
+          <li>Runs alongside your existing monitoring; no clinical decisions are made from ViFi data</li>
+          <li>Fully de-identified, on-premise data handling</li>
+          <li>Output: a measurement study comparing ViFi against your existing reference</li>
+        </ul>
+      </div>
+    </section>
 
-  <!-- ============================================================ FORM -->
-  <section data-animate="right" class="bg-ink px-6 py-20">
-    <div class="mx-auto max-w-3xl">
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        Tell us about your site
-      </h2>
-      <p class="mt-4 text-slate-400">
-        All fields except the open notes are short. The form goes
-        straight to the founder; expect a reply within a few business days.
-      </p>
+    <!-- ============ FORM ============ -->
+    <section class="pilot-form-section" aria-labelledby="form-heading">
+      <div class="container container-prose">
+        <p class="section-eyebrow">Tell us about your site</p>
+        <h2 id="form-heading" class="section-heading">Start the conversation.</h2>
+        <p class="form-intro">
+          All fields except the open notes are short. The form goes straight to
+          the founder; expect a reply within a few business days.
+        </p>
 
-      {formAction ? (
-        <form action={formAction} method="POST" class="mt-10 space-y-6">
-          <!-- Honeypot: bots fill _gotcha; Formspree silently drops those. -->
-          <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
-          <input type="hidden" name="_subject" value="ViFi pilot inquiry" />
+        {formAction ? (
+          <form action={formAction} method="POST" class="editorial-form">
+            <input type="text" name="_gotcha" class="honeypot" tabindex="-1" autocomplete="off" />
+            <input type="hidden" name="_subject" value="ViFi pilot inquiry" />
 
-          <p class="text-xs text-slate-500">
-            Fields marked <span class="text-red-400">*</span> are required.
-          </p>
+            <p class="required-note">Fields marked <span class="req">*</span> are required.</p>
 
-          <div class="grid gap-6 md:grid-cols-2">
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">
-                Your name <span class="text-red-400" aria-hidden="true">*</span>
-              </span>
-              <input
-                type="text"
-                name="name"
-                required
-                aria-required="true"
-                autocomplete="name"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Your name <span class="req" aria-hidden="true">*</span></span>
+                <input type="text" name="name" required aria-required="true" autocomplete="name" />
+              </label>
+              <label class="field">
+                <span class="field-label">Email <span class="req" aria-hidden="true">*</span></span>
+                <input type="email" name="email" required aria-required="true" autocomplete="email" inputmode="email" />
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Organization</span>
+                <input type="text" name="organization" autocomplete="organization" placeholder="Hospital or health system" />
+              </label>
+              <label class="field">
+                <span class="field-label">Your role</span>
+                <input type="text" name="role" autocomplete="organization-title" placeholder="e.g. VP Innovation, BME Director" />
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Approx. number of beds</span>
+                <input type="text" name="beds" autocomplete="off" placeholder="e.g. 30 med-surg beds" />
+              </label>
+              <label class="field">
+                <span class="field-label">Pilot timeline</span>
+                <input type="text" name="timeline" autocomplete="off" placeholder="e.g. Q4 2026" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span class="field-label">Existing monitoring</span>
+              <input type="text" name="existing_monitoring" autocomplete="off" placeholder="What you currently use on the floor" />
             </label>
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">
-                Email <span class="text-red-400" aria-hidden="true">*</span>
-              </span>
-              <input
-                type="email"
-                name="email"
-                required
-                aria-required="true"
-                autocomplete="email"
-                inputmode="email"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-          </div>
 
-          <div class="grid gap-6 md:grid-cols-2">
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">Organization</span>
-              <input
-                type="text"
-                name="organization"
-                autocomplete="organization"
-                placeholder="Hospital or health system"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+            <label class="field">
+              <span class="field-label">Anything else?</span>
+              <textarea name="notes" rows="5" autocomplete="off" placeholder="Goals for the pilot, constraints, IRB process, anything we should know."></textarea>
             </label>
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">Your role</span>
-              <input
-                type="text"
-                name="role"
-                autocomplete="organization-title"
-                placeholder="e.g. VP Innovation, BME Director"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-          </div>
 
-          <div class="grid gap-6 md:grid-cols-2">
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">Approx. number of beds</span>
-              <input
-                type="text"
-                name="beds"
-                autocomplete="off"
-                placeholder="e.g. 30 med-surg beds"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-            <label class="block">
-              <span class="text-sm font-medium text-slate-300">Pilot timeline</span>
-              <input
-                type="text"
-                name="timeline"
-                autocomplete="off"
-                placeholder="e.g. Q4 2026"
-                class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </label>
-          </div>
-
-          <label class="block">
-            <span class="text-sm font-medium text-slate-300">Existing monitoring</span>
-            <input
-              type="text"
-              name="existing_monitoring"
-              autocomplete="off"
-              placeholder="What you currently use on the floor"
-              class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-          </label>
-
-          <label class="block">
-            <span class="text-sm font-medium text-slate-300">Anything else?</span>
-            <textarea
-              name="notes"
-              rows="5"
-              autocomplete="off"
-              placeholder="Goals for the pilot, constraints, IRB process, anything we should know."
-              class="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-4 py-3 text-paper placeholder:text-slate-600 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            ></textarea>
-          </label>
-
-          <div class="flex flex-wrap items-center gap-4 pt-2">
-            <button
-              type="submit"
-              class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-            >
-              Send pilot inquiry
-            </button>
-            <p class="text-xs text-slate-500">
-              By submitting you agree to ViFi's
-              <a href="/privacy" class="underline hover:text-paper">Privacy Policy</a>
-              and
-              <a href="/terms" class="underline hover:text-paper">Terms of Use</a>.
+            <div class="submit-row">
+              <button type="submit" class="btn btn-primary">Send pilot inquiry →</button>
+              <p class="legal-note">
+                By submitting you agree to ViFi's
+                <a href="/privacy">Privacy Policy</a> and
+                <a href="/terms">Terms of Use</a>.
+              </p>
+            </div>
+          </form>
+        ) : (
+          <div class="email-fallback">
+            <p>
+              The pilot inquiry form is being set up. In the meantime, email
+              <a href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`}>{c.links.pilot_email}</a>
+              with a couple of lines about your site and we'll take it from there.
             </p>
-          </div>
-        </form>
-      ) : (
-        <div class="mt-10 rounded-lg border border-slate-800 bg-slate-950 p-8 text-slate-300">
-          <p class="text-lg">
-            The pilot inquiry form is being set up. In the meantime,
-            email
-            <a
-              href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`}
-              class="text-accent underline hover:text-paper"
-            >
-              {c.links.pilot_email}
+            <a href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`} class="btn btn-primary">
+              Email pilot inquiry →
             </a>
-            with a couple of lines about your site and we'll take it from there.
-          </p>
-          <a
-            href={`mailto:${c.links.pilot_email}?subject=ViFi%20pilot%20inquiry`}
-            class="mt-6 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-          >
-            Email pilot inquiry →
-          </a>
-        </div>
-      )}
-    </div>
-  </section>
+          </div>
+        )}
+      </div>
+    </section>
+  </main>
 
   <SiteFooter />
 </Layout>
+
+<style>
+  .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  .container-prose { max-width: 720px; }
+
+  /* ============ HERO ============ */
+  .subpage-hero { padding: 100px 0 80px; }
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+  h1.display {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(40px, 5.5vw, 68px);
+    line-height: 1.04;
+    letter-spacing: -0.024em;
+    color: var(--ink);
+    max-width: 14ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 144;
+    margin: 0 0 28px 0;
+  }
+  .intro {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    text-wrap: pretty;
+    margin: 0;
+  }
+
+  /* ============ SECTIONS ============ */
+  .pilot-shape, .pilot-form-section {
+    padding: 80px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .section-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  h2.section-heading {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(28px, 3.8vw, 44px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 22ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 72;
+    margin: 0 0 36px 0;
+  }
+
+  /* ============ BULLETS ============ */
+  .pilot-bullets {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .pilot-bullets li {
+    position: relative;
+    padding: 12px 0 12px 28px;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule);
+  }
+  .pilot-bullets li:first-child { border-top: 1px solid var(--rule); }
+  .pilot-bullets li::before {
+    content: "·";
+    position: absolute;
+    left: 6px;
+    top: 7px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 1.8em;
+    line-height: 1;
+  }
+
+  /* ============ FORM ============ */
+  .form-intro {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    color: var(--muted);
+    margin: 0 0 40px 0;
+    max-width: 60ch;
+  }
+  .editorial-form { margin: 0; }
+  .honeypot { display: none; }
+  .required-note {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0 0 24px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .req { color: var(--accent); font-weight: 600; }
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .field { display: block; margin-bottom: 24px; }
+  .field:last-of-type { margin-bottom: 0; }
+  .field-row .field { margin-bottom: 0; }
+  .field-label {
+    display: block;
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+  .field input,
+  .field textarea,
+  .field select {
+    width: 100%;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 12px 14px;
+    transition: border-color 180ms ease-out, background-color 180ms ease-out;
+  }
+  .field input::placeholder,
+  .field textarea::placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .field input:focus,
+  .field textarea:focus,
+  .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--paper);
+  }
+  .field input:focus-visible,
+  .field textarea:focus-visible,
+  .field select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .field textarea {
+    resize: vertical;
+    font-family: "Source Serif 4", Georgia, serif;
+  }
+
+  .submit-row {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 14px 22px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--paper);
+    cursor: pointer;
+    transition: background-color 180ms, border-color 180ms;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+  }
+  .btn:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .legal-note {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0;
+    max-width: 40ch;
+  }
+  .legal-note a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+  .legal-note a:hover { text-decoration-color: var(--accent); }
+
+  .email-fallback {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 32px;
+    margin-top: 0;
+  }
+  .email-fallback p {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    margin: 0 0 24px 0;
+    max-width: 60ch;
+  }
+  .email-fallback p a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+  }
+  .email-fallback p a:hover { text-decoration-color: var(--accent); }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 600px) {
+    .subpage-hero { padding: 56px 0 48px; }
+    .pilot-shape, .pilot-form-section { padding: 56px 0; }
+    .field-row { grid-template-columns: 1fr; gap: 0; }
+    .field-row .field { margin-bottom: 24px; }
+  }
+</style>

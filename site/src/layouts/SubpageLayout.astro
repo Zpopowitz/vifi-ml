@@ -1,4 +1,7 @@
 ---
+// Editorial Lab subpage layout — drives /results, /roadmap, /privacy, /terms.
+// Content comes from JSON via a `page` prop conforming to the schema in
+// src/content/config.ts. Style follows DESIGN.md tokens.
 import Layout from "./Layout.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import SiteFooter from "../components/SiteFooter.astro";
@@ -29,10 +32,6 @@ interface Props {
 
 const { page } = Astro.props;
 
-// Inline-markdown renderer. Handles the small set of inline syntax used
-// across the subpage JSON: **bold**, *italic*, `code`, [text](url).
-// Order matters — code spans first to protect their contents from other
-// substitutions, then links, then bold, then italic.
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -66,123 +65,296 @@ function slugify(s: string): string {
     .trim()
     .replace(/\s+/g, "-");
 }
-
-const proseClasses =
-  "prose prose-invert max-w-none prose-headings:tracking-tight prose-h3:mt-8 prose-h3:text-xl prose-a:text-accent hover:prose-a:text-accentDark prose-strong:text-paper prose-code:text-accent prose-code:before:content-none prose-code:after:content-none prose-code:rounded prose-code:bg-slate-800 prose-code:px-1 prose-code:py-0.5 prose-li:marker:text-accent";
 ---
 
 <Layout title={`${page.meta.title} — ViFi`} description={page.meta.description}>
+  <a href="#main" class="skip-link">Skip to content</a>
   <SiteHeader />
 
-  <!-- ============================================================ HERO -->
-  <section class="bg-ink px-6 pt-20 pb-20 md:pt-28 md:pb-24">
-    <div class="mx-auto max-w-4xl">
-      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
-        {page.meta.title}
-      </p>
-      <h1
-        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
-      >
-        {page.title}
-      </h1>
-      {page.intro && (
-        <p class="mt-8 max-w-3xl text-lg leading-relaxed text-slate-300 md:text-xl">
-          {page.intro}
-        </p>
-      )}
-    </div>
-  </section>
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="subpage-hero">
+      <div class="container">
+        <p class="eyebrow">{page.meta.title}</p>
+        <h1 class="display">{page.title}</h1>
+        {page.intro && <p class="intro">{page.intro}</p>}
+      </div>
+    </section>
 
-  <!-- ============================================================ SECTIONS -->
-  {page.sections.map((section, i) => {
-    const isDark = i % 2 === 0;
-    const sectionClasses = isDark
-      ? "border-y border-slate-800 bg-slate-950 px-6 py-20 md:py-24"
-      : "bg-ink px-6 py-20 md:py-24";
-    const animateDir = i % 2 === 0 ? "left" : "right";
-    const sectionId = section.id ?? slugify(section.heading);
-    return (
-      <section id={sectionId} data-animate={animateDir} class={sectionClasses}>
-        <div class="mx-auto max-w-3xl">
-          {section.eyebrow && (
-            <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
-              {section.eyebrow}
-            </p>
-          )}
-          <h2
-            class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-          >
-            {section.heading}
-          </h2>
+    <!-- ============ SECTIONS ============ -->
+    {page.sections.map((section) => {
+      const sectionId = section.id ?? slugify(section.heading);
+      return (
+        <section id={sectionId} class="subpage-section">
+          <div class="container container-prose">
+            {section.eyebrow && <p class="section-eyebrow">{section.eyebrow}</p>}
+            <h2 class="section-heading">{section.heading}</h2>
 
-          <div class={`mt-8 ${proseClasses}`}>
-            {section.blocks.map((b) => {
-              if (b.type === "paragraph" && b.text) {
-                return <p set:html={renderInline(b.text)} />;
-              }
-              if (b.type === "subheading" && b.text) {
-                return <h3>{b.text}</h3>;
-              }
-              if (b.type === "bulleted_list" && b.items) {
-                return (
-                  <ul>
-                    {b.items.map((it) => <li set:html={renderInline(it)} />)}
-                  </ul>
-                );
-              }
-              if (b.type === "ordered_list" && b.items) {
-                return (
-                  <ol>
-                    {b.items.map((it) => <li set:html={renderInline(it)} />)}
-                  </ol>
-                );
-              }
-              if (b.type === "table" && b.headers && b.rows) {
-                return (
-                  <div class="not-prose my-8 overflow-x-auto rounded-lg border border-slate-800">
-                    <table class="w-full text-sm">
-                      <thead class={isDark ? "bg-ink text-left text-slate-500" : "bg-slate-950 text-left text-slate-500"}>
-                        <tr>
-                          {b.headers.map((h) => (
-                            <th class="px-4 py-3 font-medium" set:html={renderInline(h)} />
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody class={isDark ? "divide-y divide-slate-800 bg-slate-950" : "divide-y divide-slate-800 bg-ink"}>
-                        {b.rows.map((row) => (
-                          <tr class="text-slate-300">
-                            {row.map((cell, ci) => (
-                              <td
-                                class={ci === 0 ? "px-4 py-3 font-medium text-paper" : "px-4 py-3"}
-                                set:html={renderInline(cell)}
-                              />
+            <div class="prose-content">
+              {section.blocks.map((b) => {
+                if (b.type === "paragraph" && b.text) {
+                  return <p set:html={renderInline(b.text)} />;
+                }
+                if (b.type === "subheading" && b.text) {
+                  return <h3>{b.text}</h3>;
+                }
+                if (b.type === "bulleted_list" && b.items) {
+                  return (
+                    <ul>
+                      {b.items.map((it) => <li set:html={renderInline(it)} />)}
+                    </ul>
+                  );
+                }
+                if (b.type === "ordered_list" && b.items) {
+                  return (
+                    <ol>
+                      {b.items.map((it) => <li set:html={renderInline(it)} />)}
+                    </ol>
+                  );
+                }
+                if (b.type === "table" && b.headers && b.rows) {
+                  return (
+                    <div class="table-wrap">
+                      <table class="editorial-table">
+                        <thead>
+                          <tr>
+                            {b.headers.map((h) => (
+                              <th set:html={renderInline(h)} />
                             ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              }
-              return null;
-            })}
+                        </thead>
+                        <tbody>
+                          {b.rows.map((row) => (
+                            <tr>
+                              {row.map((cell, ci) => (
+                                <td
+                                  class={ci === 0 ? "first-col" : ""}
+                                  set:html={renderInline(cell)}
+                                />
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
           </div>
-        </div>
-      </section>
-    );
-  })}
+        </section>
+      );
+    })}
 
-  <!-- ============================================================ BACK CTA -->
-  <section class="bg-ink px-6 py-16">
-    <div class="mx-auto max-w-3xl text-center">
-      <a
-        href="/"
-        class="inline-block rounded-md border border-slate-700 px-6 py-3 text-sm font-medium text-paper transition hover:border-accent"
-      >
-        ← Back to vifi.health
-      </a>
-    </div>
-  </section>
+    <!-- ============ BACK ============ -->
+    <section class="subpage-back">
+      <div class="container">
+        <a href="/" class="back-link">← Back to vifi.health</a>
+      </div>
+    </section>
+  </main>
 
   <SiteFooter />
 </Layout>
+
+<style>
+  .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  .container-prose { max-width: 720px; }
+
+  /* ============ HERO ============ */
+  .subpage-hero { padding: 100px 0 80px; }
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+  h1.display {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(36px, 5vw, 64px);
+    line-height: 1.05;
+    letter-spacing: -0.022em;
+    color: var(--ink);
+    max-width: 20ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 120;
+    margin: 0 0 28px 0;
+  }
+  .intro {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    text-wrap: pretty;
+  }
+
+  /* ============ SECTIONS ============ */
+  .subpage-section {
+    padding: 80px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .section-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  h2.section-heading {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(28px, 3.6vw, 40px);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 60;
+    margin: 0 0 36px 0;
+  }
+
+  /* ============ PROSE CONTENT ============ */
+  .prose-content {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+  .prose-content > * + * { margin-top: 1.1em; }
+  .prose-content h3 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.2;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variation-settings: "SOFT" 30, "opsz" 36;
+    margin-top: 2em;
+    margin-bottom: 0.6em;
+  }
+  .prose-content p {
+    text-wrap: pretty;
+    max-width: 65ch;
+  }
+  .prose-content strong { color: var(--ink); font-weight: 600; }
+  .prose-content em { font-style: italic; }
+  .prose-content a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 180ms;
+  }
+  .prose-content a:hover { text-decoration-color: var(--accent); }
+  .prose-content a:visited { color: var(--accent-visited); }
+  .prose-content code {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.92em;
+    background: var(--paper-2);
+    color: var(--ink);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+  }
+  .prose-content ul,
+  .prose-content ol {
+    padding-left: 1.5em;
+    max-width: 65ch;
+  }
+  .prose-content ul { list-style: none; }
+  .prose-content ul > li {
+    position: relative;
+    padding-left: 4px;
+    margin-bottom: 0.5em;
+  }
+  .prose-content ul > li::before {
+    content: "·";
+    position: absolute;
+    left: -1.2em;
+    top: 0;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 1.4em;
+    line-height: 1;
+  }
+  .prose-content ol > li {
+    margin-bottom: 0.5em;
+    padding-left: 4px;
+  }
+  .prose-content ol > li::marker { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 0.9em; }
+
+  /* ============ EDITORIAL TABLE ============ */
+  .table-wrap {
+    margin: 36px 0;
+    overflow-x: auto;
+  }
+  .editorial-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1.5px solid var(--ink);
+    border-bottom: 1.5px solid var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .editorial-table thead tr { border-bottom: 1px solid var(--rule); }
+  .editorial-table th {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-align: left;
+    padding: 14px 16px 14px 0;
+  }
+  .editorial-table td {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 15px;
+    color: var(--ink-2);
+    padding: 14px 16px 14px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  .editorial-table tbody tr:last-child td { border-bottom: none; }
+  .editorial-table td.first-col {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    color: var(--ink);
+    font-variation-settings: "SOFT" 30, "opsz" 22;
+  }
+  .editorial-table td code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.95em;
+  }
+
+  /* ============ BACK ============ */
+  .subpage-back {
+    padding: 64px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .back-link {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 180ms;
+  }
+  .back-link:hover { border-bottom-color: var(--accent); }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 760px) {
+    .subpage-hero { padding: 56px 0 48px; }
+    .subpage-section { padding: 56px 0; }
+    .table-wrap { margin: 24px 0; }
+    .editorial-table th, .editorial-table td { padding: 10px 12px 10px 0; }
+  }
+</style>
