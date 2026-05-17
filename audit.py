@@ -57,9 +57,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from audit_chain_state import ChainStateStore
 from pseudonymize import is_pseudonymous, pseudonymize
 
 DEFAULT_AUDIT_DIR = Path("data/audit")
+DEFAULT_CHAIN_STATE_FILENAME = "chain_state.sqlite"
 
 log = logging.getLogger("vifi.audit")
 
@@ -113,6 +115,20 @@ def _fsync_enabled() -> bool:
     return os.environ.get("VIFI_AUDIT_FSYNC", "true").lower() == "true"
 
 
+def _resolve_chain_state_path(audit_dir: Path) -> Path:
+    """Where the chain-state SQLite DB lives. Operator override via
+    VIFI_AUDIT_CHAIN_STATE_DB; otherwise next to the JSONL files.
+
+    Putting it inside audit_dir keeps backup + retention scripts simple
+    (one directory to mirror) and matches the "everything audit lives
+    here" mental model.
+    """
+    override = os.environ.get("VIFI_AUDIT_CHAIN_STATE_DB")
+    if override:
+        return Path(override)
+    return audit_dir / DEFAULT_CHAIN_STATE_FILENAME
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -151,6 +167,7 @@ class AuditLogWriter:
         fernet=None,
         chain_key: Optional[bytes] = None,
         fsync: Optional[bool] = None,
+        chain_state_store: Optional[Any] = None,
     ):
         if audit_dir is None:
             env = os.environ.get("VIFI_AUDIT_DIR")
@@ -160,6 +177,9 @@ class AuditLogWriter:
         self._current_date: Optional[str] = None
         self._handle = None  # type: ignore[assignment]
         self._current_path: Optional[Path] = None
+        # Count of records written into the currently-open file. Used to
+        # keep the chain-state store in sync with what's actually on disk.
+        self._current_record_count: int = 0
         # Optional Fernet cipher.
         if fernet is False:
             self._fernet = None
@@ -192,6 +212,25 @@ class AuditLogWriter:
         self._last_digest: Optional[bytes] = None
         # fsync mode.
         self._fsync = fsync if fsync is not None else _fsync_enabled()
+        # Chain-state SQLite store (M3 restart-resilience). Three modes:
+        #   - chain_state_store is False  -> disabled (legacy/test behavior)
+        #   - chain_state_store is None   -> auto: enable when chain_key set
+        #   - chain_state_store is a store -> use it (caller manages lifetime)
+        # When auto-enabled we own the store and close it on .close().
+        self._owns_chain_state = False
+        if chain_state_store is False:
+            self._chain_state_store: Optional[ChainStateStore] = None
+        elif chain_state_store is None:
+            if self._chain_key is not None:
+                self.audit_dir.mkdir(parents=True, exist_ok=True)
+                self._chain_state_store = ChainStateStore(
+                    _resolve_chain_state_path(self.audit_dir)
+                )
+                self._owns_chain_state = True
+            else:
+                self._chain_state_store = None
+        else:
+            self._chain_state_store = chain_state_store
 
     @property
     def current_path(self) -> Optional[Path]:
@@ -216,17 +255,56 @@ class AuditLogWriter:
                 pass
         self.audit_dir.mkdir(parents=True, exist_ok=True)
         path = self.audit_dir / f"audit-{date}.jsonl"
+
+        # M3 restart-resilience: consult the chain-state store BEFORE
+        # opening for append. Three cases.
+        existing_state: Optional[tuple[bytes, int]] = None
+        if self._chain_key is not None and self._chain_state_store is not None:
+            existing_state = self._chain_state_store.get(date)
+            file_has_content = path.exists() and path.stat().st_size > 0
+            if existing_state is None and file_has_content:
+                # Refuse to extend an existing chained file without state.
+                # Either this is a legacy file (operator must run
+                # migrate_chain_state once), or the SQLite DB has been
+                # tampered/lost. Failing closed protects audit integrity.
+                raise RuntimeError(
+                    f"audit chain state missing for {path.name} but file "
+                    f"exists with content; refusing to extend. Run "
+                    f"audit_chain_state migration to seed the store, "
+                    f"or rotate to a new file."
+                )
+
         self._handle = open(path, "a", encoding="utf-8")  # noqa: SIM115
+        # M2: tighten perms to owner-only. Audit JSONL carries pseudonymized
+        # HR/RR which is PHI-adjacent; default 0644 is world-readable on
+        # multi-user hosts. chmod after open so it applies even when the
+        # file existed already.
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            # Best-effort: Windows + some network FS ignore POSIX modes.
+            pass
         self._current_date = date
         self._current_path = path
-        # On day rollover, the chain restarts with the canonical root.
-        # Verifiers know this convention.
+
         if self._chain_key is not None:
-            self._last_digest = hmac.new(
-                self._chain_key,
-                _CHAIN_ROOT,
-                hashlib.sha256,
-            ).digest()
+            if existing_state is not None:
+                # Resume the chain — new appends extend.
+                self._last_digest = existing_state[0]
+                self._current_record_count = existing_state[1]
+            else:
+                # Fresh chain (new day, or store enabled but file is empty).
+                self._last_digest = hmac.new(
+                    self._chain_key,
+                    _CHAIN_ROOT,
+                    hashlib.sha256,
+                ).digest()
+                self._current_record_count = 0
+                if self._chain_state_store is not None:
+                    # Seed the store so a later restart can resume.
+                    self._chain_state_store.set(
+                        date, self._last_digest, self._current_record_count
+                    )
 
     def write(self, record: dict[str, Any]) -> None:
         """Append one record. Pseudonymizes subject fields, optionally
@@ -277,6 +355,24 @@ class AuditLogWriter:
             except OSError as exc:
                 # fsync can fail on some filesystems; log and continue.
                 log.error("audit log fsync failed: %s", exc)
+        # M3: persist the chain pointer AFTER the record is durable on
+        # disk. Ordering matters: if the store update succeeds but the
+        # JSONL append failed, on restart we'd refuse the next append
+        # (chain state says count=N+1 but file has N records — caught
+        # by verify_chain). The reverse failure (JSONL appended, store
+        # not yet updated) means restart loses one digest forward, but
+        # verify_chain still passes against the file's actual content.
+        if (
+            self._chain_key is not None
+            and self._chain_state_store is not None
+            and self._last_digest is not None
+        ):
+            self._current_record_count += 1
+            self._chain_state_store.set(
+                self._current_date,  # type: ignore[arg-type]
+                self._last_digest,
+                self._current_record_count,
+            )
 
     @staticmethod
     def _sanitize(record: dict[str, Any]) -> dict[str, Any]:
@@ -301,6 +397,12 @@ class AuditLogWriter:
                 self._handle.close()
             finally:
                 self._handle = None
+        if self._owns_chain_state and self._chain_state_store is not None:
+            try:
+                self._chain_state_store.close()
+            finally:
+                self._chain_state_store = None
+                self._owns_chain_state = False
 
     def __enter__(self) -> "AuditLogWriter":
         return self
@@ -314,12 +416,24 @@ class AuditLogWriter:
 # ---------------------------------------------------------------------------
 
 
-def verify_chain(path: Path, chain_key: Optional[bytes] = None) -> tuple[bool, str]:
+def verify_chain(
+    path: Path,
+    chain_key: Optional[bytes] = None,
+    store: Optional[ChainStateStore] = None,
+) -> tuple[bool, str]:
     """Re-compute the chain over a JSONL file and verify each digest.
 
     Returns (ok, message). Returns (True, "skipped") if the file
     contains no chain_digest fields (chain wasn't enabled when the
     log was written).
+
+    When `store` is provided, the post-replay final digest + count
+    are cross-checked against the stored values for this date. This
+    detects trailing-line truncation that a pure replay cannot (replay
+    of a truncated file is internally consistent but misses records).
+    Legacy files (written before the SQLite store existed) verify
+    exactly as before when `store` is None — that's the regression
+    contract.
     """
     if chain_key is None:
         chain_key = _load_chain_key()
@@ -360,6 +474,27 @@ def verify_chain(path: Path, chain_key: Optional[bytes] = None) -> tuple[bool, s
                     f"(expected {expected[:12]}..., got {saved_digest[:12]}...)"
                 )
             last_digest = bytes.fromhex(saved_digest)
+
+    if store is not None and n_chained > 0:
+        # Cross-check against the stored pointer. Filename convention:
+        # audit-YYYY-MM-DDZ.jsonl — strip prefix + suffix to get the date.
+        stem = path.stem  # "audit-YYYY-MM-DDZ"
+        if stem.startswith("audit-"):
+            date = stem[len("audit-") :]
+            stored = store.get(date)
+            if stored is not None:
+                stored_digest, stored_count = stored
+                if stored_digest != last_digest:
+                    return False, (
+                        f"chain tail mismatch: store digest "
+                        f"{stored_digest.hex()[:12]}... vs replayed "
+                        f"{last_digest.hex()[:12]}... (possible truncation)"
+                    )
+                if stored_count != n_chained:
+                    return False, (
+                        f"chain count mismatch: store has {stored_count} "
+                        f"records, file has {n_chained} (possible truncation)"
+                    )
 
     if n_chained == 0:
         return True, f"no chained records found in {n_records}"
