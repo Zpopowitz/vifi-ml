@@ -92,7 +92,7 @@ function isActive(href: string): boolean {
       });
     }
 
-    // Sticky-header scrolled state — adds .scrolled class when window.scrollY > 8
+    // Sticky-header scrolled state. Adds .scrolled class when window.scrollY > 8
     function onScroll() {
       var h = document.querySelector(".site-header");
       if (!h) return;
@@ -100,7 +100,7 @@ function isActive(href: string): boolean {
       else h.classList.remove("scrolled");
     }
 
-    // Current-page indicator — header persists across view transitions, so we
+    // Current-page indicator. Header persists across view transitions, so we
     // refresh aria-current on each astro:page-load instead of relying on the
     // server-rendered value alone.
     function updateCurrentNav() {
