@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Real-hardware results",
-    "description": "ViFi's real-hardware heart-rate methodology and numbers — 4.15 bpm cross-session HR MAE on $44 of ESP32-S3 hardware against a Polar H10 chest strap."
+    "description": "ViFi's real-hardware heart-rate methodology and numbers. 4.15 bpm cross-session HR MAE on $44 of ESP32-S3 hardware against a Polar H10 chest strap."
   },
   "title": "Validation results",
   "intro": "This document records the methodology and numbers for ViFi's real-hardware heart-rate estimation. It is written so a technical reviewer can verify what was measured, how, and what it does and does not prove.",
@@ -20,7 +20,7 @@
           "rows": [
             ["session5", "sessions 3, 4", "3.89 bpm", "68.2%", "+0.94 bpm"],
             ["session4", "sessions 3, 5", "4.41 bpm", "65.2%", "+3.02 bpm"],
-            ["**Mean**", "—", "**4.15 bpm**", "**66.7%**", "**+1.98 bpm**"]
+            ["**Mean**", "", "**4.15 bpm**", "**66.7%**", "**+1.98 bpm**"]
           ]
         },
         {
@@ -140,7 +140,7 @@
         { "type": "subheading", "text": "Sample-rate handling" },
         {
           "type": "paragraph",
-          "text": "When ESP-IDF doesn't emit per-line timestamps (the default configuration), the parser synthesizes a uniform timestamp grid. Default 100 Hz was wrong — the watchdog throttles real packet rate to ~67–77 Hz. The capture tool writes a metadata sidecar with the measured rate; the parser auto-loads the sidecar to use the correct synthesized fs. This single correction is the difference between MAE 24 bpm (wrong assumed rate) and MAE 4 bpm (correct rate, after retraining)."
+          "text": "When ESP-IDF doesn't emit per-line timestamps (the default configuration), the parser synthesizes a uniform timestamp grid. Default 100 Hz was wrong: the watchdog throttles real packet rate to ~67–77 Hz. The capture tool writes a metadata sidecar with the measured rate, and the parser auto-loads it to use the correct synthesized fs. This single correction is the difference between MAE 24 bpm (wrong assumed rate) and MAE 4 bpm (correct rate, after retraining)."
         },
         { "type": "subheading", "text": "Cross-session evaluation" },
         {
@@ -162,7 +162,7 @@
           "items": [
             "The end-to-end pipeline (capture → parse → feature extraction → regression) recovers HR from real ESP32-S3 CSI within ~4 bpm.",
             "The signal is genuinely present in commodity-WiFi CSI, not an artifact of the synthetic pipeline.",
-            "Held-out cross-session validation is non-trivial — random-window splits leak across sessions and report misleadingly low MAEs (1.5 bpm in the in-sample test). The 4.15 bpm number is the honest one.",
+            "Held-out cross-session validation is hard to get right. Random-window splits leak across sessions and report misleadingly low MAEs (1.5 bpm in the in-sample test). The 4.15 bpm number is the honest one.",
             "Hardware that costs 50× less than the academic baseline (Intel 5300 NIC at ~$500) reaches a result within 2.5× of PhaseBeat's 1.5 bpm on a much smaller dataset."
           ]
         }
@@ -174,12 +174,12 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "These are the boundaries of the current dataset and the milestones queued up to extend each one. The pipeline and tooling are designed to scale into all of them — the work ahead is data collection and validation."
+          "text": "These are the boundaries of the current dataset and the milestones queued up to extend each one. The pipeline and tooling handle all of them already. What's left is data collection and validation."
         },
         {
           "type": "bulleted_list",
           "items": [
-            "**Multi-subject coverage.** Captures so far are from the founder. Multi-subject validation across 10+ participants is the next milestone — see the [roadmap](/roadmap).",
+            "**Multi-subject coverage.** Captures so far are from the founder. Multi-subject validation across 10+ participants is the next milestone. See the [roadmap](/roadmap).",
             "**Multi-room coverage.** All captures in one room. Expanding to additional rooms is on the immediate roadmap.",
             "**Subjects in motion.** Validated for stationary subjects today. Walking, fidgeting, and repositioning are next on the test plan.",
             "**Heart-rate range.** Subject HR was 80–100 bpm. Resting (~60), elevated (~130), and arrhythmia ranges are upcoming test conditions.",
@@ -236,7 +236,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "The full code — DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, and 102-test suite — is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
+          "text": "The full code (DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, 102-test suite) is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
         }
       ]
     }
