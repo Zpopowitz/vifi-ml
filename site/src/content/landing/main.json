@@ -29,7 +29,7 @@
     "heading_line1": "The hardware works.",
     "heading_line2": "It's been tested.",
     "paragraphs": [
-      "4.15 bpm cross-session HR error against a Polar H10 chest-strap reference, on a 2-chip array of $25 ESP32-S3 boards. PhaseBeat — the academic reference using $500 WiFi cards — reported 1.5 bpm. ViFi: 4.15 bpm on 20× cheaper hardware."
+      "4.15 bpm cross-session HR error against a Polar H10 chest-strap reference, on a 2-chip array of $25 ESP32-S3 boards. PhaseBeat (the academic reference using $500 WiFi cards) reported 1.5 bpm. ViFi: 4.15 bpm on 20× cheaper hardware."
     ],
     "results_link_text": "Full methodology, captures, and per-session breakdowns: read our results",
     "placeholder_caption": "[ photo of ESP32-S3 array + result chart goes here ]",
@@ -147,7 +147,7 @@
   "how_it_works": {
     "eyebrow": "How it works",
     "heading": "WiFi signals bend around bodies. ViFi listens to how.",
-    "intro": "Two small chips in the room exchange WiFi signals back and forth. Every breath you take and every heartbeat slightly changes how those signals travel through the air. ViFi reads those changes as vital signs — no contact, no wearables, no line of sight required.",
+    "intro": "Two small chips in the room exchange WiFi signals back and forth. Every breath you take and every heartbeat slightly changes how those signals travel through the air. ViFi reads those changes as vital signs. No contact, no wearables, no line of sight required.",
     "diagram": "[ESP32-S3 TX] ─────── 192 subcarriers ───────► [ESP32-S3 RX]\n   antenna          (chest perturbs path)         antenna\n                                                     │\n                                                     │  USB serial @ 921600 baud\n                                                     ▼\n                                            csi_capture.py\n                                                     │\n                                                     ▼\n                                       first_capture_report.py\n                                                     │\n                                                     ▼\n                  HR / RR predictions  vs  Polar H10 ground truth",
     "signal_path_title": "Signal pipeline",
     "signal_path_steps": [
@@ -158,15 +158,15 @@
       "9-dimensional feature vector → XGBoost regressor"
     ],
     "prior_art_title": "Where the science comes from",
-    "prior_art": "The signal-processing approach is from peer-reviewed academic work — PhaseBeat (INFOCOM 2017), FullBreathe (UbiComp 2018), ResBeat (2020). ViFi's contribution is making it work on $15 commodity ESP32 chips instead of $500 research-grade WiFi cards, with the calibration, signal quality checks, and audit trail you need to go in front of an FDA reviewer."
+    "prior_art": "The signal-processing approach comes from peer-reviewed academic work: PhaseBeat (INFOCOM 2017), FullBreathe (UbiComp 2018), ResBeat (2020). ViFi runs it on $15 commodity ESP32 chips instead of $500 research-grade WiFi cards, with the calibration, signal quality checks, and audit trail an FDA reviewer expects."
   },
   "problem": {
     "eyebrow": "Why this exists",
     "heading": "Most hospital patients are unmonitored more than 23 hours a day.",
     "paragraphs": [
-      "Outside the ICU — across 2.3 million U.S. hospital and skilled nursing facility beds — a nurse takes vital signs every 4 to 8 hours. The rest of the time, no one is watching. Sepsis spikes, post-surgical complications, opioid-induced breathing problems: most of them happen in those gaps and only get noticed at the next round.",
+      "Outside the ICU, across 2.3 million U.S. hospital and skilled nursing facility beds, a nurse takes vital signs every 4 to 8 hours. The rest of the time, no one is watching. Sepsis spikes, post-surgical complications, opioid-induced breathing problems. Most of these happen in those gaps and only get caught at the next round.",
       "Continuous monitoring exists, but it costs about $3,000 per bed and means strapping wires and electrodes to people who often pull them off. So hospitals reserve it for the ICU. The much larger floor of ordinary patients gets nothing."
     ],
-    "pullquote": "I'm building ViFi because it's the platform I wish my mother had when she spent a month in the hospital with sepsis, where the monitoring equipment meant to keep her safe — wires, adhesives, blood-pressure cuffs, lights at 3 a.m. — were the very thing preventing her rest and recovery."
+    "pullquote": "I'm building ViFi because it's the platform I wish my mother had when she spent a month in the hospital with sepsis. The wires, adhesives, blood-pressure cuffs, and 3 a.m. light checks meant to keep her safe were also what kept her from resting and healing."
   }
 }

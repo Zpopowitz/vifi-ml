@@ -56,15 +56,11 @@ function renderInline(text: string): string {
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
 
-  // Status checkmark — leading ✓ (with optional trailing em-dash) gets
-  // wrapped in <span class="check"> so the editorial-table can paint it
-  // in --signal (emerald). This is the documented DESIGN.md exception
-  // where signal-color is valid outside of HR/ECG figures: a verified-
-  // data indicator.
-  s = s.replace(
-    /^✓(\s+—)?/,
-    (_m, dash) => `<span class="check">✓${dash ?? ""}</span>`,
-  );
+  // Status checkmark — leading ✓ gets wrapped in <span class="check">
+  // so the editorial-table can paint it in --signal (emerald). This is
+  // the documented DESIGN.md exception where signal-color is valid
+  // outside of HR/ECG figures: a verified-data indicator.
+  s = s.replace(/^✓/, '<span class="check">✓</span>');
 
   s = s.replace(/ CODE(\d+) /g, (_m, i) => `<code>${codeSpans[Number(i)]}</code>`);
   return s;
@@ -117,7 +113,7 @@ const sectionsWithSlugs = page.sections.map((s) => ({
 }));
 ---
 
-<Layout title={`${page.meta.title} — ViFi`} description={page.meta.description}>
+<Layout title={`${page.meta.title} | ViFi`} description={page.meta.description}>
   <a href="#main" class="skip-link">Skip to content</a>
   <SiteHeader />
 

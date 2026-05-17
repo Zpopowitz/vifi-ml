@@ -14,17 +14,17 @@
           "type": "table",
           "headers": ["Capability", "Status"],
           "rows": [
-            ["**Heart rate (HR)**", "**✓ — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([results](/results))"],
+            ["**Heart rate (HR)**", "**✓ 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([results](/results))"],
             ["Respiratory rate (RR)", "Pipeline + synthetic regressor only; awaiting first Vernier paired captures"],
             ["Per-subject calibration + RF fingerprinting", "✓"],
-            ["Multi-subject \"walks in the room\" detection", "✓ — rolling fingerprint + hysteresis"],
-            ["Out-of-distribution suppression", "✓ — Mahalanobis distance, chi-square 99% threshold"],
-            ["Confidence-interval suppression", "✓ — quantile XGBoost, configurable width"],
-            ["Per-prediction audit log", "✓ — JSONL, daily-rotating, FDA-ready"],
-            ["Paired-capture orchestrator", "✓ — one-command 3-logger session"],
+            ["Multi-subject \"walks in the room\" detection", "✓ rolling fingerprint + hysteresis"],
+            ["Out-of-distribution suppression", "✓ Mahalanobis distance, chi-square 99% threshold"],
+            ["Confidence-interval suppression", "✓ quantile XGBoost, configurable width"],
+            ["Per-prediction audit log", "✓ JSONL, daily-rotating, FDA-ready"],
+            ["Paired-capture orchestrator", "✓ one-command 3-logger session"],
             ["Synthetic CSI generator", "✓ (sanity check)"],
-            ["Per-packet CSI ingest", "✓ — live API endpoint"],
-            ["ESP32 capture + HR logger", "✓ — hands-free 2-min paired capture"],
+            ["Per-packet CSI ingest", "✓ live API endpoint"],
+            ["ESP32 capture + HR logger", "✓ hands-free 2-min paired capture"],
             ["Presence / occupancy", "✓ (variance threshold)"],
             ["Apnea detection", "Planned"],
             ["Transient-event logger", "Planned"],
@@ -60,9 +60,9 @@
           "headers": ["Capability", "Prior art", "Ground truth"],
           "rows": [
             ["Apnea detection", "ApneaApp (UW 2015)", "recording pulse oximeter"],
-            ["Transient-event logger", "none — clinical wedge", "same HR/RR stream"],
-            ["Improved subcarrier features", "per-subcarrier ensemble", "—"],
-            ["Phase-domain features", "PhaseBeat (CFO/SFO calibration)", "—"]
+            ["Transient-event logger", "none (clinical wedge)", "same HR/RR stream"],
+            ["Improved subcarrier features", "per-subcarrier ensemble", ""],
+            ["Phase-domain features", "PhaseBeat (CFO/SFO calibration)", ""]
           ]
         }
       ]
@@ -131,7 +131,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Some vital signs are best measured with a different physics. ViFi's WiFi-CSI pipeline is designed to share the room with low-cost add-on modules — the per-room hardware budget leaves plenty of headroom for them."
+          "text": "Some vital signs are best measured with a different physics. ViFi's WiFi-CSI pipeline shares the room with low-cost add-on modules. The per-room hardware budget leaves plenty of headroom for them."
         },
         {
           "type": "table",
@@ -139,8 +139,8 @@
           "rows": [
             ["Blood oxygen (SpO₂)", "Optical PPG module", "~$5"],
             ["Body temperature", "Infrared thermometer module", "~$10"],
-            ["Blood pressure", "Active research problem industry-wide", "—"],
-            ["ECG waveform", "Direct-contact electrodes", "—"]
+            ["Blood pressure", "Active research problem industry-wide", ""],
+            ["ECG waveform", "Direct-contact electrodes", ""]
           ]
         }
       ]
@@ -149,7 +149,7 @@
       "id": "hardware-bom",
       "heading": "Hardware BOM",
       "blocks": [
-        { "type": "subheading", "text": "v1 — 2-node room (single Tx + single Rx, statistical identity)" },
+        { "type": "subheading", "text": "v1: 2-node room (single Tx + single Rx, statistical identity)" },
         {
           "type": "table",
           "headers": ["Item", "Qty", "~$"],
@@ -164,7 +164,7 @@
           "type": "paragraph",
           "text": "Replaces a $5,000 ward bedside monitor. **>100× cheaper.** Statistical multi-subject identity via RF fingerprinting (shipped)."
         },
-        { "type": "subheading", "text": "v2 — 4-node room (1 Tx + 3 corner Rx, deterministic spatial identity)" },
+        { "type": "subheading", "text": "v2: 4-node room (1 Tx + 3 corner Rx, deterministic spatial identity)" },
         {
           "type": "paragraph",
           "text": "Same per-board cost (~$22). Add 2 more nodes: **~$88 per room**. Multi-perspective CSI fusion gives full 3D triangulation, deterministic multi-subject discrimination, redundancy across boards."
@@ -206,7 +206,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "The full code — DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, and 102-test suite — is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
+          "text": "The full code (DSP pipeline, capture orchestrator, training scripts, prediction service, calibration, RF fingerprinting, audit log, 102-test suite) is kept private during pre-clearance development. **Available for technical review under NDA** for investors, hospital partners, and prospective collaborators. Email [hello@vifi.health](mailto:hello@vifi.health)."
         }
       ]
     }
