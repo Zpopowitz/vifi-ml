@@ -258,5 +258,57 @@ def test_predict_csi_rejects_misshaped_mask(client):
     assert r.status_code == 400
 
 
+# ---------------------------------------------------------------------------
+# IdentifyRequest validation (H1 — was OOM-able before bounds)
+# ---------------------------------------------------------------------------
+
+
+def test_identify_request_schema_caps_capture_text():
+    """Without max_length, a caller could POST a multi-GB string and
+    OOM the worker before any handler ran. Bound must match CaptureRequest."""
+    from api import IdentifyRequest
+
+    schema = IdentifyRequest.model_json_schema()
+    assert schema["properties"]["capture_text"]["maxLength"] == 50_000_000
+
+
+def test_identify_request_bounds_fingerprint_seconds():
+    """Negative / zero / huge fingerprint windows previously crashed
+    or mis-masked deep inside the pipeline. Bound at the schema layer."""
+    from api import IdentifyRequest
+
+    schema = IdentifyRequest.model_json_schema()
+    fs = schema["properties"]["fingerprint_seconds"]
+    assert fs.get("exclusiveMinimum") == 0
+    assert fs.get("maximum") == 600.0
+
+
+def test_identify_request_rejects_negative_fingerprint_seconds():
+    from pydantic import ValidationError
+
+    from api import IdentifyRequest
+
+    with pytest.raises(ValidationError):
+        IdentifyRequest(capture_text="x", fingerprint_seconds=-1.0)
+
+
+def test_identify_request_rejects_zero_fingerprint_seconds():
+    from pydantic import ValidationError
+
+    from api import IdentifyRequest
+
+    with pytest.raises(ValidationError):
+        IdentifyRequest(capture_text="x", fingerprint_seconds=0.0)
+
+
+def test_identify_request_rejects_overlong_fingerprint_seconds():
+    from pydantic import ValidationError
+
+    from api import IdentifyRequest
+
+    with pytest.raises(ValidationError):
+        IdentifyRequest(capture_text="x", fingerprint_seconds=601.0)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

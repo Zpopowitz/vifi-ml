@@ -45,7 +45,7 @@ from api import (
 from api_internals.bundles import RealModelBundle, SyntheticModelBundle
 from data_gen import generate_sample
 from preprocess import extract_features
-from security import require_scope
+from security import require_scope, safe_http_400
 
 
 def _predict_iq(
@@ -93,7 +93,7 @@ def register_predict_routes(
                 req.iq_imag, dtype=np.float32
             )
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"invalid IQ payload: {exc}")
+            raise safe_http_400("invalid IQ payload", exc) from exc
         return _predict_iq(synthetic_bundle, iq, req.fs)
 
     @app.post(
@@ -121,7 +121,7 @@ def register_predict_routes(
         try:
             csi = np.asarray(req.csi_amp, dtype=np.float32)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"invalid csi_amp: {exc}")
+            raise safe_http_400("invalid csi_amp", exc) from exc
         if req.subcarrier_mask is not None and csi.ndim == 2:
             mask = np.asarray(req.subcarrier_mask, dtype=bool)
             if mask.shape[0] != csi.shape[1]:

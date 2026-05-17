@@ -226,9 +226,19 @@ class CaptureResponse(BaseModel):
 
 
 class IdentifyRequest(BaseModel):
-    capture_text: str
+    # Bounds mirror CaptureRequest (I043). Without these, an authenticated
+    # caller can POST a multi-GB string and OOM the worker before Pydantic
+    # parses anything past `capture_text`.
+    capture_text: str = Field(
+        ..., max_length=50_000_000, description="contents of capture.txt (max 50 MB)"
+    )
     room_id: Optional[str] = None
-    fingerprint_seconds: float = 30.0
+    fingerprint_seconds: float = Field(
+        30.0,
+        gt=0,
+        le=600.0,
+        description="window length (s) used to compute the RF fingerprint; 0 < s <= 600",
+    )
 
 
 # ---------------------------------------------------------------------------

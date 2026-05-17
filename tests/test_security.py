@@ -479,3 +479,104 @@ def test_public_paths_includes_only_metadata_endpoints():
         f"  added:   {set(PUBLIC_PATHS) - expected}\n"
         f"  removed: {expected - set(PUBLIC_PATHS)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-route rate limit overrides (M4 — heavy endpoints get tighter caps)
+# ---------------------------------------------------------------------------
+
+
+def test_per_route_rate_limit_default_includes_predict_capture():
+    """/predict/capture accepts a 50 MB body. The default global rate
+    (60/min) would let one client push 3 GB/min through the parser.
+    The default override must cap it tighter."""
+    from security import get_per_route_rate_limits
+
+    overrides = get_per_route_rate_limits()
+    assert "/predict/capture" in overrides
+    count, _ = parse_rate_limit(overrides["/predict/capture"])
+    # Tighter than the default global of 60/min.
+    default_count, _ = parse_rate_limit("60/minute")
+    assert count < default_count
+
+
+def test_per_route_rate_limit_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "VIFI_PER_ROUTE_RATE_LIMITS",
+        "/predict/capture=5/minute,/identify=2/minute",
+    )
+    from security import get_per_route_rate_limits
+
+    overrides = get_per_route_rate_limits()
+    assert overrides["/predict/capture"] == "5/minute"
+    assert overrides["/identify"] == "2/minute"
+
+
+def test_per_route_rate_limit_actually_applies(monkeypatch):
+    """End-to-end: a route with a tight override blocks earlier than
+    the global default would."""
+    monkeypatch.setenv("VIFI_AUTH_MODE", "none")
+    monkeypatch.setenv("VIFI_PER_ROUTE_RATE_LIMITS", "/heavy=2/minute")
+    app = FastAPI()
+
+    @app.get("/heavy")
+    def heavy():
+        return {"ok": True}
+
+    @app.get("/light")
+    def light():
+        return {"ok": True}
+
+    # Global default is generous (60/min), per-route override is 2/min.
+    app.add_middleware(RateLimitMiddleware, spec="60/minute")
+    app.add_middleware(AuthMiddleware)
+    app.add_middleware(RequestIdMiddleware)
+
+    with TestClient(app) as c:
+        # Tight route: third request blocks
+        assert c.get("/heavy").status_code == 200
+        assert c.get("/heavy").status_code == 200
+        assert c.get("/heavy").status_code == 429
+        # Lenient default still works
+        assert c.get("/light").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# safe_http_400 — don't leak numpy/dtype detail through 400s (L2)
+# ---------------------------------------------------------------------------
+
+
+def test_safe_http_400_hides_exception_detail_by_default(monkeypatch):
+    """When VIFI_REVEAL_ERRORS is unset (prod default), the wire
+    response carries only the generic public message."""
+    monkeypatch.delenv("VIFI_REVEAL_ERRORS", raising=False)
+    from security import safe_http_400
+
+    exc = ValueError(
+        "could not broadcast input array from shape (3,) into shape (4,)"
+    )
+    http_exc = safe_http_400("invalid IQ payload", exc)
+    assert http_exc.status_code == 400
+    assert http_exc.detail == "invalid IQ payload"
+    # The numpy-internal detail must not be on the wire.
+    assert "broadcast" not in http_exc.detail
+    assert "shape" not in http_exc.detail
+
+
+def test_safe_http_400_reveals_detail_when_env_set(monkeypatch):
+    monkeypatch.setenv("VIFI_REVEAL_ERRORS", "true")
+    from security import safe_http_400
+
+    exc = ValueError("internal numpy detail")
+    http_exc = safe_http_400("invalid IQ payload", exc)
+    assert http_exc.status_code == 400
+    assert "invalid IQ payload" in http_exc.detail
+    assert "internal numpy detail" in http_exc.detail
+
+
+def test_safe_http_400_without_exception_just_returns_message():
+    from security import safe_http_400
+
+    http_exc = safe_http_400("subcarrier_mask shape mismatch")
+    assert http_exc.status_code == 400
+    assert http_exc.detail == "subcarrier_mask shape mismatch"
