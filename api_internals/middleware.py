@@ -34,10 +34,14 @@ def install_middleware(app: FastAPI) -> None:
     RateLimit -> Auth -> CORS -> GZip -> app.
     """
     app.add_middleware(GZipMiddleware, minimum_size=1024)  # I046
+    # H2: API is keyed (Authorization: Bearer / X-API-Key / ?api_key=), never
+    # cookie-authenticated. allow_credentials=True buys us nothing and opens a
+    # browser-context exfil class if an operator ever configures multiple
+    # origins (or accidentally a wildcard). Hard-set False.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_cors_origins(),
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["authorization", "x-api-key", "content-type", "x-request-id"],
     )

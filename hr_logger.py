@@ -77,10 +77,20 @@ def _parse_hr(data: bytes) -> int:
 
     Byte 0 is a flags byte; bit 0 indicates 8-bit vs 16-bit HR value.
     Bytes 1+ hold the HR value.
+
+    Returns -1 on malformed input (length < 2, or 16-bit flag with
+    length < 3). Without the length guard, a transient BLE corruption
+    or a spoofed peripheral can raise IndexError inside the BleakClient
+    callback and drop the whole capture session silently. Returning
+    sentinel -1 keeps the loop alive and lets the caller skip the row.
     """
+    if len(data) < 2:
+        return -1
     flags = data[0]
     if flags & 0x01:
         # 16-bit HR value, little-endian
+        if len(data) < 3:
+            return -1
         return int.from_bytes(data[1:3], "little")
     return data[1]
 
@@ -158,6 +168,10 @@ async def _log_impl(
         def on_hr(_characteristic, data: bytearray) -> None:
             nonlocal total_count
             hr = _parse_hr(bytes(data))
+            if hr < 0:
+                # Malformed packet (length < 2, or 16-bit flag with length < 3).
+                # Skip; keeping the callback alive matters more than the row.
+                return
             t = time.time()
             writer.writerow([f"{t:.3f}", hr])
             f.flush()
