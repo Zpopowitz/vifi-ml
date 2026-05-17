@@ -198,7 +198,7 @@ const c = entry.data;
   /* ============ HERO ============ */
   .hero {
     position: relative;
-    padding: 140px 0 120px;
+    padding: 96px 0 80px;
     overflow: hidden;
   }
   .ambient-trace {
@@ -206,7 +206,7 @@ const c = entry.data;
     left: 0; right: 0;
     top: 50%;
     transform: translateY(-50%);
-    height: 240px;
+    height: 200px;
     pointer-events: none;
     z-index: 0;
     opacity: var(--trace-opacity);
@@ -243,10 +243,16 @@ const c = entry.data;
     line-height: 1.03;
     letter-spacing: -0.024em;
     color: var(--ink);
-    max-width: 16ch;
+    /* 22ch lets text-wrap: balance land on 2 lines at desktop widths
+       (e.g. "Hospital-grade vital signs / from $44 of WiFi hardware.")
+       instead of the awkward 3-line break at 16ch. */
+    max-width: 22ch;
     text-wrap: balance;
     font-variation-settings: "SOFT" 30, "opsz" 144;
-    margin: 0 0 260px 0;
+    /* Tightened from 260px so primary CTAs sit above the fold on
+       1440×900. The ambient waveform still has room (it lives in the
+       absolute-positioned .ambient-trace, centered vertically). */
+    margin: 0 0 180px 0;
   }
   h1.display em {
     font-style: italic;

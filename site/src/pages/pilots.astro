@@ -43,30 +43,40 @@ const meta = {
 
     <!-- ============ WHAT A PILOT LOOKS LIKE ============ -->
     <section class="pilot-shape" aria-labelledby="pilot-shape-heading">
-      <div class="container container-prose">
-        <p class="section-eyebrow">What's included</p>
-        <h2 id="pilot-shape-heading" class="section-heading">What a pilot looks&nbsp;like.</h2>
-        <ul class="pilot-bullets">
-          <li>5–10 rooms instrumented with two ESP32-S3 boards each</li>
-          <li>30–90 day duration, IRB review where applicable</li>
-          <li>Runs alongside your existing monitoring; no clinical decisions are made from ViFi data</li>
-          <li>Fully de-identified, on-premise data handling</li>
-          <li>Output: a measurement study comparing ViFi against your existing reference</li>
-        </ul>
+      <div class="container">
+        <div class="section-grid">
+          <header class="section-header">
+            <p class="section-eyebrow">What's included</p>
+            <h2 id="pilot-shape-heading" class="section-heading">What a pilot looks&nbsp;like.</h2>
+          </header>
+          <div class="section-body">
+            <ul class="pilot-bullets">
+              <li>5–10 rooms instrumented with two ESP32-S3 boards each</li>
+              <li>30–90 day duration, IRB review where applicable</li>
+              <li>Runs alongside your existing monitoring; no clinical decisions are made from ViFi data</li>
+              <li>Fully de-identified, on-premise data handling</li>
+              <li>Output: a measurement study comparing ViFi against your existing reference</li>
+            </ul>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- ============ FORM ============ -->
     <section class="pilot-form-section" aria-labelledby="form-heading">
-      <div class="container container-prose">
-        <p class="section-eyebrow">Tell us about your site</p>
-        <h2 id="form-heading" class="section-heading">Start the conversation.</h2>
-        <p class="form-intro">
-          All fields except the open notes are short. The form goes straight to
-          the founder; expect a reply within a few business days.
-        </p>
+      <div class="container">
+        <div class="section-grid">
+          <header class="section-header">
+            <p class="section-eyebrow">Tell us about your site</p>
+            <h2 id="form-heading" class="section-heading">Start the conversation.</h2>
+          </header>
+          <div class="section-body">
+            <p class="form-intro">
+              All fields except the open notes are short. The form goes straight to
+              the founder; expect a reply within a few business days.
+            </p>
 
-        {formAction ? (
+            {formAction ? (
           <form action={formAction} method="POST" class="editorial-form">
             <input type="text" name="_gotcha" class="honeypot" tabindex="-1" autocomplete="off" />
             <input type="hidden" name="_subject" value="ViFi pilot inquiry" />
@@ -137,6 +147,8 @@ const meta = {
             </a>
           </div>
         )}
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -145,8 +157,18 @@ const meta = {
 </Layout>
 
 <style>
-  .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .container-prose { max-width: 720px; }
+
+  /* ============ ASYMMETRIC 2-COL GRID (matches SubpageLayout) ============ */
+  .section-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 80px;
+    align-items: start;
+  }
+  .section-header { position: sticky; top: 32px; }
+  .section-body { max-width: 720px; }
 
   /* ============ HERO ============ */
   .subpage-hero { padding: 100px 0 80px; }
@@ -193,19 +215,21 @@ const meta = {
     text-transform: uppercase;
     letter-spacing: 0.16em;
     color: var(--muted);
-    margin-bottom: 24px;
+    margin: 0 0 16px 0;
   }
+  /* Sized for the 320px left rail (matches SubpageLayout's
+     .section-heading scale). Larger display sizes don't read well in a
+     narrow column. */
   h2.section-heading {
     font-family: "Fraunces", Georgia, serif;
     font-weight: 500;
-    font-size: clamp(28px, 3.8vw, 44px);
-    line-height: 1.08;
-    letter-spacing: -0.02em;
+    font-size: clamp(24px, 2.8vw, 32px);
+    line-height: 1.15;
+    letter-spacing: -0.018em;
     color: var(--ink);
-    max-width: 22ch;
     text-wrap: balance;
-    font-variation-settings: "SOFT" 30, "opsz" 72;
-    margin: 0 0 36px 0;
+    font-variation-settings: "SOFT" 30, "opsz" 48;
+    margin: 0;
   }
 
   /* ============ BULLETS ============ */
@@ -370,6 +394,15 @@ const meta = {
   .email-fallback p a:hover { text-decoration-color: var(--accent); }
 
   /* ============ RESPONSIVE ============ */
+  @media (max-width: 960px) {
+    .container { padding: 0 32px; }
+    .section-grid { grid-template-columns: 280px 1fr; gap: 48px; }
+  }
+  @media (max-width: 760px) {
+    .section-grid { grid-template-columns: 1fr; gap: 24px; }
+    .section-header { position: static; }
+    .section-body { max-width: 100%; }
+  }
   @media (max-width: 600px) {
     .subpage-hero { padding: 56px 0 48px; }
     .pilot-shape, .pilot-form-section { padding: 56px 0; }

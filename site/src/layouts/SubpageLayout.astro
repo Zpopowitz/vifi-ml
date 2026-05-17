@@ -68,6 +68,38 @@ function slugify(s: string): string {
     .replace(/\s+/g, "-");
 }
 
+// A cell is "numeric-looking" if, after stripping inline-markdown bolds,
+// it starts with a digit or a signed/dollar number, or is a bare em-dash
+// placeholder. Used to right-align numeric comparison columns in
+// .editorial-table.
+function isNumericCell(s: string): boolean {
+  const t = s.replace(/\*\*/g, "").trim();
+  if (t === "—" || t === "-" || t === "") return false;
+  return /^[+\-]?[$]?\d/.test(t);
+}
+
+// A column is "numeric" if a majority of its body rows look numeric. Single
+// "—" placeholders in an otherwise numeric column still count as numeric;
+// a column that's mostly text remains left-aligned even if one cell happens
+// to start with a digit.
+function detectNumericColumns(rows: string[][]): boolean[] {
+  if (rows.length === 0) return [];
+  const cols = rows[0].length;
+  const out: boolean[] = [];
+  for (let c = 0; c < cols; c++) {
+    let numeric = 0;
+    let nonEmpty = 0;
+    for (const r of rows) {
+      const cell = (r[c] ?? "").trim();
+      if (cell === "" || cell === "—" || cell === "-") continue;
+      nonEmpty++;
+      if (isNumericCell(cell)) numeric++;
+    }
+    out.push(nonEmpty > 0 && numeric / nonEmpty >= 0.5);
+  }
+  return out;
+}
+
 // Pre-compute slugs once so the section rail can render anchors
 const sectionsWithSlugs = page.sections.map((s) => ({
   ...s,
@@ -128,25 +160,35 @@ const sectionsWithSlugs = page.sections.map((s) => ({
                   );
                 }
                 if (b.type === "table" && b.headers && b.rows) {
+                  const numCols = detectNumericColumns(b.rows);
                   return (
                     <div class="table-wrap">
                       <table class="editorial-table">
                         <thead>
                           <tr>
-                            {b.headers.map((h) => (
-                              <th set:html={renderInline(h)} />
+                            {b.headers.map((h, hi) => (
+                              <th
+                                class={numCols[hi] ? "num" : ""}
+                                set:html={renderInline(h)}
+                              />
                             ))}
                           </tr>
                         </thead>
                         <tbody data-animate-stagger>
                           {b.rows.map((row) => (
                             <tr>
-                              {row.map((cell, ci) => (
-                                <td
-                                  class={ci === 0 ? "first-col" : ""}
-                                  set:html={renderInline(cell)}
-                                />
-                              ))}
+                              {row.map((cell, ci) => {
+                                const classes = [
+                                  ci === 0 ? "first-col" : "",
+                                  numCols[ci] ? "num" : "",
+                                ].filter(Boolean).join(" ");
+                                return (
+                                  <td
+                                    class={classes}
+                                    set:html={renderInline(cell)}
+                                  />
+                                );
+                              })}
                             </tr>
                           ))}
                         </tbody>
@@ -353,6 +395,18 @@ const sectionsWithSlugs = page.sections.map((s) => ({
     padding: 14px 16px 14px 0;
     border-bottom: 1px solid var(--rule);
     vertical-align: top;
+  }
+  /* Numeric columns — right-align header + body so decimals stack and the
+     eye can scan a column vertically. Set per-column at render time by
+     detectNumericColumns(). */
+  .editorial-table th.num,
+  .editorial-table td.num {
+    text-align: right;
+    padding-right: 16px;
+  }
+  .editorial-table th.num:last-child,
+  .editorial-table td.num:last-child {
+    padding-right: 0;
   }
   .editorial-table tbody tr:last-child td { border-bottom: none; }
   .editorial-table td.first-col {
