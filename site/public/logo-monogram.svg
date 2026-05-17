@@ -1,31 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="ViFi">
-  <title>ViFi monogram — square contexts (favicon, social avatar, app icon)</title>
+  <title>vifi.health monogram — square contexts (social avatar, app icon, schema.org logo)</title>
   <!--
-    Square monogram: the "V" of ViFi with a single WiFi-arc emanating from
-    its right shoulder. Compresses the full identity into one strong shape.
-    Works at 16x16 favicon. Reads as both a stylized V and a WiFi signal
-    bouncing off a chest (the patient).
+    Square brand mark: stylized "V." for square contexts where the full
+    wordmark won't fit. V drawn as a path so it doesn't depend on Fraunces
+    being available; emerald dot mirrors the wordmark's accent.
   -->
-  <defs>
-    <style>
-      .wordmark { fill: #1A1A1A; }
-      .signal { stroke: #0E9F66; fill: none; }
-      .signal-fill { fill: #0E9F66; }
-      .dark-mode .wordmark { fill: #F4EFE4; }
-      .dark-mode .signal { stroke: #34D399; }
-      .dark-mode .signal-fill { fill: #34D399; }
-    </style>
-  </defs>
+  <style>
+    .bg { fill: #F4EFE4; }
+    .v  { fill: #1A1A1A; }
+    .dot { fill: #0E9F66; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #131715; }
+      .v  { fill: #E8E4D8; }
+      .dot { fill: #2EBB7D; }
+    }
+  </style>
 
-  <!-- Square cream backdrop (omit if rendering inline; included for standalone preview) -->
-  <rect width="240" height="240" fill="#F4EFE4" />
+  <!-- Cream (or warm dark) square — brand canvas -->
+  <rect class="bg" width="240" height="240" rx="24"/>
 
-  <!-- V wordmark, centered, larger weight -->
-  <path class="wordmark" d="M 50 60 L 100 200 L 130 200 L 180 60 L 145 60 L 115 135 L 85 60 Z" />
+  <!-- Stylized V — matches the wordmark's lowercase v proportions but
+       scaled and weighted for standalone use. Same vertex pattern as the
+       favicon (just bigger viewBox). -->
+  <path class="v" d="M 50 50 L 100 200 L 130 200 L 180 50 L 145 50 L 115 135 L 85 50 Z"/>
 
-  <!-- WiFi arc emanating from right shoulder of the V -->
-  <g class="signal" stroke-width="9" stroke-linecap="round">
-    <path d="M 175 95 A 50 50 0 0 1 175 165" />
-    <path d="M 195 110 A 30 30 0 0 1 195 150" />
-  </g>
+  <!-- Accent dot — emerald, sized to read at 16px favicons all the way up -->
+  <circle class="dot" cx="200" cy="195" r="14"/>
 </svg>

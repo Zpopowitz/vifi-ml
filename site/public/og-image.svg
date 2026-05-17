@@ -3,39 +3,29 @@
   <rect width="1200" height="630" fill="#F4EFE4"/>
 
   <!-- Ambient CSI waveform (respiration ~0.23 Hz + cardiac ~1.2 Hz, mathematically derived).
-       Renders as a quiet undulation across the lower band — same physics as the live site. -->
+       Quiet undulation across the lower band — same physics as the live site. -->
   <g opacity="0.42">
     <path d="M 0.0 559.8 L 6.7 557.9 L 13.3 556.2 L 20.0 554.9 L 26.7 553.8 L 33.3 553.0 L 40.0 552.5 L 46.7 552.2 L 53.3 552.0 L 60.0 551.8 L 66.7 551.7 L 73.3 551.5 L 80.0 551.2 L 86.7 550.8 L 93.3 550.2 L 100.0 549.4 L 106.7 548.5 L 113.3 547.4 L 120.0 546.1 L 126.7 544.7 L 133.3 543.2 L 140.0 541.6 L 146.7 540.0 L 153.3 538.4 L 160.0 536.7 L 166.7 535.1 L 173.3 533.6 L 180.0 532.1 L 186.7 530.7 L 193.3 529.4 L 200.0 528.3 L 206.7 527.2 L 213.3 526.3 L 220.0 525.6 L 226.7 525.0 L 233.3 524.5 L 240.0 524.2 L 246.7 524.0 L 253.3 524.0 L 260.0 524.1 L 266.7 524.3 L 273.3 524.6 L 280.0 525.0 L 286.7 525.6 L 293.3 526.2 L 300.0 526.9 L 306.7 527.6 L 313.3 528.4 L 320.0 529.2 L 326.7 530.1 L 333.3 530.9 L 340.0 531.7 L 346.7 532.5 L 353.3 533.3 L 360.0 534.0 L 366.7 534.6 L 373.3 535.2 L 380.0 535.6 L 386.7 535.9 L 393.3 536.1 L 400.0 536.2 L 406.7 536.1 L 413.3 535.9 L 420.0 535.6 L 426.7 535.2 L 433.3 534.6 L 440.0 533.9 L 446.7 533.0 L 453.3 532.1 L 460.0 531.0 L 466.7 529.8 L 473.3 528.6 L 480.0 527.2 L 486.7 525.8 L 493.3 524.3 L 500.0 522.7 L 506.7 521.2 L 513.3 519.6 L 520.0 518.0 L 526.7 516.5 L 533.3 515.0 L 540.0 513.6 L 546.7 512.3 L 553.3 511.1 L 560.0 510.0 L 566.7 509.0 L 573.3 508.1 L 580.0 507.4 L 586.7 506.8 L 593.3 506.4 L 600.0 506.2 L 606.7 506.1 L 613.3 506.2 L 620.0 506.4 L 626.7 506.7 L 633.3 507.1 L 640.0 507.7 L 646.7 508.3 L 653.3 509.1 L 660.0 510.0 L 666.7 510.9 L 673.3 512.0 L 680.0 513.1 L 686.7 514.2 L 693.3 515.5 L 700.0 516.7 L 706.7 518.0 L 713.3 519.3 L 720.0 520.6 L 726.7 521.9 L 733.3 523.1 L 740.0 524.3 L 746.7 525.5 L 753.3 526.6 L 760.0 527.6 L 766.7 528.5 L 773.3 529.4 L 780.0 530.1 L 786.7 530.7 L 793.3 531.2 L 800.0 531.6 L 806.7 531.9 L 813.3 532.0 L 820.0 532.1 L 826.7 532.0 L 833.3 531.8 L 840.0 531.5 L 846.7 531.1 L 853.3 530.5 L 860.0 529.9 L 866.7 529.1 L 873.3 528.3 L 880.0 527.4 L 886.7 526.4 L 893.3 525.3 L 900.0 524.2 L 906.7 523.1 L 913.3 521.9 L 920.0 520.7 L 926.7 519.5 L 933.3 518.3 L 940.0 517.1 L 946.7 516.0 L 953.3 514.9 L 960.0 513.8 L 966.7 512.8 L 973.3 511.9 L 980.0 511.1 L 986.7 510.4 L 993.3 509.7 L 1000.0 509.2 L 1006.7 508.9 L 1013.3 508.6 L 1020.0 508.5 L 1026.7 508.5 L 1033.3 508.6 L 1040.0 508.8 L 1046.7 509.2 L 1053.3 509.7 L 1060.0 510.3 L 1066.7 511.0 L 1073.3 511.8 L 1080.0 512.7 L 1086.7 513.7 L 1093.3 514.7 L 1100.0 515.9 L 1106.7 517.1 L 1113.3 518.3 L 1120.0 519.6 L 1126.7 521.0 L 1133.3 522.3 L 1140.0 523.7 L 1146.7 525.1 L 1153.3 526.4 L 1160.0 527.8 L 1166.7 529.1 L 1173.3 530.4 L 1180.0 531.6 L 1186.7 532.8 L 1193.3 533.9 L 1200.0 535.0"
           stroke="#5A5A5A" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
-  <!-- Brand mark: monogram + wordmark, top-left -->
-  <g transform="translate(60, 60)">
-    <svg width="44" height="44" viewBox="0 0 240 240" x="0" y="0">
-      <path d="M 50 60 L 100 200 L 130 200 L 180 60 L 145 60 L 115 135 L 85 60 Z" fill="#1A1A1A"/>
-      <g fill="none" stroke="#0E9F66" stroke-width="14" stroke-linecap="round">
-        <path d="M 175 95 A 50 50 0 0 1 175 165"/>
-        <path d="M 195 110 A 30 30 0 0 1 195 150"/>
-      </g>
-    </svg>
-    <text x="58" y="32" font-family="Georgia, 'Times New Roman', serif" font-size="28" font-weight="600" fill="#1A1A1A" letter-spacing="-0.3">
-      vifi<tspan fill="#0E9F66">.</tspan>health
-    </text>
-  </g>
+  <!-- Wordmark — top-left, bigger than before since it IS the brand mark.
+       'vifi' upright, '.' emerald accent, '.health' italic for clause separation. -->
+  <text x="60" y="100" font-family="Georgia, 'Times New Roman', serif" font-size="48" font-weight="500" fill="#1A1A1A" letter-spacing="-0.5">vifi<tspan fill="#0E9F66" font-weight="600">.</tspan><tspan font-style="italic" font-family="'Georgia', 'Times New Roman', serif">health</tspan></text>
 
-  <!-- Headline, big serif, center-left -->
-  <text x="60" y="280" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="500" fill="#1A1A1A" letter-spacing="-1.5">
+  <!-- Headline — big serif, center-left, plenty of breathing room -->
+  <text x="60" y="290" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="500" fill="#1A1A1A" letter-spacing="-1.8">
     <tspan x="60" dy="0">Hospital&#8209;grade vital signs</tspan>
-    <tspan x="60" dy="80">from <tspan font-style="italic" font-family="'Georgia', 'Times New Roman', serif">$44</tspan> of WiFi hardware.</tspan>
+    <tspan x="60" dy="84">from <tspan font-style="italic" font-family="'Georgia', 'Times New Roman', serif">$44</tspan> of WiFi hardware.</tspan>
   </text>
 
-  <!-- Quiet meta line below -->
+  <!-- Meta line — validation data in monospace -->
   <text x="60" y="450" font-family="'Courier New', 'Menlo', monospace" font-size="17" fill="#5A5A5A" letter-spacing="0.5">
     VALIDATED · 4.15 BPM CROSS-SESSION HR MAE · $44 PER ROOM
   </text>
 
-  <!-- Bottom-right: "Pre-clearance research prototype" tag -->
+  <!-- Bottom-right: version stamp -->
   <text x="1140" y="600" font-family="'Courier New', 'Menlo', monospace" font-size="14" fill="#5A5A5A" letter-spacing="0.8" text-anchor="end">
-    vifi.health · v0.6.0 · 2026-05-16
+    vifi.health · v0.6.0
   </text>
 </svg>

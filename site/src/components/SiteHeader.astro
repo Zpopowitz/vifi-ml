@@ -21,14 +21,7 @@ function isActive(href: string): boolean {
 <header class="site-header" transition:persist>
   <div class="container">
     <a href="/" class="brand" aria-label={`${c.nav.brand} — home`}>
-      <svg class="brand-mark" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
-        <path d="M 50 60 L 100 200 L 130 200 L 180 60 L 145 60 L 115 135 L 85 60 Z" fill="currentColor"/>
-        <g class="signal-arc" fill="none" stroke-width="14" stroke-linecap="round">
-          <path d="M 175 95 A 50 50 0 0 1 175 165"/>
-          <path d="M 195 110 A 30 30 0 0 1 195 150"/>
-        </g>
-      </svg>
-      <span class="brand-text">vifi<span class="dot">.</span>health</span>
+      <span class="brand-text">vifi<span class="dot">.</span><span class="tld">health</span></span>
     </a>
 
     <div class="header-right">
@@ -155,31 +148,39 @@ function isActive(href: string): boolean {
     justify-content: space-between;
     gap: 24px;
   }
+  /* ============ WORDMARK BRAND ============ */
   .brand {
     display: inline-flex;
-    align-items: center;
-    gap: 10px;
+    align-items: baseline;
     color: var(--ink);
     text-decoration: none;
     transition: color 200ms ease-out;
   }
   .brand:hover { color: var(--accent); }
-  .brand-mark {
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    color: var(--ink);
-  }
-  .brand:hover .brand-mark { color: var(--accent); }
-  .brand-mark .signal-arc { stroke: var(--signal); }
   .brand-text {
     font-family: "Fraunces", Georgia, serif;
-    font-weight: 600;
-    font-size: 21px;
-    letter-spacing: -0.01em;
-    font-variation-settings: "SOFT" 30, "opsz" 21;
+    font-weight: 500;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variation-settings: "SOFT" 30, "opsz" 28;
   }
-  .brand-text .dot { color: var(--signal); }
+  /* The accent dot — emerald signal, slightly larger than the base type so
+     it reads as a deliberate punctuation moment rather than a domain period. */
+  .brand-text .dot {
+    color: var(--signal);
+    font-weight: 600;
+    margin: 0 1px;
+  }
+  /* The .health suffix in italic — separates "brand" (vifi) from "domain
+     scope" (health) typographically. Variable-font SOFT axis bumped so the
+     italic reads softer than the upright. */
+  .brand-text .tld {
+    font-style: italic;
+    font-weight: 500;
+    font-variation-settings: "SOFT" 80, "opsz" 28;
+  }
+  .brand:hover .dot { color: var(--accent); }
 
   .header-right {
     display: flex;

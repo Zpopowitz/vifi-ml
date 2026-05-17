@@ -1,8 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="5" fill="#0a1628"/>
-  <path
-    d="M 3 16 L 9 16 L 12 16 L 14 19 L 15 11 L 17 21 L 19 13 L 21 16 L 29 16"
-    stroke="#34d399" stroke-width="2.5" fill="none"
-    stroke-linecap="round" stroke-linejoin="round"
-  />
+  <style>
+    .bg { fill: #F4EFE4; }
+    .v  { fill: #1A1A1A; }
+    .dot { fill: #0E9F66; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #131715; }
+      .v  { fill: #E8E4D8; }
+      .dot { fill: #2EBB7D; }
+    }
+  </style>
+  <!-- Cream (or warm dark) rounded square — brand canvas in browser tabs -->
+  <rect class="bg" width="32" height="32" rx="4"/>
+  <!-- Stylized V — same proportions as the wordmark's 'v' but rendered as a
+       path so it doesn't depend on font availability at favicon sizes -->
+  <path class="v" d="M 6 6.5 L 13 25 L 17 25 L 26 6.5 L 21.5 6.5 L 16 19 L 10.5 6.5 Z"/>
+  <!-- The accent dot — emerald, bottom-right, mirrors the wordmark's . -->
+  <circle class="dot" cx="27.5" cy="25" r="2"/>
 </svg>
