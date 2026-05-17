@@ -57,7 +57,7 @@ idf.py set-target esp32s3
 idf.py menuconfig
 #   In the menu:
 #     Component config → Wi-Fi → "Wi-Fi country code" → US
-#     Example Configuration → "WiFi Channel" → 6  (must match TX!)
+#     Example Configuration → "WiFi Channel" → 11  (must match TX!)
 #     Example Configuration → "CSI rate (Hz)"  → 100  (or whatever you want)
 
 # Plug in the RX board, find the port:
@@ -103,10 +103,11 @@ needs to be on the host.
 
 ## Channel matching is the #1 gotcha
 
-The TX and RX **must be on the same WiFi channel**. Channel 6 (2.4 GHz,
-2437 MHz) is the safe default — least likely to overlap with home routers
-on 1 or 11. Pick one once and don't change it without re-flashing both
-boards.
+The TX and RX **must be on the same WiFi channel**. Channel 11 (2.4 GHz,
+2462 MHz, HT40) is what every published capture in `RESULTS.md` used; if
+you change it, you have to re-flash both boards. Pick once and don't
+change it without good reason — changing channel mid-experiment makes
+sessions non-comparable.
 
 To check: in the RX serial monitor, verify the `CSI_DATA` line's 11th
 field (channel) matches what you set.

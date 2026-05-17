@@ -63,7 +63,7 @@ classification requires regulatory consultant input.
 | Software Development Plan | **Not started** | QMS document |
 | Software Requirements Specification | **Partial** — `README.md`, `ROADMAP.md`, code itself; needs formal SRS | docs |
 | Software Architecture | **Partial** — `README.md` architecture diagram | docs |
-| Software unit, integration, system testing | **Done** — `pytest`, 80+ tests, CI gating | `tests/` |
+| Software unit, integration, system testing | **Done** — `pytest`, 429 tests across 53 files, CI gating | `tests/` |
 | Traceability matrix (requirement → test) | **Not started** | needs to be authored |
 | Configuration management | **Done** — git, pinned `requirements.txt` | repo |
 | Problem resolution | **Partial** — GitHub issues + PRs | repo |
@@ -92,7 +92,7 @@ risk file:
 |---|---|---|
 | Cybersecurity Premarket Plan | **Not started** | regulatory document |
 | Threat model | **Done** — `SECURITY.md` | `SECURITY.md` |
-| Software Bill of Materials (SBOM) | **Planned** — CycloneDX in CI | `ROADMAP.md` |
+| Software Bill of Materials (SBOM) | **Done** — CycloneDX generated per CI run | `.github/workflows/ci.yml::sbom` |
 | Vulnerability disclosure policy | **Done** — `SECURITY.md` "Reporting" section | `SECURITY.md` |
 | Patch / update mechanism for fielded devices | **Not started** | needs design |
 | Security testing (SAST, DAST, pen test) | **Not started** | CI + external pen test |

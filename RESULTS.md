@@ -6,7 +6,7 @@ This document records the methodology and numbers for ViFi's real-hardware heart
 
 ## Headline
 
-**Within domain:** 4.15 bpm cross-session HR mean absolute error against a Polar H10 chest strap, on $50 of commodity ESP32-S3 hardware, single subject, single room, single antenna pair, 4 paired captures totaling ~8 minutes of real-hardware data.
+**Within domain:** 4.15 bpm cross-session HR mean absolute error against a Polar H10 chest strap, on $50 of commodity ESP32-S3 hardware, single subject, single room, single antenna pair, 3 paired captures totaling ~6 minutes of real-hardware data (4 collected, session2 excluded — see methodology).
 
 **Out of domain (2026-05-16, bedroom_1, patch antennas, single session):** 17.77 bpm HR MAE. Predictions clustered at 86–90 bpm while true HR ran 95–112 bpm — the model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus and is documented in detail in [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). The architectural response — rolling-PCA subspace decomposition, adaptive baseline EMA, reference antenna, and longer-horizon model upgrades — is enumerated in [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
 

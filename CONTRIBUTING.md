@@ -53,8 +53,8 @@ Conventional commits format:
 ```
 <type>(<scope>): <subject>
 
-<body — what changed and why; mention IDs from
-/root/.claude/plans/i-want-you-to-warm-gizmo.md if applicable>
+<body — what changed and why; reference issue numbers or
+plan docs if applicable>
 ```
 
 Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`,
