@@ -1,7 +1,7 @@
 ---
-// Editorial Lab header: monogram + wordmark on the left, minimal nav and
-// theme toggle on the right. No sticky, no scroll-shrink. At narrow widths
-// the nav stacks below the brand.
+// Editorial Lab header — sticky, monogram + wordmark + nav + theme toggle.
+// Stays accessible while scrolling: transparent at top, hairline rule +
+// backdrop blur when scrolled. Home link explicit in the nav.
 import { getEntry } from "astro:content";
 
 const landing = await getEntry("landing", "main");
@@ -23,7 +23,7 @@ const c = landing.data;
 
     <div class="header-right">
       <nav class="primary-nav" aria-label="Primary">
-        {c.nav.items.filter((i) => i.href !== "/").map((item) => (
+        {c.nav.items.map((item) => (
           <a href={item.href}>{item.label}</a>
         ))}
       </nav>
@@ -35,12 +35,10 @@ const c = landing.data;
         aria-label="Toggle dark mode"
         title="Toggle light/dark theme"
       >
-        <!-- Sun icon (shown in dark mode — click to go light) -->
         <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="4"/>
           <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
         </svg>
-        <!-- Moon icon (shown in light mode — click to go dark) -->
         <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
@@ -50,45 +48,70 @@ const c = landing.data;
 </header>
 
 <script is:inline>
-  // Theme toggle wiring. Runs after the inline bootstrap in Layout.astro
-  // has already set data-theme from localStorage. The bootstrap prevents
-  // flash; this script just handles future clicks.
   (function () {
+    // Theme toggle wiring (binds once, re-binds after view transitions)
     function getCurrentTheme() {
       var explicit = document.documentElement.getAttribute("data-theme");
       if (explicit === "dark" || explicit === "light") return explicit;
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
-
     function applyTheme(t) {
       document.documentElement.setAttribute("data-theme", t);
-      try { localStorage.setItem("vifi-theme", t); } catch (_) { /* private mode */ }
+      try { localStorage.setItem("vifi-theme", t); } catch (_) {}
     }
-
     function bindToggle() {
       var btn = document.getElementById("theme-toggle");
       if (!btn || btn.dataset.bound === "1") return;
       btn.dataset.bound = "1";
       btn.addEventListener("click", function () {
-        var next = getCurrentTheme() === "dark" ? "light" : "dark";
-        applyTheme(next);
+        applyTheme(getCurrentTheme() === "dark" ? "light" : "dark");
       });
     }
 
-    // Bind on initial load AND after Astro view transitions (header persists
-    // but the script may need re-binding in fresh DOM contexts).
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", bindToggle);
-    } else {
-      bindToggle();
+    // Sticky-header scrolled state — adds .scrolled class when window.scrollY > 8
+    function onScroll() {
+      var h = document.querySelector(".site-header");
+      if (!h) return;
+      if (window.scrollY > 8) h.classList.add("scrolled");
+      else h.classList.remove("scrolled");
     }
-    document.addEventListener("astro:page-load", bindToggle);
+
+    function setup() {
+      bindToggle();
+      onScroll();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setup);
+    } else {
+      setup();
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("astro:page-load", setup);
   })();
 </script>
 
 <style>
   .site-header {
-    padding: 28px 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 24px 0;
+    background: var(--paper);
+    transition: padding 200ms ease-out,
+                background-color 200ms ease-out,
+                border-color 200ms ease-out,
+                backdrop-filter 200ms ease-out;
+    border-bottom: 1px solid transparent;
+  }
+  /* Scrolled state: hairline rule + slight translucency + backdrop blur.
+     Quiet treatment — the header reads as "still there" without dominating. */
+  .site-header.scrolled {
+    padding: 14px 0;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.1);
+    backdrop-filter: blur(10px) saturate(1.1);
+    border-bottom-color: var(--rule);
   }
   .container {
     max-width: 1280px;
@@ -114,6 +137,7 @@ const c = landing.data;
     flex-shrink: 0;
     color: var(--ink);
   }
+  .brand:hover .brand-mark { color: var(--accent); }
   .brand-mark .signal-arc { stroke: var(--signal); }
   .brand-text {
     font-family: "Fraunces", Georgia, serif;
@@ -170,12 +194,8 @@ const c = landing.data;
     height: 16px;
     display: block;
   }
-  /* Show moon by default (light mode → click to go dark). Hide sun. */
   .icon-sun { display: none; }
   .icon-moon { display: block; }
-
-  /* When dark mode is active (either by OS or by manual data-theme="dark"),
-     show sun (click to go light), hide moon. */
   :global(:root[data-theme="dark"]) .theme-toggle .icon-sun { display: block; }
   :global(:root[data-theme="dark"]) .theme-toggle .icon-moon { display: none; }
   @media (prefers-color-scheme: dark) {
@@ -183,14 +203,18 @@ const c = landing.data;
     :global(:root:not([data-theme="light"])) .theme-toggle .icon-moon { display: none; }
   }
 
+  @media (max-width: 760px) {
+    .container { padding: 0 24px; gap: 16px; }
+    .primary-nav { gap: 18px; }
+    .primary-nav a { font-size: 13px; }
+  }
   @media (max-width: 480px) {
     .container {
       flex-direction: column;
       align-items: flex-start;
-      gap: 14px;
+      gap: 12px;
     }
     .header-right { width: 100%; justify-content: space-between; }
-    .primary-nav { gap: 16px; }
-    .primary-nav a { font-size: 13px; }
+    .primary-nav { gap: 14px; }
   }
 </style>
