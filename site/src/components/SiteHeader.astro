@@ -6,6 +6,16 @@ import { getEntry } from "astro:content";
 
 const landing = await getEntry("landing", "main");
 const c = landing.data;
+
+// Match the current URL against each nav item for server-side aria-current.
+// The client script below updates this on view transitions (header persists
+// across navigations, so the server-rendered value alone would go stale).
+const pathname = Astro.url.pathname.replace(/\/$/, "") || "/";
+function isActive(href: string): boolean {
+  const norm = href.replace(/\/$/, "") || "/";
+  if (norm === "/") return pathname === "/";
+  return pathname === norm || pathname.startsWith(norm + "/");
+}
 ---
 
 <header class="site-header" transition:persist>
@@ -24,7 +34,12 @@ const c = landing.data;
     <div class="header-right">
       <nav class="primary-nav" aria-label="Primary">
         {c.nav.items.map((item) => (
-          <a href={item.href}>{item.label}</a>
+          <a
+            href={item.href}
+            aria-current={isActive(item.href) ? "page" : undefined}
+          >
+            {item.label}
+          </a>
         ))}
       </nav>
 
@@ -76,9 +91,27 @@ const c = landing.data;
       else h.classList.remove("scrolled");
     }
 
+    // Current-page indicator — header persists across view transitions, so we
+    // refresh aria-current on each astro:page-load instead of relying on the
+    // server-rendered value alone.
+    function updateCurrentNav() {
+      var pathname = (window.location.pathname.replace(/\/$/, "") || "/");
+      var links = document.querySelectorAll(".primary-nav a");
+      for (var i = 0; i < links.length; i++) {
+        var a = links[i];
+        var href = (a.getAttribute("href") || "").replace(/\/$/, "") || "/";
+        var active = href === "/"
+          ? pathname === "/"
+          : pathname === href || pathname.indexOf(href + "/") === 0;
+        if (active) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      }
+    }
+
     function setup() {
       bindToggle();
       onScroll();
+      updateCurrentNav();
     }
 
     if (document.readyState === "loading") {
@@ -153,18 +186,29 @@ const c = landing.data;
     align-items: center;
     gap: 24px;
   }
-  .primary-nav { display: flex; gap: 28px; flex-wrap: wrap; }
+  .primary-nav { display: flex; gap: 14px; flex-wrap: wrap; }
   .primary-nav a {
     font-family: "Inter Tight", system-ui, sans-serif;
     font-size: 14px;
     font-weight: 500;
     color: var(--muted);
     text-decoration: none;
-    transition: color 200ms ease-out;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: color 200ms ease-out, background-color 200ms ease-out;
   }
   .primary-nav a:hover { color: var(--accent); }
   .primary-nav a:visited { color: var(--muted); }
   .primary-nav a:visited:hover { color: var(--accent-visited); }
+  /* Current-page highlight — paper-2 pill, ink text. Subtle but unmissable. */
+  .primary-nav a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--paper-2);
+  }
+  .primary-nav a[aria-current="page"]:hover {
+    color: var(--accent);
+    background: var(--paper-3);
+  }
 
   /* ============ THEME TOGGLE ============ */
   .theme-toggle {
