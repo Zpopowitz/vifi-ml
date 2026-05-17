@@ -231,7 +231,10 @@ const url = Astro.site
 </style>
 
 <script>
-  // Scroll-reveal observer (existing pattern, preserved)
+  // Scroll-reveal observer — handles both [data-animate] and
+  // [data-animate-stagger]. Triggers `.animate-in` when 15% of the element
+  // enters the viewport (slightly later than the legacy 10% so the reveal
+  // lands when the element is clearly visible, not just touched).
   const setupScrollReveal = () => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -242,31 +245,57 @@ const url = Astro.site
           }
         });
       },
-      { threshold: 0.1, rootMargin: "0px 0px -10% 0px" }
+      { threshold: 0.15, rootMargin: "0px 0px -8% 0px" }
     );
     document
-      .querySelectorAll("[data-animate]:not(.animate-in)")
+      .querySelectorAll("[data-animate]:not(.animate-in), [data-animate-stagger]:not(.animate-in)")
       .forEach((el) => observer.observe(el));
   };
   document.addEventListener("astro:page-load", setupScrollReveal);
 </script>
 
 <style is:global>
+  /* Scroll-reveal — zen-tuned: small translate, slow ease, low threshold.
+     `up` is the default zen pattern; `left`/`right` reserved for cases
+     where lateral direction adds meaning (rare). */
   [data-animate] {
     opacity: 0;
-    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+    transition: opacity 800ms cubic-bezier(.2,.6,.2,1),
+                transform 800ms cubic-bezier(.2,.6,.2,1);
   }
-  [data-animate="left"]  { transform: translateX(-3rem); }
-  [data-animate="right"] { transform: translateX(3rem);  }
-  [data-animate="up"]    { transform: translateY(2rem);  }
-
+  [data-animate="up"]    { transform: translateY(1rem);  }
+  [data-animate="left"]  { transform: translateX(-1.5rem); }
+  [data-animate="right"] { transform: translateX(1.5rem);  }
   [data-animate].animate-in {
     opacity: 1;
     transform: translate(0, 0);
   }
 
+  /* Stagger variant — children of a `[data-animate-stagger]` element
+     reveal in sequence with 80ms gaps. Use on lists, comparison rows,
+     timeline steps, etc. The parent acts as the observer trigger. */
+  [data-animate-stagger] > * {
+    opacity: 0;
+    transform: translateY(0.75rem);
+    transition: opacity 700ms cubic-bezier(.2,.6,.2,1),
+                transform 700ms cubic-bezier(.2,.6,.2,1);
+  }
+  [data-animate-stagger].animate-in > * {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  [data-animate-stagger].animate-in > *:nth-child(1) { transition-delay:   0ms; }
+  [data-animate-stagger].animate-in > *:nth-child(2) { transition-delay:  80ms; }
+  [data-animate-stagger].animate-in > *:nth-child(3) { transition-delay: 160ms; }
+  [data-animate-stagger].animate-in > *:nth-child(4) { transition-delay: 240ms; }
+  [data-animate-stagger].animate-in > *:nth-child(5) { transition-delay: 320ms; }
+  [data-animate-stagger].animate-in > *:nth-child(6) { transition-delay: 400ms; }
+  [data-animate-stagger].animate-in > *:nth-child(7) { transition-delay: 480ms; }
+  [data-animate-stagger].animate-in > *:nth-child(8) { transition-delay: 560ms; }
+
   @media (prefers-reduced-motion: reduce) {
-    [data-animate] {
+    [data-animate],
+    [data-animate-stagger] > * {
       opacity: 1;
       transform: none;
       transition: none;

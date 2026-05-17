@@ -38,13 +38,13 @@ const c = entry.data;
     </section>
 
     <!-- ============ PROOF ============ -->
-    <section class="proof" aria-labelledby="proof-heading">
+    <section class="proof" aria-labelledby="proof-heading" data-animate="up">
       <div class="container">
         <p class="section-eyebrow">{c.proof.eyebrow}</p>
         <h2 id="proof-heading" class="section-heading">{c.proof.heading_line1} <em>{c.proof.heading_line2}</em></h2>
         <p class="section-lede">{c.proof.paragraphs[0]}</p>
 
-        <div class="comparison" role="table" aria-label="Heart-rate accuracy comparison across systems">
+        <div class="comparison" role="table" aria-label="Heart-rate accuracy comparison across systems" data-animate-stagger>
           {c.proof.comparison_rows.map((row) => (
             <div class={`comparison-row ${row.highlight ? "featured" : ""}`} role="row">
               <div class="row-name" role="cell">
@@ -60,15 +60,35 @@ const c = entry.data;
           ))}
         </div>
 
+        <p class="comparison-caption">
+          ViFi delivers <strong>96%</strong> of PhaseBeat's accuracy at <strong>4.4%</strong> of its cost. Against a clinical bedside monitor, it's <strong>1/136th</strong> the per-room cost.
+        </p>
+
         <p class="results-link">{c.proof.results_link_text.split(":")[0]}: <a href={c.links.results}>read our results →</a></p>
       </div>
     </section>
 
     <!-- ============ PROBLEM ============ -->
-    <section class="problem" aria-labelledby="problem-heading">
+    <section class="problem" aria-labelledby="problem-heading" data-animate="up">
       <div class="container container-prose">
         <p class="section-eyebrow">{c.problem.eyebrow}</p>
         <h2 id="problem-heading" class="section-heading">{c.problem.heading}</h2>
+
+        <div class="stat-callout" data-animate-stagger>
+          <div class="stat-cell">
+            <div class="stat-num">2.3M</div>
+            <div class="stat-label">U.S. med-surg<br>+ SNF beds</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">23<span class="stat-unit">hrs/day</span></div>
+            <div class="stat-label">patients sit<br>unmonitored</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">4–8<span class="stat-unit">hrs</span></div>
+            <div class="stat-label">between<br>nursing rounds</div>
+          </div>
+        </div>
+
         <div class="prose">
           {c.problem.paragraphs.map((p) => <p>{p}</p>)}
         </div>
@@ -76,7 +96,7 @@ const c = entry.data;
     </section>
 
     <!-- ============ WHY THIS EXISTS ============ -->
-    <section class="why" aria-labelledby="why-heading">
+    <section class="why" aria-labelledby="why-heading" data-animate="up">
       <div class="container">
         <p class="section-eyebrow" id="why-heading">From the founder</p>
         <figure>
@@ -87,7 +107,7 @@ const c = entry.data;
     </section>
 
     <!-- ============ HOW IT WORKS ============ -->
-    <section class="how" aria-labelledby="how-heading">
+    <section class="how" aria-labelledby="how-heading" data-animate="up">
       <div class="container container-prose">
         <p class="section-eyebrow">{c.how_it_works.eyebrow}</p>
         <h2 id="how-heading" class="section-heading">{c.how_it_works.heading}</h2>
@@ -97,7 +117,7 @@ const c = entry.data;
 >{c.how_it_works.diagram}</pre>
 
         <h3 class="subsection-heading">{c.how_it_works.signal_path_title}</h3>
-        <ol class="pipeline">
+        <ol class="pipeline" data-animate-stagger>
           {c.how_it_works.signal_path_steps.map((step) => <li>{step}</li>)}
         </ol>
 
@@ -107,13 +127,13 @@ const c = entry.data;
     </section>
 
     <!-- ============ ROADMAP ============ -->
-    <section class="roadmap" aria-labelledby="roadmap-heading">
+    <section class="roadmap" aria-labelledby="roadmap-heading" data-animate="up">
       <div class="container container-prose">
         <p class="section-eyebrow">{c.roadmap.eyebrow}</p>
         <h2 id="roadmap-heading" class="section-heading">{c.roadmap.heading}</h2>
         <p class="section-lede">{c.roadmap.intro}</p>
 
-        <ol class="timeline">
+        <ol class="timeline" data-animate-stagger>
           {c.roadmap.steps.map((step) => (
             <li>
               <p class="step-date">{step.date}</p>
@@ -130,14 +150,14 @@ const c = entry.data;
     </section>
 
     <!-- ============ PILOT CTA ============ -->
-    <section class="pilot-cta" aria-labelledby="pilot-heading">
+    <section class="pilot-cta" aria-labelledby="pilot-heading" data-animate="up">
       <div class="container container-prose">
         <p class="section-eyebrow">{c.hospitals.eyebrow}</p>
         <h2 id="pilot-heading" class="section-heading">{c.hospitals.heading}</h2>
         <div class="prose">
           {c.hospitals.intro_paragraphs.map((p) => <p>{p}</p>)}
         </div>
-        <ul class="pilot-bullets">
+        <ul class="pilot-bullets" data-animate-stagger>
           {c.hospitals.pilot_bullets.map((b) => <li>{b}</li>)}
         </ul>
         <a href="/pilots" class="btn btn-primary" style="margin-top: 8px;">{c.hospitals.cta}</a>
@@ -393,6 +413,75 @@ const c = entry.data;
   .results-link a:hover { border-bottom-color: var(--accent); }
   .results-link a:visited { color: var(--accent-visited); }
 
+  /* Comparison caption: distills the table's math into one sentence */
+  .comparison-caption {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 70ch;
+    margin: 32px 0;
+    text-wrap: pretty;
+  }
+  .comparison-caption strong {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Stat callout (Problem section): three big numbers, one row of typography */
+  .stat-callout {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin: 40px 0 48px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .stat-cell {
+    padding: 28px 24px 28px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .stat-cell:last-child { border-right: none; padding-right: 0; }
+  .stat-cell:nth-child(n+2) { padding-left: 24px; }
+  .stat-num {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(36px, 4.4vw, 52px);
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: -0.022em;
+    font-variation-settings: "SOFT" 30, "opsz" 96;
+    margin-bottom: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-unit {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.34em;
+    color: var(--muted);
+    margin-left: 6px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    position: relative;
+    top: -0.1em;
+  }
+  .stat-label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    line-height: 1.45;
+  }
+  @media (max-width: 600px) {
+    .stat-callout { grid-template-columns: 1fr; }
+    .stat-cell { border-right: none; border-bottom: 1px solid var(--rule); padding: 20px 0; }
+    .stat-cell:last-child { border-bottom: none; }
+    .stat-cell:nth-child(n+2) { padding-left: 0; }
+  }
+
   /* ============ PROBLEM ============ */
   .problem {
     padding: 120px 0;
@@ -501,11 +590,39 @@ const c = entry.data;
     list-style: none;
     padding: 0;
     margin: 0;
-    border-top: 1px solid var(--rule);
+    position: relative;
+  }
+  /* Vertical line connecting all timeline steps — runs the full height. */
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: var(--rule);
   }
   .timeline li {
-    padding: 32px 0;
-    border-bottom: 1px solid var(--rule);
+    padding: 24px 0 24px 40px;
+    position: relative;
+  }
+  .timeline li:not(:last-child) { margin-bottom: 8px; }
+  /* Dot marker on each step — sits on the vertical line */
+  .timeline li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 32px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 2px solid var(--accent);
+    box-sizing: border-box;
+  }
+  /* First step gets a filled dot (current/active state) */
+  .timeline li:first-child::before {
+    background: var(--accent);
   }
   .step-date {
     font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -578,21 +695,22 @@ const c = entry.data;
   .why blockquote {
     font-family: "Source Serif 4", Georgia, serif;
     font-style: italic;
-    font-size: clamp(20px, 2.4vw, 26px);
-    line-height: 1.5;
-    color: var(--ink-2);
-    max-width: 36em;
+    font-size: clamp(26px, 3.2vw, 40px);
+    line-height: 1.35;
+    color: var(--ink);
+    max-width: 28em;
     text-wrap: pretty;
     margin: 0;
     quotes: none;
+    letter-spacing: -0.005em;
   }
   .why blockquote::before {
     content: "";
     display: block;
-    width: 36px;
-    height: 1px;
+    width: 48px;
+    height: 1.5px;
     background: var(--ink);
-    margin-bottom: 32px;
+    margin-bottom: 40px;
   }
   .why figcaption {
     font-family: "Inter Tight", system-ui, sans-serif;

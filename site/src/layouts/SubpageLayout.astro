@@ -93,7 +93,7 @@ const sectionsWithSlugs = page.sections.map((s) => ({
 
     <!-- ============ SECTIONS (asymmetric 2-column) ============ -->
     {sectionsWithSlugs.map((section) => (
-      <section id={section.slug} class="subpage-section">
+      <section id={section.slug} class="subpage-section" data-animate="up">
         <div class="container">
           <div class="section-grid">
             <header class="section-header">
@@ -115,14 +115,14 @@ const sectionsWithSlugs = page.sections.map((s) => ({
                 }
                 if (b.type === "bulleted_list" && b.items) {
                   return (
-                    <ul>
+                    <ul data-animate-stagger>
                       {b.items.map((it) => <li set:html={renderInline(it)} />)}
                     </ul>
                   );
                 }
                 if (b.type === "ordered_list" && b.items) {
                   return (
-                    <ol>
+                    <ol data-animate-stagger>
                       {b.items.map((it) => <li set:html={renderInline(it)} />)}
                     </ol>
                   );
@@ -138,7 +138,7 @@ const sectionsWithSlugs = page.sections.map((s) => ({
                             ))}
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody data-animate-stagger>
                           {b.rows.map((row) => (
                             <tr>
                               {row.map((cell, ci) => (
