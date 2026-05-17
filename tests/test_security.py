@@ -552,9 +552,7 @@ def test_safe_http_400_hides_exception_detail_by_default(monkeypatch):
     monkeypatch.delenv("VIFI_REVEAL_ERRORS", raising=False)
     from security import safe_http_400
 
-    exc = ValueError(
-        "could not broadcast input array from shape (3,) into shape (4,)"
-    )
+    exc = ValueError("could not broadcast input array from shape (3,) into shape (4,)")
     http_exc = safe_http_400("invalid IQ payload", exc)
     assert http_exc.status_code == 400
     assert http_exc.detail == "invalid IQ payload"
