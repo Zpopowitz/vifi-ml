@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="ViFi">
+  <title>vifi.health monogram — square contexts (social avatar, app icon, schema.org logo)</title>
+  <!--
+    Square brand mark: stylized "V." for square contexts where the full
+    wordmark won't fit. V drawn as a path so it doesn't depend on Fraunces
+    being available; emerald dot mirrors the wordmark's accent.
+  -->
+  <style>
+    .bg { fill: #F4EFE4; }
+    .v  { fill: #1A1A1A; }
+    .dot { fill: #0E9F66; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #131715; }
+      .v  { fill: #E8E4D8; }
+      .dot { fill: #2EBB7D; }
+    }
+  </style>
+
+  <!-- Cream (or warm dark) square — brand canvas -->
+  <rect class="bg" width="240" height="240" rx="24"/>
+
+  <!-- Stylized V — matches the wordmark's lowercase v proportions but
+       scaled and weighted for standalone use. Same vertex pattern as the
+       favicon (just bigger viewBox). -->
+  <path class="v" d="M 50 50 L 100 200 L 130 200 L 180 50 L 145 50 L 115 135 L 85 50 Z"/>
+
+  <!-- Accent dot — emerald, sized to read at 16px favicons all the way up -->
+  <circle class="dot" cx="200" cy="195" r="14"/>
+</svg>

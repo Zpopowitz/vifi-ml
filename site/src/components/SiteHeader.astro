@@ -1,93 +1,285 @@
 ---
-// Sticky header used by every page. Logo shrinks on scroll; mobile menu
-// collapses behind a hamburger. Nav items come from the landing JSON so
-// the menu is one source of truth across the whole site.
+// Editorial Lab header — sticky, monogram + wordmark + nav + theme toggle.
+// Stays accessible while scrolling: transparent at top, hairline rule +
+// backdrop blur when scrolled. Home link explicit in the nav.
 import { getEntry } from "astro:content";
 
 const landing = await getEntry("landing", "main");
 const c = landing.data;
+
+// Match the current URL against each nav item for server-side aria-current.
+// The client script below updates this on view transitions (header persists
+// across navigations, so the server-rendered value alone would go stale).
+const pathname = Astro.url.pathname.replace(/\/$/, "") || "/";
+function isActive(href: string): boolean {
+  const norm = href.replace(/\/$/, "") || "/";
+  if (norm === "/") return pathname === "/";
+  return pathname === norm || pathname.startsWith(norm + "/");
+}
 ---
 
-<header
-  id="site-header"
-  transition:persist
-  class="sticky top-0 z-50 border-b border-slate-800 bg-ink transition-all duration-200"
->
-  <nav
-    id="site-nav"
-    class="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 transition-all duration-200"
-  >
-    <a href="/" class="flex items-center">
-      <img
-        id="site-logo"
-        src="/logo.png"
-        alt={c.nav.brand}
-        class="h-10 w-auto transition-all duration-200"
-      />
+<header class="site-header" transition:persist>
+  <div class="container">
+    <a href="/" class="brand" aria-label={`${c.nav.brand} — home`}>
+      <span class="brand-text">vifi<span class="dot">.</span><span class="tld">health</span></span>
     </a>
 
-    <div class="hidden gap-6 text-sm text-slate-400 md:flex">
-      {c.nav.items.map((item) => (
-        <a href={item.href} class="hover:text-paper">{item.label}</a>
-      ))}
-    </div>
+    <div class="header-right">
+      <nav class="primary-nav" aria-label="Primary">
+        {c.nav.items.map((item) => (
+          <a
+            href={item.href}
+            aria-current={isActive(item.href) ? "page" : undefined}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
 
-    <button
-      id="mobile-menu-btn"
-      class="md:hidden p-2 text-slate-400 hover:text-paper"
-      aria-label="Toggle menu"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-      </svg>
-    </button>
-  </nav>
-
-  <div id="mobile-menu" class="hidden md:hidden border-t border-slate-800 bg-ink">
-    <div class="flex flex-col text-sm text-slate-400">
-      {c.nav.items.map((item) => (
-        <a
-          href={item.href}
-          class="px-6 py-4 border-b border-slate-800 hover:text-paper hover:bg-slate-900"
-        >
-          {item.label}
-        </a>
-      ))}
+      <button
+        id="theme-toggle"
+        class="theme-toggle"
+        type="button"
+        aria-label="Toggle dark mode"
+        title="Toggle light/dark theme"
+      >
+        <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
     </div>
   </div>
-
-  <script>
-    document.getElementById("mobile-menu-btn")?.addEventListener("click", () => {
-      document.getElementById("mobile-menu")?.classList.toggle("hidden");
-    });
-    document.querySelectorAll("#mobile-menu a").forEach((link) => {
-      link.addEventListener("click", () => {
-        document.getElementById("mobile-menu")?.classList.add("hidden");
-      });
-    });
-  </script>
-  <script is:inline>
-    const header = document.getElementById("site-header");
-    const onScroll = () => {
-      if (window.scrollY > 20) header?.classList.add("is-scrolled");
-      else header?.classList.remove("is-scrolled");
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-  </script>
-
-  <style is:global>
-    #site-header.is-scrolled {
-      background-color: rgba(10, 22, 40, 0.75);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-    #site-header.is-scrolled #site-nav {
-      padding-top: 0.5rem;
-      padding-bottom: 0.5rem;
-    }
-    #site-header.is-scrolled #site-logo {
-      height: 1.75rem;
-    }
-  </style>
 </header>
+
+<script is:inline>
+  (function () {
+    // Theme toggle wiring (binds once, re-binds after view transitions)
+    function getCurrentTheme() {
+      var explicit = document.documentElement.getAttribute("data-theme");
+      if (explicit === "dark" || explicit === "light") return explicit;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    function applyTheme(t) {
+      // Suppress CSS transitions during the theme switch so the page
+      // doesn't visibly fade through a desaturated mid-state. Without
+      // this, .site-header (bg 200ms), body (bg+color 240ms), brand
+      // (color 200ms), btn (bg+color+border 180ms), etc all animate
+      // in parallel and the user sees a ~250ms wash where everything
+      // is blending between light and dark values.
+      var root = document.documentElement;
+      root.classList.add("theme-switching");
+      root.setAttribute("data-theme", t);
+      try { localStorage.setItem("vifi-theme", t); } catch (_) {}
+      // Force a paint with transitions disabled, then re-enable.
+      // rAF×2 (next-frame, then next-next-frame) guarantees the new
+      // colors have been laid down before transitions come back.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          root.classList.remove("theme-switching");
+        });
+      });
+    }
+    function bindToggle() {
+      var btn = document.getElementById("theme-toggle");
+      if (!btn || btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function () {
+        applyTheme(getCurrentTheme() === "dark" ? "light" : "dark");
+      });
+    }
+
+    // Sticky-header scrolled state — adds .scrolled class when window.scrollY > 8
+    function onScroll() {
+      var h = document.querySelector(".site-header");
+      if (!h) return;
+      if (window.scrollY > 8) h.classList.add("scrolled");
+      else h.classList.remove("scrolled");
+    }
+
+    // Current-page indicator — header persists across view transitions, so we
+    // refresh aria-current on each astro:page-load instead of relying on the
+    // server-rendered value alone.
+    function updateCurrentNav() {
+      var pathname = (window.location.pathname.replace(/\/$/, "") || "/");
+      var links = document.querySelectorAll(".primary-nav a");
+      for (var i = 0; i < links.length; i++) {
+        var a = links[i];
+        var href = (a.getAttribute("href") || "").replace(/\/$/, "") || "/";
+        var active = href === "/"
+          ? pathname === "/"
+          : pathname === href || pathname.indexOf(href + "/") === 0;
+        if (active) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      }
+    }
+
+    function setup() {
+      bindToggle();
+      onScroll();
+      updateCurrentNav();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setup);
+    } else {
+      setup();
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("astro:page-load", setup);
+  })();
+</script>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 24px 0;
+    background: var(--paper);
+    transition: padding 200ms ease-out,
+                background-color 200ms ease-out,
+                border-color 200ms ease-out,
+                backdrop-filter 200ms ease-out;
+    border-bottom: 1px solid transparent;
+  }
+  /* Scrolled state: hairline rule + slight translucency + backdrop blur.
+     Quiet treatment — the header reads as "still there" without dominating. */
+  .site-header.scrolled {
+    padding: 14px 0;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.1);
+    backdrop-filter: blur(10px) saturate(1.1);
+    border-bottom-color: var(--rule);
+  }
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  /* ============ WORDMARK BRAND ============ */
+  .brand {
+    display: inline-flex;
+    align-items: baseline;
+    color: var(--ink);
+    text-decoration: none;
+    transition: color 200ms ease-out;
+  }
+  .brand:hover { color: var(--accent); }
+  .brand-text {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variation-settings: "SOFT" 30, "opsz" 28;
+  }
+  /* The accent dot — emerald signal, slightly larger than the base type so
+     it reads as a deliberate punctuation moment rather than a domain period. */
+  .brand-text .dot {
+    color: var(--signal);
+    font-weight: 600;
+    margin: 0 1px;
+  }
+  /* The .health suffix in italic — separates "brand" (vifi) from "domain
+     scope" (health) typographically. Variable-font SOFT axis bumped so the
+     italic reads softer than the upright. */
+  .brand-text .tld {
+    font-style: italic;
+    font-weight: 500;
+    font-variation-settings: "SOFT" 80, "opsz" 28;
+  }
+  .brand:hover .dot { color: var(--accent); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .primary-nav { display: flex; gap: 14px; flex-wrap: wrap; }
+  .primary-nav a {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: color 200ms ease-out, background-color 200ms ease-out;
+  }
+  .primary-nav a:hover { color: var(--accent); }
+  .primary-nav a:visited { color: var(--muted); }
+  .primary-nav a:visited:hover { color: var(--accent-visited); }
+  /* Current-page highlight — paper-3 pill (one step deeper than the
+     surrounding paper-2 nav region) plus a quiet accent underline. The
+     underline carries the brand teal so the indicator reads even when
+     the pill background is subtle on a tinted hero. */
+  .primary-nav a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--paper-3);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .primary-nav a[aria-current="page"]:hover {
+    color: var(--accent);
+    background: var(--paper-3);
+  }
+
+  /* ============ THEME TOGGLE ============ */
+  .theme-toggle {
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 180ms ease-out, border-color 180ms ease-out;
+    padding: 0;
+  }
+  .theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+  :global(:root[data-theme="dark"]) .theme-toggle .icon-sun { display: block; }
+  :global(:root[data-theme="dark"]) .theme-toggle .icon-moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .theme-toggle .icon-sun { display: block; }
+    :global(:root:not([data-theme="light"])) .theme-toggle .icon-moon { display: none; }
+  }
+
+  @media (max-width: 760px) {
+    .container { padding: 0 24px; gap: 16px; }
+    .primary-nav { gap: 18px; }
+    .primary-nav a { font-size: 13px; }
+  }
+  @media (max-width: 480px) {
+    .container {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .header-right { width: 100%; justify-content: space-between; }
+    .primary-nav { gap: 14px; }
+  }
+</style>

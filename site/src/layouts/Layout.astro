@@ -2,14 +2,26 @@
 import { ViewTransitions } from "astro:transitions";
 import Analytics from "@vercel/analytics/astro";
 
+// Self-hosted variable fonts per DESIGN.md. Astro inlines the @font-face
+// declarations from these imports into the page CSS and ships the font
+// binaries from /_astro/ — no Google CDN, no FOIT, no third-party request.
+// Full files for Fraunces / Source Serif 4 expose all axes (wght, opsz,
+// SOFT for Fraunces) so the variable-font moves keep working.
+import "@fontsource-variable/fraunces/full.css";
+import "@fontsource-variable/fraunces/full-italic.css";
+import "@fontsource-variable/source-serif-4/opsz.css";
+import "@fontsource-variable/source-serif-4/opsz-italic.css";
+import "@fontsource-variable/inter-tight/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
+
 interface Props {
   title?: string;
   description?: string;
 }
 
 const {
-  title = "ViFi — Contactless patient vitals from $44 of WiFi hardware",
-  description = "ViFi is building a 510(k)-track contactless patient monitor on commodity ESP32 hardware. 4.15 bpm cross-session HR accuracy on real hardware at ~1/20th the cost of bedside monitors.",
+  title = "ViFi — Hospital-grade vital signs from $44 of WiFi hardware",
+  description = "Contactless WiFi-based vital-signs sensing. 4.15 bpm cross-session HR MAE validated against Polar H10 on $22 ESP32-S3 hardware. Pre-clearance research prototype.",
 } = Astro.props;
 
 const url = Astro.site
@@ -18,12 +30,27 @@ const url = Astro.site
 ---
 
 <!doctype html>
-<html lang="en" class="bg-ink text-paper antialiased">
+<html lang="en" class="bg-paper text-ink antialiased">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
+
+    <!-- Theme bootstrap — runs synchronously before CSS evaluates to prevent
+         flash-of-wrong-theme. Manual preference from localStorage wins over
+         prefers-color-scheme. -->
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem("vifi-theme");
+          if (t === "dark" || t === "light") {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        } catch (_) { /* localStorage unavailable — fall back to OS preference */ }
+      })();
+    </script>
 
     <title>{title}</title>
     <meta name="description" content={description} />
@@ -33,129 +60,208 @@ const url = Astro.site
     <meta property="og:url" content={url} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
+    <meta property="og:site_name" content="vifi.health" />
+    <meta property="og:image" content="https://vifi.health/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="vifi.health — Hospital-grade vital signs from $44 of WiFi hardware. Validated: 4.15 bpm cross-session HR MAE." />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:url" content={url} />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://vifi.health/og-image.png" />
+    <meta name="twitter:image:alt" content="vifi.health — Hospital-grade vital signs from $44 of WiFi hardware. Validated: 4.15 bpm cross-session HR MAE." />
 
-    <!-- Webfont -->
-    <link rel="preconnect" href="https://rsms.me/" />
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <!-- Fonts self-hosted via @fontsource-variable (imported in frontmatter). -->
 
-    <!-- Astro View Transitions: cross-fade between pages and keep
-         transition:persist elements (header, footer) mounted across nav. -->
     <ViewTransitions />
-    <!-- Structured data for search engines + AI -->
+
+    <!-- Structured data -->
     <script type="application/ld+json" set:html={JSON.stringify({
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "ViFi",
       "alternateName": "ViFi Health",
       "url": "https://vifi.health",
-      "logo": "https://vifi.health/logo.png",
-      "description": "Contactless WiFi-based patient monitoring for hospital med-surg and telemetry floors. Pre-clearance research prototype targeting FDA 510(k) Class II clearance.",
-      "founder": {
-        "@type": "Person",
-        "name": "Zach Popowitz"
-      },
+      "logo": "https://vifi.health/logo-monogram.svg",
+      "description": "Contactless WiFi-based vital-signs sensing on $22 ESP32-S3 hardware. Pre-clearance research prototype.",
+      "founder": { "@type": "Person", "name": "Zach Popowitz" },
       "foundingDate": "2026",
-      "industry": "Medical Devices",
-      "knowsAbout": [
-        "WiFi health monitoring",
-        "WiFi vital signs monitoring",
-        "WiFi heart rate monitor",
-        "WiFi-based vital signs",
-        "WiFi sensing for healthcare",
-        "WiFi sensor for hospitals",
-        "WiFi medical device",
-        "WiFi healthcare technology",
-        "RF sensing",
-        "RF health monitoring",
-        "radio frequency vital signs",
-        "RF-based patient monitoring",
-        "RF chest motion sensing",
-        "Channel State Information",
-        "CSI for vital signs",
-        "contactless patient monitoring",
-        "contactless health monitoring",
-        "contactless vital signs",
-        "non-invasive patient monitoring",
-        "non-contact health monitoring",
-        "ambient patient monitoring",
-        "wireless vital signs monitor",
-        "wireless patient monitoring",
-        "remote patient monitoring",
-        "continuous patient monitoring",
-        "continuous vital signs monitoring",
-        "bedside vital signs monitor alternative",
-        "hospital med-surg monitoring",
-        "telemetry floor monitoring",
-        "ESP32 vital signs",
-        "ESP32 health monitor",
-        "commodity hardware patient monitoring",
-        "FDA 510(k) Class II vital signs monitor",
-        "pre-clearance medical device research",
-        "digital health monitoring",
-        "healthtech",
-        "PhaseBeat",
-        "FullBreathe",
-        "ResBeat"
-      ],
-      "sameAs": [
-        "https://github.com/Zpopowitz"
-      ]
+      "sameAs": ["https://github.com/Zpopowitz"]
     })} />
   </head>
-  <body class="font-sans">    <!-- Ambient ECG monitor trace -->
+  <body>
     <slot />
     <Analytics />
   </body>
 </html>
 
 <style is:global>
+  /* ============ DESIGN.md TOKENS — light (default) ============ */
+  :root {
+    --paper:        #F4EFE4;
+    --paper-2:      #ECE5D5;
+    --paper-3:      #E0D8C4;
+    --ink:          #1A1A1A;
+    --ink-2:        #3A3A3A;
+    --muted:        #5A5A5A;
+    --rule:         #D8D0BF;
+    --accent:       #1D5C6E;
+    --accent-2:     #2A7A92;
+    --accent-visited: #3A4F73;
+    --signal:       #0E9F66;
+    --signal-glow:  #34D399;
+    --trace:        var(--muted);
+    --trace-opacity: 0.42;
+    --row-hover:    rgba(26, 26, 26, 0.025);
+  }
+
+  /* ============ DESIGN.md TOKENS — dark ============ */
+  /* Apply dark tokens when the OS prefers dark UNLESS the user has manually
+     forced light via the theme toggle (data-theme="light"). */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:        #131715;
+      --paper-2:      #1C211D;
+      --paper-3:      #252A26;
+      --ink:          #E8E4D8;
+      --ink-2:        #C8C2B0;
+      --muted:        #A89C8A;
+      --rule:         #2D3330;
+      --accent:       #4DA3BA;
+      --accent-2:     #6EBED4;
+      --accent-visited: #8B9FB8;
+      --signal:       #2EBB7D;
+      --signal-glow:  #34D399;
+      --trace:        var(--ink-2);
+      --trace-opacity: 0.30;
+      --row-hover:    rgba(232, 228, 216, 0.035);
+    }
+  }
+
+  /* Explicit dark override wins over OS preference */
+  :root[data-theme="dark"] {
+    --paper:        #131715;
+    --paper-2:      #1C211D;
+    --paper-3:      #252A26;
+    --ink:          #E8E4D8;
+    --ink-2:        #C8C2B0;
+    --muted:        #A89C8A;
+    --rule:         #2D3330;
+    --accent:       #4DA3BA;
+    --accent-2:     #6EBED4;
+    --accent-visited: #8B9FB8;
+    --signal:       #2EBB7D;
+    --signal-glow:  #34D399;
+    --trace:        var(--ink-2);
+    --trace-opacity: 0.30;
+    --row-hover:    rgba(232, 228, 216, 0.035);
+  }
+
+  @media (prefers-contrast: more) {
+    :root { --muted: #2A2A2A; --rule: #6A6A6A; --trace-opacity: 0.65; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --muted: #DDDDDD; --rule: #888888; }
+    }
+    :root[data-theme="dark"] { --muted: #DDDDDD; --rule: #888888; }
+  }
+
   html {
     scroll-behavior: smooth;
-    /* Suppress the transient horizontal scrollbar caused by data-animate
-       slide-in transforms (translateX ±3rem). Nothing on the site needs
-       to scroll horizontally; tables that overflow on narrow viewports
-       have their own overflow-x:auto wrappers. `clip` is preferred over
-       `hidden` so it doesn't establish a new scroll container, which
-       would break the sticky header. */
     overflow-x: clip;
+    color-scheme: light dark;
+    /* Initial-load anchor jumps (e.g. /#proof-heading typed directly)
+       use scroll-padding-top; in-app hash changes use scroll-margin
+       on the target (below). Both paths need to clear the 63px
+       sticky header. */
+    scroll-padding-top: 88px;
+  }
+
+  /* Anchor-target offset — works for both fresh loads AND
+     post-load hash changes (location.hash = '...', anchor-link
+     click). Chrome honors scroll-padding-top only on initial scroll
+     into view; scroll-margin-top on the target wins in every case. */
+  :where([id]) {
+    scroll-margin-top: 88px;
+  }
+
+  /* Theme-switch suppression. The toggle adds .theme-switching to
+     <html> while it flips data-theme, then removes it after two rAFs.
+     The descendant-everything selector kills every transition (and
+     SVG animation) so the swap reads as instant rather than as a
+     ~250ms wash where the page fades through a gray mid-state. */
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
   body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-optical-sizing: auto;
+    font-size: 17px;
+    line-height: 1.55;
     text-rendering: optimizeLegibility;
+    transition: background-color 240ms ease-out, color 240ms ease-out;
   }
-.ecg-trace path {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  mix-blend-mode: screen;
-  animation: ecg-sweep 5s linear infinite;
-  animation-delay: 1s;
-}
-.ecg-trace path:nth-child(2) {
-  animation-delay: 3.5s;
-}
-@keyframes ecg-sweep {
-}
-@keyframes ecg-sweep {
-  0%   { stroke-dashoffset: 100; }
-  85%  { stroke-dashoffset: 0; }
-  90%  { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ecg-trace path { animation: none; stroke-dashoffset: 0; }
-}
+
+  /* Custom selection — brand carries when researchers highlight quotes */
+  ::selection { background: var(--accent); color: var(--paper); }
+
+  /* Global a11y */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 12px 18px;
+    border-radius: 0 0 4px 0;
+    z-index: 100;
+    text-decoration: none;
+  }
+  .skip-link:focus { left: 0; top: 0; }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* Legacy ECG-trace styles preserved for any pages still using .ecg-trace */
+  .ecg-trace path {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    mix-blend-mode: screen;
+    animation: ecg-sweep 5s linear infinite;
+    animation-delay: 1s;
+  }
+  .ecg-trace path:nth-child(2) { animation-delay: 3.5s; }
+  @keyframes ecg-sweep {
+    0%   { stroke-dashoffset: 100; }
+    85%  { stroke-dashoffset: 0; }
+    90%  { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ecg-trace path { animation: none; stroke-dashoffset: 0; }
+  }
 </style>
+
 <script>
-  // Re-bind on every page navigation. Astro's ViewTransitions swap the
-  // DOM without firing DOMContentLoaded, so a one-shot listener would
-  // leave new [data-animate] sections stuck at opacity:0 after a soft
-  // nav. astro:page-load fires on both the initial load and after each
-  // view-transition swap, so the observer always sees the live DOM.
+  // Scroll-reveal observer — handles both [data-animate] and
+  // [data-animate-stagger]. Triggers `.animate-in` when 15% of the element
+  // enters the viewport (slightly later than the legacy 10% so the reveal
+  // lands when the element is clearly visible, not just touched).
   const setupScrollReveal = () => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -166,33 +272,60 @@ const url = Astro.site
           }
         });
       },
-      { threshold: 0.1, rootMargin: "0px 0px -10% 0px" }
+      { threshold: 0.15, rootMargin: "0px 0px -8% 0px" }
     );
     document
-      .querySelectorAll("[data-animate]:not(.animate-in)")
+      .querySelectorAll("[data-animate]:not(.animate-in), [data-animate-stagger]:not(.animate-in)")
       .forEach((el) => observer.observe(el));
   };
   document.addEventListener("astro:page-load", setupScrollReveal);
 </script>
 
 <style is:global>
+  /* Scroll-reveal — zen-tuned: small translate, slow ease, low threshold.
+     `up` is the default zen pattern; `left`/`right` reserved for cases
+     where lateral direction adds meaning (rare). */
   [data-animate] {
     opacity: 0;
-    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+    transition: opacity 800ms cubic-bezier(.2,.6,.2,1),
+                transform 800ms cubic-bezier(.2,.6,.2,1);
   }
-  [data-animate="left"]  { transform: translateX(-3rem); }
-  [data-animate="right"] { transform: translateX(3rem);  }
-  [data-animate="up"]    { transform: translateY(2rem);  }
-
+  [data-animate="up"]    { transform: translateY(1rem);  }
+  [data-animate="left"]  { transform: translateX(-1.5rem); }
+  [data-animate="right"] { transform: translateX(1.5rem);  }
   [data-animate].animate-in {
     opacity: 1;
     transform: translate(0, 0);
   }
 
+  /* Stagger variant — children of a `[data-animate-stagger]` element
+     reveal in sequence with 80ms gaps. Use on lists, comparison rows,
+     timeline steps, etc. The parent acts as the observer trigger. */
+  [data-animate-stagger] > * {
+    opacity: 0;
+    transform: translateY(0.75rem);
+    transition: opacity 700ms cubic-bezier(.2,.6,.2,1),
+                transform 700ms cubic-bezier(.2,.6,.2,1);
+  }
+  [data-animate-stagger].animate-in > * {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  [data-animate-stagger].animate-in > *:nth-child(1) { transition-delay:   0ms; }
+  [data-animate-stagger].animate-in > *:nth-child(2) { transition-delay:  80ms; }
+  [data-animate-stagger].animate-in > *:nth-child(3) { transition-delay: 160ms; }
+  [data-animate-stagger].animate-in > *:nth-child(4) { transition-delay: 240ms; }
+  [data-animate-stagger].animate-in > *:nth-child(5) { transition-delay: 320ms; }
+  [data-animate-stagger].animate-in > *:nth-child(6) { transition-delay: 400ms; }
+  [data-animate-stagger].animate-in > *:nth-child(7) { transition-delay: 480ms; }
+  [data-animate-stagger].animate-in > *:nth-child(8) { transition-delay: 560ms; }
+
   @media (prefers-reduced-motion: reduce) {
-    [data-animate] {
+    [data-animate],
+    [data-animate-stagger] > * {
       opacity: 1;
       transform: none;
       transition: none;
     }
   }
+</style>

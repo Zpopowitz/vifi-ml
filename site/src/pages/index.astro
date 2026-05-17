@@ -9,276 +9,832 @@ const c = entry.data;
 ---
 
 <Layout title={c.meta.title} description={c.meta.description}>
+  <a href="#main" class="skip-link">Skip to content</a>
+
   <SiteHeader />
 
-  <!-- ============================================================ HERO -->
-  <section class="bg-ink px-6 pt-20 pb-24 md:pt-28 md:pb-32">
-    <div class="mx-auto max-w-6xl">
-      <p class="mb-6 text-sm font-medium uppercase tracking-widest text-accent">
-        {c.hero.eyebrow}
-      </p>
-      <h1
-        class="text-4xl font-bold leading-[1.05] tracking-tight text-paper md:text-6xl"
-      >
-        {c.hero.headline_line1}
-        <br class="hidden sm:block" />
-        from <span class="text-accent">{c.hero.headline_highlight}</span>
-        {" "}
-        {c.hero.headline_line2}
-      </h1>
-            <!-- ECG sweep through the gap between headline and tagline -->
-       <div class="ecg-overlay pointer-events-none mt-6 hidden md:flex h-20 items-center overflow-hidden md:h-24">
-             <svg
-        class="ecg-trace w-full flex-shrink-0"
-        viewBox="0 0 2000 100"
-        preserveAspectRatio="none"
-      >
-        <path
-          d="M 0 50 L 1300 50 L 1320 56 L 1360 8 L 1410 92 L 1460 50 L 1500 44 L 1560 44 L 1600 50 L 2000 50"
-          pathLength="100"
-          stroke="#34d399"
-          stroke-width="1.5"
-          fill="none"
-          opacity="0.7"
-          stroke-linecap="butt"
-          stroke-linejoin="miter"
-          vector-effect="non-scaling-stroke"
-        />
-        <path
-          d="M 0 50 L 1300 50 L 1320 56 L 1360 8 L 1410 92 L 1460 50 L 1500 44 L 1560 44 L 1600 50 L 2000 50"
-          pathLength="100"
-          stroke="#34d399"
-          stroke-width="1.5"
-          fill="none"
-          opacity="0.7"
-          stroke-linecap="butt"
-          stroke-linejoin="miter"
-          vector-effect="non-scaling-stroke"
-        />
-</svg>      
-</div>
-    <p class="mt-2 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
-        {c.hero.tagline}
-      </p>
-      <div class="mt-10 flex flex-wrap gap-4">
-        <a
-          href="/pilots"
-          class="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-        >
-          {c.hero.primary_cta}
-        </a>
-        <a
-          href={c.links.results}
-          rel="noopener"
-          class="rounded-md border border-slate-700 px-6 py-3 text-sm font-medium text-paper transition hover:border-accent"
-        >
-          {c.hero.secondary_cta}
-        </a>
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="ambient-trace" aria-hidden="true">
+        <svg viewBox="0 0 2400 280" preserveAspectRatio="none" focusable="false"
+             role="img"
+             aria-label="Synthesized waveform: respiration (~0.23 Hz) plus cardiac perturbations (~1.2 Hz), representative of what ViFi measures via WiFi CSI">
+          <path d="M 0.0 91.1 L 10.0 87.7 L 20.0 84.5 L 30.0 81.8 L 40.0 79.3 L 50.0 77.3 L 60.0 75.7 L 70.0 74.4 L 80.0 73.5 L 90.0 73.0 L 100.0 72.8 L 110.0 72.9 L 120.0 73.3 L 130.0 73.9 L 140.0 74.6 L 150.0 75.4 L 160.0 76.3 L 170.0 77.2 L 180.0 78.1 L 190.0 78.9 L 200.0 79.5 L 210.0 79.9 L 220.0 80.2 L 230.0 80.2 L 240.0 79.9 L 250.0 79.4 L 260.0 78.5 L 270.0 77.4 L 280.0 76.1 L 290.0 74.5 L 300.0 72.7 L 310.0 70.7 L 320.0 68.6 L 330.0 66.4 L 340.0 64.2 L 350.0 62.0 L 360.0 59.9 L 370.0 57.8 L 380.0 56.0 L 390.0 54.4 L 400.0 53.1 L 410.0 52.0 L 420.0 51.4 L 430.0 51.1 L 440.0 51.2 L 450.0 51.7 L 460.0 52.6 L 470.0 53.9 L 480.0 55.6 L 490.0 57.7 L 500.0 60.1 L 510.0 62.9 L 520.0 65.9 L 530.0 69.1 L 540.0 72.5 L 550.0 76.0 L 560.0 79.6 L 570.0 83.1 L 580.0 86.6 L 590.0 90.1 L 600.0 93.3 L 610.0 96.4 L 620.0 99.2 L 630.0 101.8 L 640.0 104.1 L 650.0 106.1 L 660.0 107.8 L 670.0 109.2 L 680.0 110.3 L 690.0 111.2 L 700.0 111.8 L 710.0 112.2 L 720.0 112.4 L 730.0 112.5 L 740.0 112.5 L 750.0 112.5 L 760.0 112.5 L 770.0 112.6 L 780.0 112.9 L 790.0 113.3 L 800.0 113.9 L 810.0 114.8 L 820.0 115.9 L 830.0 117.4 L 840.0 119.2 L 850.0 121.4 L 860.0 123.9 L 870.0 126.8 L 880.0 130.0 L 890.0 133.5 L 900.0 137.2 L 910.0 141.2 L 920.0 145.4 L 930.0 149.8 L 940.0 154.2 L 950.0 158.7 L 960.0 163.2 L 970.0 167.6 L 980.0 171.8 L 990.0 175.9 L 1000.0 179.7 L 1010.0 183.3 L 1020.0 186.6 L 1030.0 189.5 L 1040.0 192.1 L 1050.0 194.3 L 1060.0 196.1 L 1070.0 197.6 L 1080.0 198.7 L 1090.0 199.4 L 1100.0 199.8 L 1110.0 199.9 L 1120.0 199.8 L 1130.0 199.4 L 1140.0 198.9 L 1150.0 198.3 L 1160.0 197.6 L 1170.0 197.0 L 1180.0 196.4 L 1190.0 195.9 L 1200.0 195.5 L 1210.0 195.3 L 1220.0 195.4 L 1230.0 195.7 L 1240.0 196.2 L 1250.0 197.0 L 1260.0 198.2 L 1270.0 199.5 L 1280.0 201.2 L 1290.0 203.1 L 1300.0 205.2 L 1310.0 207.4 L 1320.0 209.9 L 1330.0 212.3 L 1340.0 214.9 L 1350.0 217.4 L 1360.0 219.8 L 1370.0 222.2 L 1380.0 224.3 L 1390.0 226.2 L 1400.0 227.9 L 1410.0 229.2 L 1420.0 230.2 L 1430.0 230.8 L 1440.0 231.0 L 1450.0 230.8 L 1460.0 230.2 L 1470.0 229.1 L 1480.0 227.7 L 1490.0 225.9 L 1500.0 223.8 L 1510.0 221.3 L 1520.0 218.6 L 1530.0 215.6 L 1540.0 212.5 L 1550.0 209.3 L 1560.0 206.0 L 1570.0 202.7 L 1580.0 199.4 L 1590.0 196.2 L 1600.0 193.2 L 1610.0 190.4 L 1620.0 187.8 L 1630.0 185.4 L 1640.0 183.3 L 1650.0 181.5 L 1660.0 180.0 L 1670.0 178.8 L 1680.0 177.9 L 1690.0 177.2 L 1700.0 176.8 L 1710.0 176.5 L 1720.0 176.5 L 1730.0 176.5 L 1740.0 176.6 L 1750.0 176.8 L 1760.0 176.9 L 1770.0 176.9 L 1780.0 176.8 L 1790.0 176.5 L 1800.0 175.9 L 1810.0 175.1 L 1820.0 174.0 L 1830.0 172.6 L 1840.0 170.8 L 1850.0 168.7 L 1860.0 166.2 L 1870.0 163.4 L 1880.0 160.2 L 1890.0 156.7 L 1900.0 153.0 L 1910.0 148.9 L 1920.0 144.7 L 1930.0 140.3 L 1940.0 135.9 L 1950.0 131.3 L 1960.0 126.8 L 1970.0 122.4 L 1980.0 118.0 L 1990.0 113.9 L 2000.0 109.9 L 2010.0 106.2 L 2020.0 102.8 L 2030.0 99.8 L 2040.0 97.1 L 2050.0 94.7 L 2060.0 92.8 L 2070.0 91.2 L 2080.0 89.9 L 2090.0 89.1 L 2100.0 88.5 L 2110.0 88.2 L 2120.0 88.1 L 2130.0 88.3 L 2140.0 88.6 L 2150.0 89.0 L 2160.0 89.4 L 2170.0 89.8 L 2180.0 90.2 L 2190.0 90.5 L 2200.0 90.6 L 2210.0 90.5 L 2220.0 90.2 L 2230.0 89.7 L 2240.0 88.9 L 2250.0 87.8 L 2260.0 86.4 L 2270.0 84.7 L 2280.0 82.8 L 2290.0 80.6 L 2300.0 78.2 L 2310.0 75.7 L 2320.0 73.0 L 2330.0 70.2 L 2340.0 67.3 L 2350.0 64.5 L 2360.0 61.8 L 2370.0 59.2 L 2380.0 56.7 L 2390.0 54.5 L 2400.0 52.5"/>
+        </svg>
       </div>
 
-      <dl
-        class="mt-16 grid grid-cols-2 gap-8 border-t border-slate-800 pt-10 md:grid-cols-4"
-      >
-        {c.hero.stats.map((stat) => (
-          <div>
-            <dt class="text-xs uppercase tracking-widest text-slate-500">
-              {stat.label}
-            </dt>
-            <dd class="mt-2 text-3xl font-semibold tracking-tight text-paper">
-              {stat.value}
-            </dd>
-            {stat.sublabel && (
-              <p class="mt-1 text-xs text-slate-500">{stat.sublabel}</p>
-            )}
+      <div class="container hero-content">
+        <h1 class="display wake wake-1">Hospital&#8209;grade vital signs from <em class="soften">$44</em> of WiFi&nbsp;hardware.</h1>
+
+        <div class="container-prose">
+          <p class="lede wake wake-2">Continuous bedside monitoring costs $3,000 per room and gets reserved for the ICU. ViFi delivers wellness-grade contactless monitoring for <a class="cite-link" href="#proof-heading">1/68th the cost</a>, validated against a Polar H10 chest-strap at <a class="cite-link" href="#proof-heading">4.15 bpm cross-session MAE</a>.</p>
+          <div class="cta-row wake wake-3">
+            <a href="/results" class="btn btn-primary">Read the methodology →</a>
+            <a href="/pilots" class="btn btn-secondary">Request a pilot kit →</a>
           </div>
-        ))}
-      </dl>    
-    </div>
-  </section>
-
-  <!-- ============================================================ PROBLEM -->
-  <section id="problem" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24">
-    <div class="mx-auto max-w-3xl">
-      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
-        {c.problem.eyebrow}
-      </p>
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        {c.problem.heading}
-      </h2>
-      <div class="mt-8 space-y-6 text-lg leading-relaxed text-slate-300">
-        {c.problem.paragraphs.map((p) => <p>{p}</p>)}
-        <p class="border-l-2 border-accent pl-6 italic text-slate-400">
-          {c.problem.pullquote}
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================ HOW IT WORKS -->
-  <section id="how" data-animate="right" class="bg-ink px-6 py-24">
-    <div class="mx-auto max-w-5xl">
-      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
-        {c.how_it_works.eyebrow}
-      </p>
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        {c.how_it_works.heading}
-      </h2>
-      <p class="mt-6 max-w-3xl text-lg leading-relaxed text-slate-300">
-        {c.how_it_works.intro}
-      </p>
-
-      <p class="mt-10 text-sm text-slate-500">
-        For full methodology, signal pipeline, and validation runs:
-        <a
-          href={c.links.results}
-          class="text-accent hover:text-accentDark underline"
-        >read the results</a>.
-      </p>
-    </div>
-  </section>
-
-  <!-- ============================================================ PROOF -->
-<section id="proof" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24">
-  <div class="mx-auto max-w-5xl">
-    <div class="grid items-start gap-10 md:grid-cols-2">
-      <!-- LEFT: eyebrow + heading + body + link -->
-      <div>
-        <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
-          {c.proof.eyebrow}
-        </p>
-        <h2 class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl">
-          {c.proof.heading_line1}
-          <br class="hidden md:block" />
-          {c.proof.heading_line2}
-        </h2>
-        <div class="mt-8 space-y-4 text-slate-300">
-          {c.proof.paragraphs.map((p) => <p>{p}</p>)}
-          <p class="text-sm text-slate-500">
-            <a
-              href={c.links.results}
-              rel="noopener"
-              class="text-accent hover:text-accentDark underline"
-            >
-              {c.proof.results_link_text}
-            </a>
-          </p>
         </div>
       </div>
+    </section>
 
-      <!-- RIGHT: photo, aligned to top -->
-      <img
-        src="/esp32-array.jpg"
-        alt="The ViFi ESP32-S3 array — two chips with dual-band antennas, the rig used for the 4.15 bpm result"
-        class="aspect-[4/3] w-full max-w-xs sm:max-w-md mx-auto rounded-lg border border-slate-800 object-cover"
-      />
-    </div>
+    <!-- ============ PROOF ============ -->
+    <section class="proof" aria-labelledby="proof-heading" data-animate="up">
+      <div class="container">
+        <p class="section-eyebrow">{c.proof.eyebrow}</p>
+        <h2 id="proof-heading" class="section-heading">{c.proof.heading_line1} <em>{c.proof.heading_line2}</em></h2>
+        <p class="section-lede">{c.proof.paragraphs[0]}</p>
 
-      <div class="mt-16 overflow-hidden rounded-lg border border-slate-800">
-        <table class="w-full text-sm">
-          <thead class="bg-ink text-left text-slate-500">
-            <tr>
-              <th class="px-4 py-3 font-medium">System</th>
-              <th class="px-4 py-3 font-medium">HR MAE</th>
-              <th class="px-4 py-3 font-medium">Hardware</th>
-              <th class="px-4 py-3 font-medium">Per-node cost</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-800 bg-slate-950">
-            {c.proof.comparison_rows.map((row) => (
-              <tr class={row.highlight ? "text-accent" : "text-slate-400"}>
-                <td class="px-4 py-3 font-semibold">{row.system}</td>
-                <td class="px-4 py-3">{row.mae}</td>
-                <td class="px-4 py-3">{row.hardware}</td>
-                <td class="px-4 py-3">{row.per_node_cost}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================ ROADMAP -->
-  <section id="roadmap" data-animate="right" class="bg-ink px-6 py-24">
-    <div class="mx-auto max-w-3xl">
-      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
-        {c.roadmap.eyebrow}
-      </p>
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        {c.roadmap.heading}
-      </h2>
-      <p class="mt-6 text-lg leading-relaxed text-slate-300">
-        {c.roadmap.intro}
-      </p>
-
-      <ol class="mt-10 space-y-6">
-        {c.roadmap.steps.map((step, i) => (
-          <li class="flex gap-4">
-            <span
-              class="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-ink"
-            >
-              {i + 1}
-            </span>
-            <div>
-              {step.date && (
-                <p class="text-xs font-medium uppercase tracking-widest text-accent">
-                  {step.date}
-                </p>
-              )}
-              <h3 class="mt-1 font-semibold text-paper">{step.title}</h3>
-              <p class="mt-1 text-slate-300">{step.body}</p>
+        <div class="comparison" role="table" aria-label="Heart-rate accuracy comparison across systems" data-animate-stagger>
+          {c.proof.comparison_rows.map((row) => (
+            <div class={`comparison-row ${row.highlight ? "featured" : ""}`} role="row">
+              <div class="row-name" role="cell">
+                {row.highlight
+                  ? <span class="featured-mark">{row.system}</span>
+                  : <>{row.system}{row.system.startsWith("PhaseBeat") && <span class="cite">INFOCOM '17</span>}</>
+                }
+              </div>
+              <div class="row-hardware" role="cell">{row.hardware}</div>
+              <div class="row-cost" role="cell">{row.per_node_cost} / node</div>
+              <div class="row-mae" role="cell">{row.mae}</div>
             </div>
-          </li>
-        ))}
-      </ol>
+          ))}
+        </div>
 
-      <p class="mt-10 text-sm text-slate-500">
-        <a
-          href={c.links.roadmap}
-          rel="noopener"
-          class="text-accent hover:text-accentDark underline"
-        >
-          {c.roadmap.live_manifest_text}
-        </a>
-      </p>
-    </div>
-  </section>
+        <p class="comparison-caption">
+          ViFi delivers <strong>96%</strong> of PhaseBeat's accuracy at <strong>4.4%</strong> of its cost. Against a clinical bedside monitor, it's <strong>1/136th</strong> the per-room cost.
+        </p>
 
-  <!-- ============================================================ HOSPITALS -->
-  <section
-    id="hospitals" data-animate="left" class="border-y border-slate-800 bg-slate-950 px-6 py-24"
-  >
-    <div class="mx-auto max-w-3xl">
-      <p
-        class="mb-4 text-sm font-medium uppercase tracking-widest text-accent"
-      >
-        {c.hospitals.eyebrow}
-      </p>
-      <h2
-        class="text-3xl font-bold leading-tight tracking-tight text-paper md:text-4xl"
-      >
-        {c.hospitals.heading}
-      </h2>
-      <div class="mt-8 space-y-5 text-lg leading-relaxed text-slate-300">
-        {c.hospitals.intro_paragraphs.map((p) => <p>{p}</p>)}
-        <ul class="list-disc space-y-2 pl-6 text-slate-400">
+        <aside class="next-read">
+          <p class="next-read-context">{c.proof.results_link_text.split(":")[0]}.</p>
+          <a class="next-read-link" href={c.links.results}>
+            Read our results
+            <span class="next-read-arrow" aria-hidden="true">→</span>
+          </a>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ PROBLEM ============ -->
+    <section class="problem" aria-labelledby="problem-heading" data-animate="up">
+      <div class="container container-prose">
+        <p class="section-eyebrow">{c.problem.eyebrow}</p>
+        <h2 id="problem-heading" class="section-heading">{c.problem.heading}</h2>
+
+        <div class="stat-callout" data-animate-stagger>
+          <div class="stat-cell">
+            <div class="stat-num">2.3M</div>
+            <div class="stat-label">U.S. med-surg<br>+ SNF beds</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">23<span class="stat-unit">hrs/day</span></div>
+            <div class="stat-label">patients sit<br>unmonitored</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">4–8<span class="stat-unit">hrs</span></div>
+            <div class="stat-label">between<br>nursing rounds</div>
+          </div>
+        </div>
+
+        <div class="prose">
+          {c.problem.paragraphs.map((p) => <p>{p}</p>)}
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ WHY THIS EXISTS ============ -->
+    <section class="why" aria-labelledby="why-heading" data-animate="up">
+      <div class="container">
+        <p class="section-eyebrow" id="why-heading">From the founder</p>
+        <figure>
+          <blockquote>{c.problem.pullquote}</blockquote>
+          <figcaption>Zach Popowitz · founder</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="how" aria-labelledby="how-heading" data-animate="up">
+      <div class="container container-prose">
+        <p class="section-eyebrow">{c.how_it_works.eyebrow}</p>
+        <h2 id="how-heading" class="section-heading">{c.how_it_works.heading}</h2>
+        <p class="section-lede">{c.how_it_works.intro}</p>
+
+        <pre class="diagram" aria-label="Signal path diagram: ESP32-S3 transmitter sends 192 subcarriers across the room to the ESP32-S3 receiver; chest motion perturbs the path; data flows over USB serial at 921600 baud through csi_capture.py to first_capture_report.py, producing HR and RR predictions validated against Polar H10 ground truth"
+>{c.how_it_works.diagram}</pre>
+
+        <h3 class="subsection-heading">{c.how_it_works.signal_path_title}</h3>
+        <ol class="pipeline" data-animate-stagger>
+          {c.how_it_works.signal_path_steps.map((step) => <li>{step}</li>)}
+        </ol>
+
+        <h3 class="subsection-heading">{c.how_it_works.prior_art_title}</h3>
+        <p class="prose-paragraph">{c.how_it_works.prior_art}</p>
+      </div>
+    </section>
+
+    <!-- ============ ROADMAP ============ -->
+    <section class="roadmap" aria-labelledby="roadmap-heading" data-animate="up">
+      <div class="container container-prose">
+        <p class="section-eyebrow">{c.roadmap.eyebrow}</p>
+        <h2 id="roadmap-heading" class="section-heading">{c.roadmap.heading}</h2>
+        <p class="section-lede">{c.roadmap.intro}</p>
+
+        <ol class="timeline" data-animate-stagger>
+          {c.roadmap.steps.map((step) => (
+            <li>
+              <p class="step-date">{step.date}</p>
+              <h3 class="step-title">{step.title}</h3>
+              <p class="step-body">{step.body}</p>
+            </li>
+          ))}
+        </ol>
+
+        <aside class="next-read">
+          <p class="next-read-context">{c.roadmap.live_manifest_text.split(":")[0]}.</p>
+          <a class="next-read-link" href={c.links.roadmap}>
+            Read our roadmap
+            <span class="next-read-arrow" aria-hidden="true">→</span>
+          </a>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ PILOT CTA ============ -->
+    <section class="pilot-cta" aria-labelledby="pilot-heading" data-animate="up">
+      <div class="container container-prose">
+        <p class="section-eyebrow">{c.hospitals.eyebrow}</p>
+        <h2 id="pilot-heading" class="section-heading">{c.hospitals.heading}</h2>
+        <div class="prose">
+          {c.hospitals.intro_paragraphs.map((p) => <p>{p}</p>)}
+        </div>
+        <ul class="pilot-bullets" data-animate-stagger>
           {c.hospitals.pilot_bullets.map((b) => <li>{b}</li>)}
         </ul>
+        <a href="/pilots" class="btn btn-primary" style="margin-top: 8px;">{c.hospitals.cta}</a>
       </div>
-      <a
-        href="/pilots"
-        class="mt-10 inline-block rounded-md bg-accent px-6 py-3 text-sm font-semibold text-ink transition hover:bg-accentDark hover:text-paper"
-      >
-        {c.hospitals.cta}
-      </a>
-    </div>
-  </section>
+    </section>
+  </main>
 
   <SiteFooter />
 </Layout>
+
+<style>
+  /* ============ ENTRANCE ============ */
+  @keyframes wake {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .wake { opacity: 0; animation: wake 1.2s cubic-bezier(.2,.6,.2,1) forwards; }
+  .wake-1 { animation-delay: 0.05s; }
+  .wake-2 { animation-delay: 0.35s; }
+  .wake-3 { animation-delay: 0.6s; }
+
+  /* Fraunces SOFT-axis morph on entrance (variable-font signature move) */
+  @keyframes soft-morph {
+    from { font-variation-settings: "SOFT" 30,  "opsz" 144; }
+    to   { font-variation-settings: "SOFT" 100, "opsz" 144; }
+  }
+  .soften { animation: soft-morph 0.8s cubic-bezier(.3,.6,.2,1) 0.7s both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wake { animation: none; opacity: 1; transform: none; }
+    .soften { animation: none; font-variation-settings: "SOFT" 100, "opsz" 144; }
+  }
+
+  /* ============ LAYOUT ============ */
+  .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
+  .container-prose { max-width: 720px; padding: 0; }
+
+  /* ============ HERO ============ */
+  .hero {
+    position: relative;
+    padding: 96px 0 80px;
+    overflow: hidden;
+  }
+  .ambient-trace {
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 200px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: var(--trace-opacity);
+  }
+  .ambient-trace svg { width: 100%; height: 100%; display: block; }
+  .ambient-trace path {
+    stroke: var(--trace);
+    stroke-width: 1.0;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: hero-ecg-sweep 14s linear infinite;
+    animation-delay: 1.2s;
+  }
+  @keyframes hero-ecg-sweep {
+    0%   { stroke-dashoffset: 100; opacity: 1; }
+    82%  { stroke-dashoffset: 0;   opacity: 1; }
+    94%  { stroke-dashoffset: 0;   opacity: 1; }
+    100% { stroke-dashoffset: 0;   opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ambient-trace path { animation: none; stroke-dashoffset: 0; opacity: 0.55; }
+  }
+
+  .hero-content { position: relative; z-index: 1; }
+
+  h1.display {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(40px, 5.8vw, 76px);
+    line-height: 1.03;
+    letter-spacing: -0.024em;
+    color: var(--ink);
+    /* 22ch lets text-wrap: balance land on 2 lines at desktop widths
+       (e.g. "Hospital-grade vital signs / from $44 of WiFi hardware.")
+       instead of the awkward 3-line break at 16ch. */
+    max-width: 22ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 144;
+    /* Tightened from 260px so primary CTAs sit above the fold on
+       1440×900. The ambient waveform still has room (it lives in the
+       absolute-positioned .ambient-trace, centered vertically). */
+    margin: 0 0 180px 0;
+  }
+  h1.display em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .lede {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 56ch;
+    margin: 0 0 44px 0;
+    text-wrap: pretty;
+  }
+
+  .cite-link {
+    color: inherit;
+    text-decoration: underline dotted var(--rule);
+    text-underline-offset: 5px;
+    text-decoration-thickness: 1px;
+    transition: text-decoration-color 220ms ease-out, color 220ms ease-out;
+  }
+  .cite-link:hover, .cite-link:focus-visible {
+    text-decoration-color: var(--accent);
+    color: var(--accent);
+  }
+  .cite-link:visited { color: inherit; }
+  .cite-link:visited:hover { color: var(--accent-visited); }
+
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 14px 22px;
+    border-radius: 4px;
+    transition: background-color 180ms ease-out, color 180ms ease-out, border-color 180ms ease-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+  }
+  .btn-primary { background: var(--accent); color: var(--paper); border: 1px solid var(--accent); }
+  .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid transparent; }
+  .btn-secondary:hover { color: var(--accent-2); }
+  .btn-secondary:visited { color: var(--accent-visited); }
+
+  /* ============ PROOF ============ */
+  .proof {
+    padding: 120px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .section-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 32px;
+  }
+  h2.section-heading {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(32px, 4.4vw, 52px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 20ch;
+    text-wrap: balance;
+    font-variation-settings: "SOFT" 30, "opsz" 96;
+    margin: 0 0 40px 0;
+  }
+  h2.section-heading em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--muted);
+    font-variation-settings: "SOFT" 100, "opsz" 96;
+  }
+  .section-lede {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0 0 72px 0;
+    text-wrap: pretty;
+  }
+
+  .comparison { margin: 0 0 56px 0; }
+  .comparison-row {
+    display: grid;
+    grid-template-columns: 2fr 2fr 1.2fr 1.2fr;
+    gap: 24px;
+    align-items: baseline;
+    padding: 28px 24px;
+    border-bottom: 1px solid var(--rule);
+    transition: background-color 180ms ease-out;
+    margin: 0 -24px;
+  }
+  .comparison-row:hover { background: var(--row-hover); }
+  .comparison-row:first-child { border-top: 1px solid var(--rule); }
+  .row-name {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: 22px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variation-settings: "SOFT" 30, "opsz" 28;
+  }
+  .row-name .cite {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 8px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .row-hardware {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 15px;
+    color: var(--ink-2);
+  }
+  .row-cost, .row-mae {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 15px;
+    color: var(--ink-2);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Featured row (ViFi) — background fill, accent left stripe, all values
+     in ink color so the row reads as THE result, not just one option. */
+  .comparison-row.featured {
+    background: var(--paper-2);
+    position: relative;
+  }
+  .comparison-row.featured::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .comparison-row.featured:hover { background: var(--paper-3); }
+  .comparison-row.featured .row-name .featured-mark {
+    font-style: italic;
+    font-variation-settings: "SOFT" 80, "opsz" 28;
+    color: var(--ink);
+  }
+  .comparison-row.featured .row-hardware,
+  .comparison-row.featured .row-mae,
+  .comparison-row.featured .row-cost {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* "Next-read" — the editorial continuation pattern used at the end of
+     Proof and Roadmap. Hairline above separates it from the body it
+     summarizes; italic context line on the left holds the descriptor
+     ("Full methodology, captures, and per-session breakdowns."); a
+     deliberate sans-serif link on the right is the destination. The
+     arrow nudges right on hover so the affordance is unmistakable. */
+  .next-read {
+    margin: 56px 0 0 0;
+    padding: 28px 0 0 0;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px 56px;
+    align-items: baseline;
+  }
+  .next-read-context {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-style: italic;
+    font-size: 17px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 50ch;
+    text-wrap: pretty;
+  }
+  .next-read-link {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    border-bottom: 1px solid var(--accent);
+    padding-bottom: 4px;
+    white-space: nowrap;
+    transition: color 180ms ease-out, border-color 180ms ease-out;
+  }
+  .next-read-arrow {
+    display: inline-block;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-style: normal;
+    transition: transform 220ms cubic-bezier(.2,.6,.2,1);
+  }
+  .next-read-link:hover .next-read-arrow,
+  .next-read-link:focus-visible .next-read-arrow {
+    transform: translateX(4px);
+  }
+  .next-read-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  .next-read-link:visited {
+    color: var(--accent-visited);
+    border-bottom-color: var(--accent-visited);
+  }
+  @media (max-width: 600px) {
+    .next-read {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+  }
+
+  /* Comparison caption: distills the table's math into one sentence */
+  .comparison-caption {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 70ch;
+    margin: 32px 0;
+    text-wrap: pretty;
+  }
+  .comparison-caption strong {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Stat callout (Problem section): three big numbers, one row of typography */
+  .stat-callout {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin: 40px 0 48px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .stat-cell {
+    padding: 40px 32px 40px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .stat-cell:last-child { border-right: none; padding-right: 0; }
+  .stat-cell:nth-child(n+2) { padding-left: 32px; }
+  .stat-num {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    /* Bumped to display weight — these are the three numbers the page
+       wants you to remember (med-surg beds, unmonitored hours, time
+       between rounds). They should stop the eye, not blend with body. */
+    font-size: clamp(52px, 6.5vw, 84px);
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    font-variation-settings: "SOFT" 30, "opsz" 144;
+    margin-bottom: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-unit {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.34em;
+    color: var(--muted);
+    margin-left: 6px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    position: relative;
+    top: -0.1em;
+  }
+  .stat-label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    line-height: 1.45;
+  }
+  @media (max-width: 600px) {
+    .stat-callout { grid-template-columns: 1fr; }
+    .stat-cell { border-right: none; border-bottom: 1px solid var(--rule); padding: 20px 0; }
+    .stat-cell:last-child { border-bottom: none; }
+    .stat-cell:nth-child(n+2) { padding-left: 0; }
+  }
+
+  /* ============ PROBLEM ============ */
+  .problem {
+    padding: 120px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .problem .prose,
+  .pilot-cta .prose {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--ink-2);
+  }
+  .problem .prose > p + p,
+  .pilot-cta .prose > p + p {
+    margin-top: 1.2em;
+  }
+  .problem .prose p,
+  .pilot-cta .prose p {
+    max-width: 60ch;
+    text-wrap: pretty;
+  }
+  .section-lede {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0 0 56px 0;
+    text-wrap: pretty;
+  }
+
+  /* ============ HOW IT WORKS ============ */
+  .how {
+    padding: 120px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .diagram {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 24px 28px;
+    margin: 36px 0 56px 0;
+    overflow-x: auto;
+    white-space: pre;
+    tab-size: 4;
+  }
+  .subsection-heading {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.2;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variation-settings: "SOFT" 30, "opsz" 36;
+    margin: 48px 0 16px 0;
+  }
+  .subsection-heading:first-of-type { margin-top: 0; }
+  .pipeline {
+    list-style: none;
+    counter-reset: pipeline-step;
+    padding: 0;
+    margin: 0 0 16px 0;
+  }
+  .pipeline li {
+    counter-increment: pipeline-step;
+    position: relative;
+    padding-left: 36px;
+    margin-bottom: 12px;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+  .pipeline li::before {
+    content: counter(pipeline-step, decimal-leading-zero);
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    line-height: 1.55;
+    padding-top: 4px;
+    letter-spacing: 0.04em;
+  }
+  .prose-paragraph {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.65;
+    color: var(--ink-2);
+    max-width: 65ch;
+    text-wrap: pretty;
+  }
+
+  /* ============ ROADMAP ============ */
+  .roadmap {
+    padding: 120px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    position: relative;
+  }
+  /* Vertical line connecting all timeline steps — runs the full height. */
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: var(--rule);
+  }
+  .timeline li {
+    padding: 24px 0 24px 40px;
+    position: relative;
+  }
+  .timeline li:not(:last-child) { margin-bottom: 8px; }
+  /* Dot marker on each step — sits on the vertical line */
+  .timeline li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 32px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 2px solid var(--accent);
+    box-sizing: border-box;
+  }
+  /* First step gets a filled dot (current/active state) */
+  .timeline li:first-child::before {
+    background: var(--accent);
+  }
+  .step-date {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .step-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.2;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variation-settings: "SOFT" 30, "opsz" 36;
+    margin: 0 0 10px 0;
+    text-wrap: balance;
+  }
+  .step-body {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 65ch;
+    text-wrap: pretty;
+    margin: 0;
+  }
+
+  /* ============ PILOT CTA ============
+     The page's closing "ask" — give it a paper-2 fill so it reads as a
+     deliberate destination rather than a footer afterthought, and keep
+     the section-heading at full display weight (no per-section override
+     needed; .section-heading already scales to 52px). */
+  .pilot-cta {
+    padding: 120px 0;
+    background: var(--paper-2);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .pilot-bullets {
+    list-style: none;
+    padding: 0;
+    margin: 32px 0 40px 0;
+  }
+  .pilot-bullets li {
+    position: relative;
+    padding-left: 24px;
+    margin-bottom: 12px;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 65ch;
+  }
+  .pilot-bullets li::before {
+    content: "·";
+    position: absolute;
+    left: 4px;
+    top: -2px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 1.6em;
+    line-height: 1;
+  }
+
+  /* ============ WHY THIS EXISTS ============ */
+  .why {
+    padding: 120px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .why figure { margin: 0; }
+  .why blockquote {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-style: italic;
+    font-size: clamp(26px, 3.2vw, 40px);
+    line-height: 1.35;
+    color: var(--ink);
+    max-width: 28em;
+    text-wrap: pretty;
+    margin: 0;
+    quotes: none;
+    letter-spacing: -0.005em;
+  }
+  .why blockquote::before {
+    content: "";
+    display: block;
+    width: 48px;
+    height: 1.5px;
+    background: var(--ink);
+    margin-bottom: 40px;
+  }
+  .why figcaption {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-top: 28px;
+    font-style: normal;
+  }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 760px) {
+    .hero { padding: 64px 0 80px; }
+    h1.display { margin-bottom: 160px; }
+    .ambient-trace { height: 140px; }
+    .proof, .why, .problem, .how, .roadmap, .pilot-cta { padding: 72px 0; }
+    .comparison-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 20px 24px;
+    }
+    .row-cost, .row-mae { text-align: left; }
+    .diagram { font-size: 10px; padding: 16px 18px; }
+    .timeline li { padding: 24px 0; }
+  }
+
+  /* ============ PRINT ============ */
+  @media print {
+    .hero { padding: 32px 0 24px; }
+    h1.display { margin-bottom: 24px; font-size: 28pt; }
+    .ambient-trace, .cta-row, .skip-link { display: none !important; }
+    .proof, .why { padding: 24px 0; border-top: 1px solid #999; page-break-inside: avoid; }
+    .comparison-row { padding: 12px 0; margin: 0; }
+    .comparison-row:hover { background: transparent; }
+    .wake, .soften { animation: none; opacity: 1; transform: none; }
+    .soften { font-variation-settings: "SOFT" 100, "opsz" 144; }
+  }
+</style>

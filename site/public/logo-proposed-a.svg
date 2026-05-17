@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" role="img" aria-label="ViFi">
+  <title>ViFi — refined current direction (Concept A)</title>
+  <!--
+    Concept A — refined evolution of the current logo.
+    Keeps all three elements (wordmark, ECG, WiFi arcs) but resolves the issues:
+    - Square i-dots instead of round (matches the geometric character)
+    - ECG line passes UNDER the letters, not through (preserves legibility)
+    - WiFi arcs reduced to 2 (was 3), tighter to the "i" dot, optical-centered
+    - Tighter kerning, balanced proportions
+    - Light-mode by default; dark variant via .dark-mode class
+  -->
+  <defs>
+    <style>
+      .wordmark { fill: #1A1A1A; }
+      .signal { stroke: #0E9F66; fill: none; }
+      .signal-fill { fill: #0E9F66; }
+      .dark-mode .wordmark { fill: #F4EFE4; }
+      .dark-mode .signal { stroke: #34D399; }
+      .dark-mode .signal-fill { fill: #34D399; }
+    </style>
+  </defs>
+
+  <!-- WiFi arcs (2 nested, above wordmark, emanating from optical center of "iFi") -->
+  <g class="signal" stroke-width="6" stroke-linecap="round">
+    <path d="M 470 100 A 90 90 0 0 1 600 100" />
+    <path d="M 495 90 A 55 55 0 0 1 575 90" />
+  </g>
+
+  <!-- WiFi source dot (anchors the arcs) -->
+  <circle class="signal-fill" cx="535" cy="125" r="9" />
+
+  <!-- Wordmark "ViFi" -->
+  <!-- V -->
+  <path class="wordmark" d="M 110 130 L 175 280 L 200 280 L 265 130 L 220 130 L 187 215 L 154 130 Z" />
+  <!-- i (first) -->
+  <rect class="wordmark" x="295" y="130" width="32" height="150" />
+  <rect class="wordmark" x="295" y="95" width="32" height="22" />
+  <!-- F -->
+  <rect class="wordmark" x="380" y="130" width="32" height="150" />
+  <rect class="wordmark" x="380" y="130" width="120" height="32" />
+  <rect class="wordmark" x="380" y="180" width="90" height="28" />
+  <!-- i (second) -->
+  <rect class="wordmark" x="555" y="130" width="32" height="150" />
+  <rect class="wordmark" x="555" y="95" width="32" height="22" />
+
+  <!-- ECG pulse UNDER the wordmark (full PQRST, centered, runs full width) -->
+  <path class="signal" stroke-width="4" stroke-linejoin="miter" stroke-linecap="butt"
+        d="M 50 260
+           L 145 260
+           L 160 252
+           L 175 268
+           L 195 220
+           L 215 295
+           L 230 260
+           L 250 256
+           L 290 256
+           L 305 260
+           L 605 260
+           L 620 252
+           L 635 268
+           L 655 220
+           L 675 295
+           L 690 260
+           L 750 260" />
+</svg>
