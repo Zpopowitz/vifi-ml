@@ -18,7 +18,7 @@ hypothesis==6.152.5          # property-based DSP testing
 ruff==0.15.12
 mypy==1.11.2
 types-redis==4.6.0.20240903
-types-PyYAML==6.0.12.20240917
+types-PyYAML==6.0.12.20260518
 PyYAML==6.0.3                # for compose tests
 
 # Security scanning
