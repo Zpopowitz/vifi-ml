@@ -35,7 +35,7 @@ ANTENNA_HEIGHT_CM=110
 # IMPORTANT: must match what TX+RX firmware is flashed to. After reflashing
 # the boards (see docs/ESP32_SETUP.md), update this value. Channel 1 is the
 # cleanest 2.4 GHz channel in residential RF environments.
-WIFI_CHANNEL=11
+WIFI_CHANNEL=1
 
 # Pi connection (mDNS hostname resolved via Windows PowerShell)
 PI_HOSTNAME="vifi-pi-room1.local"

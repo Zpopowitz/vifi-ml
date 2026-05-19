@@ -50,23 +50,38 @@ The receiver runs `examples/get-started/csi_recv` from `esp-csi`. It
 puts the WiFi radio into promiscuous mode on a chosen channel and
 prints `CSI_DATA,...` lines for every captured packet.
 
+**Channel + bandwidth + ESP-NOW phymode are hardcoded in the source**
+(not menuconfig). Edit these three `#define`s near the top of
+`csi_recv/main/app_main.c` before building:
+
+```c
+#define CONFIG_LESS_INTERFERENCE_CHANNEL   1               // 1 = cleanest 2.4 GHz channel
+#define CONFIG_WIFI_BANDWIDTH              WIFI_BW20       // HT20 = quieter spectrum, 128 subcarriers
+#define CONFIG_ESP_NOW_PHYMODE             WIFI_PHY_MODE_HT20  // must match WIFI_BANDWIDTH
+```
+
+The `csi_send` project has the same three defines; **change them together
+on both boards** — TX and RX must agree on channel + bandwidth + ESP-NOW
+phymode or no packets get exchanged.
+
+Then build and flash:
+
 ```bash
 cd ~/esp/esp-csi/examples/get-started/csi_recv
-
 idf.py set-target esp32s3
+
+# Optional one-time menuconfig for country code (US) and CSI rate.
+# Channel/bandwidth are NOT in menuconfig — see #defines above.
 idf.py menuconfig
-#   In the menu:
-#     Component config → Wi-Fi → "Wi-Fi country code" → US
-#     Example Configuration → "WiFi Channel" → 11  (must match TX!)
-#     Example Configuration → "CSI rate (Hz)"  → 100  (or whatever you want)
 
 # Plug in the RX board, find the port:
 ls /dev/ttyUSB*    # Linux
 # or:
 ls /dev/cu.usbserial-*    # macOS
+# or on Windows: check Device Manager for the COMn assigned by the CP2102N
 
-# Flash + monitor:
-idf.py -p /dev/ttyUSB0 -b 921600 flash monitor
+# Build + flash + monitor:
+idf.py -p /dev/ttyUSB0 -b 921600 build flash monitor
 ```
 
 You should see scrolling `CSI_DATA,STA,...,[ints]` lines in the
@@ -86,14 +101,15 @@ WiFi packet at the same rate the RX expects (default 100 Hz).
 ```bash
 cd ~/esp/esp-csi/examples/get-started/csi_send
 idf.py set-target esp32s3
-idf.py menuconfig
-#     Example Configuration → "WiFi Channel" → 6   (MUST match RX)
-#     Example Configuration → "Send rate (Hz)" → 100
+
+# Edit csi_send/main/app_main.c — the same three #defines as csi_recv
+# (CONFIG_LESS_INTERFERENCE_CHANNEL, CONFIG_WIFI_BANDWIDTH,
+# CONFIG_ESP_NOW_PHYMODE). The two boards MUST match.
 
 # Plug in the TX board (different USB port if RX is still plugged in):
 ls /dev/ttyUSB*
 
-idf.py -p /dev/ttyUSB1 -b 921600 flash monitor
+idf.py -p /dev/ttyUSB1 -b 921600 build flash monitor
 ```
 
 You should see `[csi_send] sent N packets` log lines. **The TX board
@@ -101,16 +117,30 @@ doesn't need to stay plugged into the host once flashed** — it can run
 off any USB power source (wall wart, power bank). Only the RX board
 needs to be on the host.
 
-## Channel matching is the #1 gotcha
+## Channel + bandwidth matching is the #1 gotcha
 
-The TX and RX **must be on the same WiFi channel**. Channel 11 (2.4 GHz,
-2462 MHz, HT40) is what every published capture in `RESULTS.md` used; if
-you change it, you have to re-flash both boards. Pick once and don't
-change it without good reason — changing channel mid-experiment makes
-sessions non-comparable.
+The TX and RX **must be on the same WiFi channel, bandwidth, and ESP-NOW
+phymode**. Mismatch on any of the three means packets aren't exchanged.
+Verify by tailing the RX serial monitor and confirming `CSI_DATA` lines
+appear; the 11th field is the channel.
 
-To check: in the RX serial monitor, verify the `CSI_DATA` line's 11th
-field (channel) matches what you set.
+**Current recommended config** (cleanest 2.4 GHz environment, validated
+on `bedroom_1`):
+- `CONFIG_LESS_INTERFERENCE_CHANNEL = 1` — least-congested 2.4 GHz channel
+  in residential RF environments (furthest from microwave-oven leak at
+  ~2.45 GHz, rarely auto-selected by consumer routers, edge channel so
+  one-sided collision risk).
+- `CONFIG_WIFI_BANDWIDTH = WIFI_BW20` — HT20 has half the spectral
+  footprint of HT40 with no CSI-rate downside (rate is governed by TX
+  `send_rate`, not bandwidth). HT20 emits 128 subcarriers per packet
+  vs HT40's 192; the pipeline handles both.
+- `CONFIG_ESP_NOW_PHYMODE = WIFI_PHY_MODE_HT20` — must match the
+  bandwidth setting.
+
+**Historical note:** captures up through May 2026 (the original 4.15 bpm
+LOSO baseline) used channel 11 / HT40 / 192 subcarriers. Sessions on
+different (channel, bandwidth) configs are not directly comparable —
+the eval harness should stratify by `wifi_channel` in `session.json`.
 
 ## Sanity check before captures
 
