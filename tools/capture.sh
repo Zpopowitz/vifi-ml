@@ -31,7 +31,7 @@ TX_RX_DIST_M=3.0
 SUBJECT_TX_DIST_M=1.5
 SUBJECT_ON_AXIS=true
 ANTENNA_TYPE=patch
-ANTENNA_HEIGHT_CM=110
+ANTENNA_HEIGHT_CM=91
 # IMPORTANT: must match what TX+RX firmware is flashed to. After reflashing
 # the boards (see docs/ESP32_SETUP.md), update this value. Channel 1 is the
 # cleanest 2.4 GHz channel in residential RF environments.
