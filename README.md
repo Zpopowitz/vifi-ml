@@ -175,7 +175,7 @@ curl -X POST http://localhost:8000/predict/demo \
 A pair of ESP32-S3 chips, one transmitting and one receiving, exchange WiFi packets at ~70-100 packets/sec. Each received packet's per-subcarrier amplitude (Channel State Information, CSI) reflects the multipath environment — including chest-wall motion from breathing and heartbeat.
 
 ```
-[ESP32-S3 TX] ----- 192 subcarriers -----> [ESP32-S3 RX]
+[ESP32-S3 TX] ---- 128/192 subcarriers ---> [ESP32-S3 RX]
    antenna       (chest perturbs path)        antenna
                                                  │
                                                  │ USB serial @ 921600 baud
@@ -190,6 +190,8 @@ A pair of ESP32-S3 chips, one transmitting and one receiving, exchange WiFi pack
 ```
 
 DSP pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz bandpass → 4× zero-padded FFT → parabolic peak refinement in respiratory (0.15–0.6 Hz) and cardiac (0.9–1.8 Hz) bands → 9-dim feature vector → XGBoost regressor.
+
+Subcarrier count per packet is **128 at HT20** (cleaner, recommended) and **192 at HT40** — bandwidth is set in the ESP32 firmware (`#define CONFIG_WIFI_BANDWIDTH` in `esp-csi/examples/get-started/csi_{recv,send}/main/app_main.c`). The pipeline is bandwidth-agnostic; the variance-rank top-K subcarrier selection just picks from whatever count is present.
 
 The signal-processing approach is from peer-reviewed academic work (PhaseBeat, FullBreathe, ResBeat). ViFi's contribution is productizing it on $10 ESP32-S3 hardware instead of $500 Intel 5300 cards, plus the platform extensions (presence, falls, multi-patient).
 
