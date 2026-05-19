@@ -32,6 +32,8 @@ SUBJECT_TX_DIST_M=1.5
 SUBJECT_ON_AXIS=true
 ANTENNA_TYPE=patch
 ANTENNA_HEIGHT_CM=91
+ANTENNA_MODEL="ALFA APA-M25"
+ANTENNA_GAIN_DBI=8                     # 8 dBi @ 2.4 GHz; APA-M25 is 10 dBi @ 5 GHz
 # IMPORTANT: must match what TX+RX firmware is flashed to. After reflashing
 # the boards (see docs/ESP32_SETUP.md), update this value. Channel 1 is the
 # cleanest 2.4 GHz channel in residential RF environments.
@@ -92,6 +94,8 @@ CMD=(
   --subject-on-axis "$SUBJECT_ON_AXIS"
   --antenna-type "$ANTENNA_TYPE"
   --antenna-height-cm "$ANTENNA_HEIGHT_CM"
+  --antenna-model "$ANTENNA_MODEL"
+  --antenna-gain-dbi "$ANTENNA_GAIN_DBI"
   --wifi-channel "$WIFI_CHANNEL"
 )
 [[ -n "$NOTES" ]]         && CMD+=(--notes "$NOTES")

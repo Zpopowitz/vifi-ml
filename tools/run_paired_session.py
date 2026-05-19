@@ -99,6 +99,10 @@ def build_session_metadata(args: argparse.Namespace) -> dict:
         md["antenna_type"] = args.antenna_type
     if args.antenna_height_cm is not None:
         md["antenna_height_cm"] = float(args.antenna_height_cm)
+    if args.antenna_model is not None:
+        md["antenna_model"] = args.antenna_model
+    if args.antenna_gain_dbi is not None:
+        md["antenna_gain_dbi"] = float(args.antenna_gain_dbi)
     md["wifi_channel"] = int(args.wifi_channel)
     return md
 
@@ -503,6 +507,17 @@ def main() -> None:
         type=float,
         default=None,
         help="antenna height above floor, in cm (chest level ≈ 100-130 cm seated)",
+    )
+    g_geom.add_argument(
+        "--antenna-model",
+        default=None,
+        help="free-form antenna model string, e.g. 'ALFA APA-M25'",
+    )
+    g_geom.add_argument(
+        "--antenna-gain-dbi",
+        type=float,
+        default=None,
+        help="antenna gain in dBi at the operating band (0-30)",
     )
     g_geom.add_argument(
         "--wifi-channel",
