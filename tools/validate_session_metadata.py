@@ -13,6 +13,8 @@ Locked schema (do not change without bumping PROTOCOL_VERSION):
     body_mass_lbs  : float | None  (recommended)
     notes          : str   (recommended, can be empty)
     protocol_version: str  (added in v1; older sessions are grandfathered)
+    wifi_channel   : int   (recommended, one of WIFI_CHANNELS; sessions on
+                            different channels aren't directly comparable)
 
 Usage:
     python tools/validate_session_metadata.py
@@ -43,10 +45,14 @@ GEOMETRY_FIELDS = {
     "antenna_type",
     "antenna_height_cm",
 }
+# RF / firmware configuration fields. Sessions on different WiFi channels
+# aren't directly comparable; the eval harness needs to stratify by channel.
+RF_FIELDS = {"wifi_channel"}
 
 POSTURES = {"seated", "lying_supine", "lying_lateral", "standing", "none", "other"}
 CHAIRS = {"A", "B", None}
 ANTENNA_TYPES = {"pcb_trace", "external_dipole", "patch"}
+WIFI_CHANNELS = set(range(1, 14))
 
 
 def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
@@ -103,6 +109,11 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
             f"antenna_type must be one of {sorted(ANTENNA_TYPES)}, "
             f"got {meta['antenna_type']!r}"
         )
+    if "wifi_channel" in meta and meta["wifi_channel"] not in WIFI_CHANNELS:
+        errors.append(
+            f"wifi_channel must be one of {sorted(WIFI_CHANNELS)}, "
+            f"got {meta['wifi_channel']!r}"
+        )
 
     if strict:
         for field in RECOMMENDED_FIELDS:
@@ -111,6 +122,9 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
         for field in GEOMETRY_FIELDS:
             if field not in meta:
                 errors.append(f"missing recommended geometry field (--strict): {field}")
+        for field in RF_FIELDS:
+            if field not in meta:
+                errors.append(f"missing recommended RF field (--strict): {field}")
 
     return len(errors) == 0, errors
 

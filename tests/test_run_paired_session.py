@@ -50,6 +50,7 @@ def _base_args(**overrides) -> Namespace:
         subject_on_axis=None,
         antenna_type=None,
         antenna_height_cm=None,
+        wifi_channel=11,
     )
     defaults.update(overrides)
     return Namespace(**defaults)
@@ -118,6 +119,18 @@ def test_validate_args_requires_h10_or_explicit_optout(tmp_path):
     args = _base_args(h10_address=None, no_h10=False, data_root=tmp_path)
     with pytest.raises(SystemExit, match="H10"):
         run_session(args)
+
+
+def test_validate_args_rejects_bad_wifi_channel(tmp_path):
+    args = _base_args(wifi_channel=42, data_root=tmp_path)
+    with pytest.raises(SystemExit, match="wifi-channel"):
+        run_session(args)
+
+
+def test_metadata_includes_wifi_channel():
+    md = build_session_metadata(_base_args(wifi_channel=1))
+    assert md["wifi_channel"] == 1
+    assert isinstance(md["wifi_channel"], int)
 
 
 def test_dry_run_does_not_create_session_dir(tmp_path):

@@ -57,6 +57,9 @@ if str(ROOT) not in sys.path:
 # Locked schema constants (kept in sync with tools/validate_session_metadata.py)
 POSTURES = {"seated", "lying_supine", "lying_lateral", "standing", "none", "other"}
 CHAIRS = {"A", "B", None}
+# 2.4 GHz channels valid in most regions. The firmware on TX and RX boards
+# must match this value; the field is recorded for retrospective comparability.
+WIFI_CHANNELS = set(range(1, 14))
 PROTOCOL_VERSION = "v1"
 
 
@@ -96,6 +99,7 @@ def build_session_metadata(args: argparse.Namespace) -> dict:
         md["antenna_type"] = args.antenna_type
     if args.antenna_height_cm is not None:
         md["antenna_height_cm"] = float(args.antenna_height_cm)
+    md["wifi_channel"] = int(args.wifi_channel)
     return md
 
 
@@ -116,6 +120,11 @@ def _validate_args(args: argparse.Namespace) -> None:
             )
     if args.duration <= 0:
         raise SystemExit("--duration must be positive")
+    if args.wifi_channel not in WIFI_CHANNELS:
+        raise SystemExit(
+            f"--wifi-channel must be one of {sorted(WIFI_CHANNELS)}, "
+            f"got {args.wifi_channel!r}"
+        )
     if not args.no_h10 and not args.h10_address:
         raise SystemExit(
             "Either pass --h10-address <MAC> for the Polar H10, or pass "
@@ -494,6 +503,15 @@ def main() -> None:
         type=float,
         default=None,
         help="antenna height above floor, in cm (chest level ≈ 100-130 cm seated)",
+    )
+    g_geom.add_argument(
+        "--wifi-channel",
+        type=int,
+        required=True,
+        choices=sorted(WIFI_CHANNELS),
+        help="2.4 GHz channel the TX+RX firmware is flashed to. Must match "
+        "the firmware menuconfig value; recorded so sessions on different "
+        "channels stay comparable.",
     )
 
     g_dur = p.add_argument_group("capture parameters")
