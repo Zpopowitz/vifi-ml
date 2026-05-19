@@ -50,6 +50,8 @@ def _base_args(**overrides) -> Namespace:
         subject_on_axis=None,
         antenna_type=None,
         antenna_height_cm=None,
+        antenna_model=None,
+        antenna_gain_dbi=None,
         wifi_channel=11,
     )
     defaults.update(overrides)
@@ -178,6 +180,8 @@ def test_geometry_fields_omitted_when_unset():
         "subject_on_axis",
         "antenna_type",
         "antenna_height_cm",
+        "antenna_model",
+        "antenna_gain_dbi",
     ):
         assert f not in meta
 
@@ -190,6 +194,8 @@ def test_geometry_fields_propagated_when_set():
             subject_on_axis=True,
             antenna_type="external_dipole",
             antenna_height_cm=110.0,
+            antenna_model="ALFA APA-M25",
+            antenna_gain_dbi=8.0,
         )
     )
     assert meta["tx_rx_distance_m"] == 2.0
@@ -197,6 +203,8 @@ def test_geometry_fields_propagated_when_set():
     assert meta["subject_on_axis"] is True
     assert meta["antenna_type"] == "external_dipole"
     assert meta["antenna_height_cm"] == 110.0
+    assert meta["antenna_model"] == "ALFA APA-M25"
+    assert meta["antenna_gain_dbi"] == 8.0
 
 
 def test_geometry_fields_validate_in_locked_schema(tmp_path):
@@ -208,6 +216,8 @@ def test_geometry_fields_validate_in_locked_schema(tmp_path):
             subject_on_axis=True,
             antenna_type="external_dipole",
             antenna_height_cm=110.0,
+            antenna_model="ALFA APA-M25",
+            antenna_gain_dbi=8.0,
         )
     )
     p = tmp_path / "good.json"
@@ -219,6 +229,8 @@ def test_geometry_fields_validate_in_locked_schema(tmp_path):
     bad["tx_rx_distance_m"] = -5.0
     bad["antenna_type"] = "made_up"
     bad["subject_on_axis"] = "yes"  # string, not bool
+    bad["antenna_model"] = ""  # empty string not allowed
+    bad["antenna_gain_dbi"] = 99  # out of plausible range
     p2 = tmp_path / "bad.json"
     p2.write_text(json.dumps(bad))
     ok2, errors2 = _validate_one(p2)
@@ -226,3 +238,5 @@ def test_geometry_fields_validate_in_locked_schema(tmp_path):
     assert any("tx_rx_distance_m" in e for e in errors2)
     assert any("antenna_type" in e for e in errors2)
     assert any("subject_on_axis" in e for e in errors2)
+    assert any("antenna_model" in e for e in errors2)
+    assert any("antenna_gain_dbi" in e for e in errors2)

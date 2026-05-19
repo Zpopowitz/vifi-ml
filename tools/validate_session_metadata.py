@@ -44,6 +44,8 @@ GEOMETRY_FIELDS = {
     "subject_on_axis",
     "antenna_type",
     "antenna_height_cm",
+    "antenna_model",
+    "antenna_gain_dbi",
 }
 # RF / firmware configuration fields. Sessions on different WiFi channels
 # aren't directly comparable; the eval harness needs to stratify by channel.
@@ -109,6 +111,14 @@ def _validate_one(path: Path, strict: bool = False) -> tuple[bool, list[str]]:
             f"antenna_type must be one of {sorted(ANTENNA_TYPES)}, "
             f"got {meta['antenna_type']!r}"
         )
+    if "antenna_model" in meta and meta["antenna_model"] is not None:
+        am = meta["antenna_model"]
+        if not isinstance(am, str) or not am.strip():
+            errors.append(f"antenna_model must be non-empty string, got {am!r}")
+    if "antenna_gain_dbi" in meta and meta["antenna_gain_dbi"] is not None:
+        ag = meta["antenna_gain_dbi"]
+        if not isinstance(ag, (int, float)) or ag < 0 or ag > 30:
+            errors.append(f"antenna_gain_dbi out of plausible range (0-30): {ag!r}")
     if "wifi_channel" in meta and meta["wifi_channel"] not in WIFI_CHANNELS:
         errors.append(
             f"wifi_channel must be one of {sorted(WIFI_CHANNELS)}, "
