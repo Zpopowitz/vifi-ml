@@ -30,9 +30,20 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - Branches: trunk-based off `main`. Prefix new branches with `feat/`, `fix/`, `chore/`, `docs/`, or `exp/` (see README "Contributing").
 
 ## Out of scope (don't suggest)
-- SpO2, body temperature, BP, ECG waveform — wrong physics for WiFi CSI.
+- SpO2, body temperature — wrong physics even for the 60 GHz radar. SpO2 is an
+  optical measurement (red/IR hemoglobin absorption); temperature needs thermal/IR
+  sensing or microwave radiometry. An FMCW radar senses motion/displacement, not
+  blood chemistry or heat.
 - FDA filings (Stage 5, post-funding).
 - Hospital sales (post-pilot).
+
+## Future research, not current scope (unlocked by the radar pivot)
+- ECG-waveform reconstruction and cuffless blood-pressure estimation were "wrong
+  physics for WiFi CSI" but are demonstrated / plausible from mmWave radar
+  (radarODE, AirECG reconstruct ECG-like morphology from chest motion; cuffless BP
+  is an active radar research direction). Do NOT pursue either now — both are
+  research-grade, not clinical, and gated behind a working v2 beat-detection
+  pipeline. They are future directions, not current scope.
 
 ## Design System
 

@@ -179,8 +179,18 @@ The cheapest possible de-risk, before building anything:
       respiratory ones in the upper cardiac band (arXiv 2407.07380).
 - [ ] Beat detection on the cardiac phase signal: peak detection and/or template
       matching.
+- [ ] **Motion gating — required, not optional.** Use the radar's Doppler / range
+      signal to detect gross body motion (a moving body is a large, obvious radar
+      signal — the easiest thing radar does). During motion, *suppress* vital-signs
+      output — emit an explicit "motion — no reading" state — and resume cleanly when
+      the subject settles. This is the difference between a demo that only works if the
+      subject holds still and a monitor that survives a real bed. The distinction
+      matters: this *gates* motion, it does not *track vitals through* motion — the
+      latter is infeasible for any contactless modality.
 - [ ] Eval harness: per-beat F1, IBI error (ms), HR MAE (bpm) vs H10 — scoring IBI/HRV
       (which cancels the constant electromechanical delay, §4), not absolute timing.
+      Also report **coverage**: the fraction of capture time with a valid (non-gated)
+      reading — the honest measure of how usable the monitor is in a real setting.
 
 > **GATE 2.** Target to continue *without* ML: per-beat F1 ≥ 0.9, IBI error ≤ ~30 ms on
 > a still single subject. The engineering review flags this as realistic but optimistic
@@ -240,7 +250,7 @@ highest-risk work behind the weakest premise.
 | 8 | Phase 1b underestimated — TI toolchain learning curve | High | Re-baselined to 2–3 weeks; Phase 1a smoke test de-risks first |
 | 9 | Solo-founder scope overrun (SDK + DSP + ML + RF PCB + recruiting + v1 stack) | High | Defer Phase 4 entirely; defer Phase 3 until Gate 2 fails; don't port the v1 dashboard/API until there's beat data |
 | 10 | Oscillator/thermal drift over a multi-minute capture | Low–Med | Detrend; keep captures short; characterise in Phase 1b |
-| 11 | Motion / posture / multi-person break per-beat (every modality) | High (in the wild) | Explicitly out of v2 scope — still/seated/supine, single subject, ~0.7 m |
+| 11 | Motion *tracking* (reading vitals during active movement) — infeasible for any contactless modality; a ~0.5 mm heartbeat is swamped by cm-scale body motion | High | Out of scope, permanently. But motion *gating* (detect movement → suppress output → resume on settle) is **in** v2 scope as a Phase 2 task — radar detects motion trivially. Posture-coverage and multi-person stay out of v2. |
 | 12 | **No identified user needs contactless per-beat more than a chest strap** | **Critical (strategic)** | §0 demand-thesis task; owner's call |
 | 13 | Scope thrash — running radar AND WiFi in parallel | Medium | WiFi CSI is shelved. One sensor. |
 
@@ -260,16 +270,24 @@ highest-risk work behind the weakest premise.
 ## 7. Honest framing — what v2 will and will not be
 
 **Will:** make genuine beat-by-beat *physically possible* — per-beat detection, IBI,
-HRV — under controlled conditions (still, seated/supine, ~0.7 m, single subject), where
-mmWave radar is demonstrated against ECG.
+HRV — when the subject is still (seated/supine, ~0.7 m, single subject), where mmWave
+radar is demonstrated against ECG. And, via motion gating, **survive a real setting**
+where the subject moves periodically — reading vitals during the still stretches and
+honestly reporting "motion — no reading" during the rest, the way hospital telemetry
+already handles motion artifacts.
 
-**Will not (in v2):** be robust to motion, posture, multiple people, or distance —
-those break per-beat for every modality and are a multi-year frontier.
+**Will not (in v2):** *track vitals through* active movement (infeasible for any
+contactless modality — a ~0.5 mm heartbeat is buried under cm-scale body motion); or
+handle arbitrary posture, multiple people, or long range. Those are a multi-year
+frontier for the whole field.
 
-**The honest pitch:** "cheap, contactless, no-wearable beat-by-beat monitoring for a
-still subject" — *if* the §0 demand thesis finds someone who needs exactly that. If it
-doesn't, reframe v2 as averaged trend monitoring done better on radar. Pitch it as
-"medical-grade free-living HRV" and it fails.
+**The honest pitch:** "a contactless monitor for a resting / sleeping patient — solid
+vitals during the still periods, honest about motion gaps." For the founding use case
+(trend monitoring to catch deterioration between nursing rounds), gaps are fine — you
+need *enough* clean readings to see a trend, not an unbroken stream; bed-rest and sleep
+are mostly still. What v2 is *not* is a wear-it-while-active device. Pitch it as
+"medical-grade free-living HRV" and it fails; pitch it as "honest resting-patient
+monitoring" and it holds — *if* the §0 demand thesis finds someone who needs it.
 
 ---
 
