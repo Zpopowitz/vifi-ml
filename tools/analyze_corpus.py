@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
 from tools.analyze_session import (  # noqa: E402
     PAIR_TOLERANCE_SECONDS,
     _load_csv,
+    _load_rr,
     _trim_rr_warmup,
 )
 
@@ -58,10 +59,12 @@ def _looks_like_session(p: Path) -> bool:
 
 def _stats_for_session(session_dir: Path) -> Optional[dict]:
     hr = _load_csv(session_dir / "hr_log.csv")
-    rr = _load_csv(session_dir / "rr_log.csv")
+    rr, _rr_schema = _load_rr(session_dir)
     if hr is None and rr is None:
         return None
-    rr_clean = _trim_rr_warmup(rr) if rr is not None else None
+    # Restrict to rows where rr_bpm is finite before warmup trim.
+    rr_for_stats = rr[rr["rr_bpm"].notna()].copy() if rr is not None else None
+    rr_clean = _trim_rr_warmup(rr_for_stats) if rr_for_stats is not None else None
 
     notes_path = session_dir / "notes.txt"
     notes = notes_path.read_text().strip() if notes_path.exists() else ""

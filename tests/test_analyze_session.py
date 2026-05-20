@@ -6,6 +6,7 @@ into a tmp_path to keep the repo's data/captures/ untouched.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.analyze_session import analyze_session
+from tools.analyze_session import _load_rr, analyze_session
 
 
 def _write_hr(dirpath: Path, n: int = 60, hr_value: float = 75.0) -> None:
@@ -27,9 +28,10 @@ def _write_hr(dirpath: Path, n: int = 60, hr_value: float = 75.0) -> None:
     pd.DataFrame(rows).to_csv(dirpath / "hr_log.csv", index=False)
 
 
-def _write_rr(
+def _write_rr_v1(
     dirpath: Path, n: int = 60, warmup_zeros: int = 30, rr_value: float = 14.0
 ) -> None:
+    """Legacy v1 schema: timestamp_unix, rr_bpm, rr_source, force_n."""
     rows = []
     t0 = 1_700_000_000.0
     for i in range(n):
@@ -43,6 +45,56 @@ def _write_rr(
             }
         )
     pd.DataFrame(rows).to_csv(dirpath / "rr_log.csv", index=False)
+
+
+# Backward-compat alias for existing tests that don't care which schema they hit.
+_write_rr = _write_rr_v1
+
+
+def _write_rr_v2(
+    dirpath: Path,
+    duration_s: float = 60.0,
+    fs_hz: float = 10.0,
+    rr_value: float = 14.0,
+    warmup_s: float = 30.0,
+    write_sidecar: bool = True,
+) -> None:
+    """v2 schema: timestamp_unix, force_n, rr_onboard_bpm.
+
+    force_n is dense (fs_hz). rr_onboard_bpm is sparse (every 10s, like
+    the real Vernier device emits) — empty cells elsewhere.
+    """
+    t0 = 1_700_000_000.0
+    n = int(round(duration_s * fs_hz))
+    period_s = 1.0 / fs_hz
+    rows = []
+    onboard_period_s = 10.0
+    next_onboard_t = t0  # emit at t0, t0+10, t0+20, ...
+    for i in range(n):
+        t = t0 + i * period_s
+        force = 3.0 + 0.6 * ((i // int(fs_hz)) % 5 - 2)  # mild oscillation
+        rr_cell = ""
+        if t >= next_onboard_t:
+            rr_cell = "" if t < t0 + warmup_s else f"{rr_value + (i % 4) * 0.25:.2f}"
+            next_onboard_t += onboard_period_s
+        rows.append([f"{t:.3f}", f"{force:.4f}", rr_cell])
+    csv_path = dirpath / "rr_log.csv"
+    with open(csv_path, "w", newline="") as f:
+        f.write("timestamp_unix,force_n,rr_onboard_bpm\n")
+        for r in rows:
+            f.write(",".join(r) + "\n")
+    if write_sidecar:
+        (dirpath / "rr_log.csv.meta.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "device_name": "GDX-RB TEST",
+                    "period_ms": int(1000 / fs_hz),
+                    "fs_hz": fs_hz,
+                    "columns": ["timestamp_unix", "force_n", "rr_onboard_bpm"],
+                }
+            )
+        )
 
 
 def test_returns_2_when_dir_missing(tmp_path):
@@ -130,6 +182,52 @@ def test_notes_file_displayed(tmp_path, capsys):
     analyze_session(tmp_path, plot=False)
     out = capsys.readouterr().out
     assert "founder, seated upright" in out
+
+
+def test_load_rr_detects_v2_via_sidecar(tmp_path):
+    _write_rr_v2(tmp_path, duration_s=60, fs_hz=10.0)
+    rr, schema = _load_rr(tmp_path)
+    assert schema == 2
+    assert rr is not None
+    assert "rr_bpm" in rr.columns  # normalized from rr_onboard_bpm
+    assert "force_n" in rr.columns
+    assert rr["force_n"].notna().all()  # dense
+    assert rr["rr_bpm"].notna().sum() < len(rr)  # sparse
+
+
+def test_load_rr_detects_v2_without_sidecar_by_columns(tmp_path):
+    _write_rr_v2(tmp_path, duration_s=60, fs_hz=10.0, write_sidecar=False)
+    rr, schema = _load_rr(tmp_path)
+    assert schema == 2  # column-shape fallback still detects it
+
+
+def test_load_rr_detects_v1_legacy(tmp_path):
+    _write_rr_v1(tmp_path, n=60)
+    rr, schema = _load_rr(tmp_path)
+    assert schema == 1
+    assert "rr_bpm" in rr.columns
+    assert "force_n" in rr.columns
+
+
+def test_v2_session_analyzes_cleanly(tmp_path, capsys):
+    _write_hr(tmp_path, n=60)
+    _write_rr_v2(tmp_path, duration_s=60, fs_hz=10.0)
+    rc = analyze_session(tmp_path, plot=False)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "RR schema: v2" in out
+    # Both rr_bpm (sparse) and force_n rows show up in the summary.
+    assert "rr_bpm" in out
+    assert "force_n" in out
+
+
+def test_v2_plot_renders_three_panels(tmp_path):
+    pytest.importorskip("matplotlib")
+    _write_hr(tmp_path)
+    _write_rr_v2(tmp_path, duration_s=60, fs_hz=10.0)
+    analyze_session(tmp_path, plot=True)
+    img = tmp_path / "session_summary.png"
+    assert img.exists() and img.stat().st_size > 0
 
 
 if __name__ == "__main__":

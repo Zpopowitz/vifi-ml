@@ -1,22 +1,32 @@
 """Vernier Go Direct Respiration Belt logger.
 
 Reads a Vernier Go Direct Respiration Belt (GDX-RB) over Bluetooth Low Energy
-and writes a timestamped breaths-per-minute log to CSV. Used as ground-truth
-RR reference alongside real ESP32-S3 CSI captures during paired data
-collection (parallel to hr_logger.py for the Polar H10).
-
-Optional `--bus` mode also publishes each reading to the ViFi message
-bus (`rr.reference.<patient_id>` topic) so the live dashboard can plot
-the belt stream alongside the model's RR predictions in real time.
+and writes a high-rate raw-force CSV. Used as ground-truth RR reference
+alongside real ESP32-S3 CSI captures during paired data collection (parallel
+to hr_logger.py for the Polar H10).
 
 The GDX-RB exposes two sensors:
     - "Force"            : belt strap force in Newtons (~0.5-3.0 N range)
     - "Respiration Rate" : derived breaths/min from the device's onboard DSP
 
-By default we log Respiration Rate (matches the H10 CSV shape exactly:
-[timestamp_unix, value]). With --log-force we additionally log raw force,
-which is useful for debugging belt slack or visually verifying breaths
-during a session.
+CSV schema (v2):
+    timestamp_unix, force_n, rr_onboard_bpm
+
+    - `force_n` is the raw belt strap force in Newtons, sampled at the
+      configured period (default 10 Hz). Every row has a force value.
+    - `rr_onboard_bpm` is Vernier's onboard DSP estimate, which only
+      updates every ~10 s. Rows where the onboard DSP didn't emit a new
+      value have an empty `rr_onboard_bpm` cell.
+
+A sidecar `rr_log.csv.meta.json` is written alongside the CSV with the
+device name, firmware-reported sample period, schema version, and start
+time. The raw force signal is the source of truth — downstream tools
+can recompute RR from it with arbitrarily-better algorithms post-hoc.
+
+Optional `--bus` mode also publishes a best-available RR estimate to the
+ViFi message bus (`rr.reference.<patient_id>` topic) so the live
+dashboard can plot the belt stream alongside the model's RR predictions.
+Bus emission is throttled to ~1 Hz so dashboards stay responsive.
 
 Install once:
     pip install godirect
@@ -30,8 +40,7 @@ First-time setup:
        to record (godirect picks the first GDX-RB it finds)
 
 Typical usage during a paired capture:
-    python rr_logger.py --duration 120 --out rr_log_session1.csv
-    python rr_logger.py --duration 120 --log-force \\
+    python rr_logger.py --duration 120 \\
                         --out data/captures/founder/session7/rr_log.csv
 
 Run alongside hr_logger.py and csi_capture.py — three separate terminals
@@ -42,10 +51,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 import sys
 import time
 from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Optional
 
@@ -78,12 +89,15 @@ def _require_godirect():
 
 SENSOR_RESP_RATE = "Respiration Rate"
 SENSOR_FORCE = "Force"
-DEFAULT_PERIOD_MS = 1000  # GDX-RB updates respiration rate ~1 Hz
+DEFAULT_PERIOD_MS = 100  # 10 Hz force sampling — fine breathing waveform fidelity
+CSV_SCHEMA_VERSION = 2
+BUS_THROTTLE_HZ = 1.0  # cap bus emission so dashboards stay responsive at 10 Hz CSV
 
 # Adult resting RR is 6-30 brpm (0.1-0.5 Hz). The GDX-RB's onboard DSP
 # often won't lock on shallow or irregular breaths, so we keep a rolling
-# buffer of the raw Force channel and compute RR ourselves whenever the
-# onboard value is NaN.
+# buffer of the raw Force channel and compute RR ourselves for live bus
+# emission (the CSV stores only raw force; downstream tools can pick a
+# better RR-from-force algorithm than this one).
 _FORCE_BUFFER_SECONDS = 30.0
 _RR_BAND_HZ = (0.1, 0.5)
 
@@ -91,10 +105,9 @@ _RR_BAND_HZ = (0.1, 0.5)
 class _ForceToRR:
     """Rolling-window FFT estimator: raw belt force -> RR in brpm.
 
-    The GDX-RB samples force at the same period as RR (1 Hz default), so
-    a 30-second buffer is enough to resolve breath cycles down to ~6 brpm
-    via FFT with parabolic peak refinement. Returns NaN until the buffer
-    is at least half full.
+    Used for live bus emission only — CSV writers persist the raw force
+    so downstream analysis can pick its own estimator. Returns NaN until
+    the buffer is at least half full.
     """
 
     def __init__(self, period_ms: int) -> None:
@@ -128,7 +141,6 @@ class _ForceToRR:
         idxs = np.where(band)[0]
         peak_local = int(np.argmax(spec[band]))
         peak = idxs[peak_local]
-        # Parabolic interpolation for sub-bin precision.
         if 0 < peak < len(spec) - 1:
             a, b, c = spec[peak - 1], spec[peak], spec[peak + 1]
             denom = a - 2 * b + c
@@ -223,28 +235,59 @@ def _find_resp_sensors(device, want_force: bool):
     return resp_id, (force_id if want_force else None)
 
 
+def _write_meta_sidecar(
+    csv_path: Path,
+    device_name: str,
+    period_ms: int,
+    duration_s: float,
+    started_at_utc: str,
+) -> None:
+    meta = {
+        "schema_version": CSV_SCHEMA_VERSION,
+        "device_name": device_name,
+        "period_ms": period_ms,
+        "fs_hz": 1000.0 / float(period_ms),
+        "sensors": [SENSOR_FORCE, SENSOR_RESP_RATE],
+        "started_at_utc": started_at_utc,
+        "duration_planned_s": float(duration_s),
+        "columns": ["timestamp_unix", "force_n", "rr_onboard_bpm"],
+        "notes": (
+            "rr_onboard_bpm is sparse (only populated when Vernier's onboard "
+            "DSP emits a fresh value, ~once per 10s). Empty otherwise. "
+            "force_n is the source of truth; compute RR from it offline with "
+            "your preferred algorithm."
+        ),
+    }
+    sidecar = Path(str(csv_path) + ".meta.json")
+    sidecar.write_text(json.dumps(meta, indent=2))
+
+
 def log(
     duration_s: float,
     out_path: Path,
     period_ms: int = DEFAULT_PERIOD_MS,
-    log_force: bool = False,
     device_name_filter: Optional[str] = None,
     bus_publisher: Optional[_BusPublisher] = None,
 ) -> int:
     """Connect to the first available GDX-RB and log to CSV for duration_s.
 
-    The CSV always has columns [timestamp_unix, rr_bpm]. With log_force=True
-    a third column [force_n] is added.
+    Writes the CSV at `out_path` and a sidecar metadata file at
+    `out_path` + ".meta.json". The raw force signal is captured at the
+    configured period (default 10 Hz); rr_onboard_bpm is filled only when
+    the onboard DSP emits a fresh reading.
 
-    If `bus_publisher` is provided, each reading is also published to the
-    live message bus. CSV writing is the on-disk source of truth; bus
-    failures don't abort the recording.
+    If `bus_publisher` is provided, a best-available RR estimate is also
+    published to the live message bus, throttled to ~1 Hz. CSV writing is
+    the on-disk source of truth; bus failures don't abort the recording.
     """
     GoDirect = _require_godirect()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     gd = GoDirect(use_ble=True, use_usb=False)
     device = None
     total = 0
+    bus_min_interval = 1.0 / BUS_THROTTLE_HZ
+    last_bus_t = 0.0
+    started_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         print("Searching for Go Direct device...")
         device = gd.get_device(threshold=-100)
@@ -266,29 +309,36 @@ def log(
         device_name = getattr(device, "_name", "GDX-RB")
         print(f"Connected to {device_name}")
 
-        # Always enable Force so we can compute RR client-side when the
-        # onboard DSP returns NaN. log_force only controls whether it's
-        # written to the CSV.
         resp_id, force_id = _find_resp_sensors(device, want_force=True)
-        enabled = [resp_id] + ([force_id] if force_id is not None else [])
-        device.enable_sensors(enabled)
+        if force_id is None:
+            raise RuntimeError(
+                "GDX-RB reports no Force sensor — refusing to log without raw "
+                "force (schema v2 requires it). Check device firmware."
+            )
+        device.enable_sensors([resp_id, force_id])
         device.start(period=period_ms)
         rr_estimator = _ForceToRR(period_ms=period_ms)
 
-        header = ["timestamp_unix", "rr_bpm", "rr_source"]
-        if log_force:
-            header.append("force_n")
+        _write_meta_sidecar(
+            out_path,
+            device_name=device_name,
+            period_ms=period_ms,
+            duration_s=duration_s,
+            started_at_utc=started_at_utc,
+        )
 
+        last_print_t = 0.0
         deadline = time.time() + duration_s
         with open(out_path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(header)
+            writer.writerow(["timestamp_unix", "force_n", "rr_onboard_bpm"])
             print(
-                f"Logging to {out_path} for {duration_s:.0f} s (period={period_ms} ms)"
+                f"Logging to {out_path} for {duration_s:.0f} s "
+                f"(period={period_ms} ms = {1000.0 / period_ms:.0f} Hz)"
             )
             while time.time() < deadline:
                 if not device.read():
-                    time.sleep(0.05)
+                    time.sleep(0.01)
                     continue
                 rr_value: Optional[float] = None
                 force_value: Optional[float] = None
@@ -299,47 +349,52 @@ def log(
                         rr_value = val
                     elif SENSOR_FORCE.lower() in name.lower():
                         force_value = val
-                if rr_value is None and force_value is None:
+                if force_value is None:
+                    # No force update this cycle — skip; force is the
+                    # source of truth and we don't write rr-only rows.
                     continue
-                # Update the FFT estimator on every force sample so it's
-                # warm by the time we need it.
-                rr_from_force = (
-                    rr_estimator.update(force_value)
-                    if force_value is not None
-                    else float("nan")
-                )
-                onboard_ok = rr_value is not None and not math.isnan(float(rr_value))
-                if onboard_ok:
-                    rr_out = float(rr_value)
-                    rr_source = "onboard"
-                elif not math.isnan(rr_from_force):
-                    rr_out = rr_from_force
-                    rr_source = "force_fft"
-                else:
-                    # Don't publish NaN; just keep buffering force.
-                    continue
+                # Keep the bus-side FFT warm on every force sample.
+                rr_from_force = rr_estimator.update(force_value)
+
                 t = time.time()
-                row = [f"{t:.3f}", f"{rr_out:.2f}", rr_source]
-                if log_force:
-                    row.append(f"{force_value:.4f}" if force_value is not None else "")
-                writer.writerow(row)
+                rr_onboard_cell = ""
+                if rr_value is not None and not math.isnan(float(rr_value)):
+                    rr_onboard_cell = f"{float(rr_value):.2f}"
+
+                writer.writerow([f"{t:.3f}", f"{force_value:.4f}", rr_onboard_cell])
                 f.flush()
-                if bus_publisher is not None:
-                    bus_publisher.publish(t, rr_out, force_value)
                 total += 1
-                # GDX-RB emits a fresh RR roughly every 10 s, so print
-                # every reading rather than every 10th — otherwise long
-                # captures look frozen even when data is flowing.
-                remaining = max(0.0, deadline - time.time())
-                extra = (
-                    f", force={force_value:.2f} N" if force_value is not None else ""
-                )
-                print(
-                    f"  {total:4d} readings, last RR={rr_out:.1f} "
-                    f"bpm ({rr_source}){extra}, "
-                    f"{remaining:.0f}s left"
-                )
-        print(f"Done. Logged {total} readings to {out_path}")
+
+                # Live bus emission (throttled). Prefer onboard when fresh,
+                # fall back to force_fft otherwise.
+                if bus_publisher is not None and (t - last_bus_t) >= bus_min_interval:
+                    onboard_ok = (
+                        rr_value is not None
+                        and not math.isnan(float(rr_value))
+                        and float(rr_value) > 0
+                    )
+                    if onboard_ok:
+                        bus_publisher.publish(t, float(rr_value), force_value)
+                        last_bus_t = t
+                    elif not math.isnan(rr_from_force):
+                        bus_publisher.publish(t, rr_from_force, force_value)
+                        last_bus_t = t
+                    # else: warmup — no usable RR estimate yet
+
+                # Throttled progress print (once per second; raw rate is 10 Hz)
+                if (t - last_print_t) >= 1.0:
+                    last_print_t = t
+                    remaining = max(0.0, deadline - t)
+                    rr_str = (
+                        f"{rr_value:.1f}"
+                        if rr_value is not None and not math.isnan(rr_value)
+                        else "—"
+                    )
+                    print(
+                        f"  {total:5d} samples, force={force_value:.2f} N, "
+                        f"onboard RR={rr_str} bpm, {remaining:.0f}s left"
+                    )
+        print(f"Done. Logged {total} samples to {out_path}")
         return total
     finally:
         try:
@@ -363,13 +418,11 @@ def main() -> None:
         "--period-ms",
         type=int,
         default=DEFAULT_PERIOD_MS,
-        help="sensor sample period in ms (default 1000)",
+        help=f"sensor sample period in ms (default {DEFAULT_PERIOD_MS}, "
+        f"= {1000 // DEFAULT_PERIOD_MS} Hz)",
     )
     p.add_argument(
         "--out", type=Path, default=Path("rr_log.csv"), help="output CSV path"
-    )
-    p.add_argument(
-        "--log-force", action="store_true", help="also log raw belt force in Newtons"
     )
     p.add_argument(
         "--name-contains",
@@ -402,7 +455,6 @@ def main() -> None:
             duration_s=args.duration,
             out_path=args.out,
             period_ms=args.period_ms,
-            log_force=args.log_force,
             device_name_filter=args.name_contains,
             bus_publisher=publisher,
         )
