@@ -120,6 +120,13 @@ jobs:
         # GHSA-2c2j-9gv5-cj73, GHSA-7f5h-v6xp-fcq8: starlette 0.41.3 —
         #     pinned by FastAPI 0.115.x's range. Clears when FastAPI
         #     bumps to 0.116+ which allows starlette >=0.42.
+        # PYSEC-2024-277 (CVE-2024-34997): joblib numpy_pickle
+        #     deserialization. No fixed joblib version exists, so it
+        #     cannot be cleared by a bump. Disputed by the joblib
+        #     maintainers ("NumpyArrayWrapper is only used during
+        #     caching of trusted content"). ViFi loads only its own
+        #     model artifacts via joblib, never untrusted pickles —
+        #     no exposure. Re-review if joblib ships a fix.
         # (Earlier pip advisory GHSA-58qw-9mgm-455v cleared by the
         #  pip>=26.1 upgrade in the install step above.)
         run: |
@@ -127,7 +134,8 @@ jobs:
             --ignore-vuln GHSA-cfh3-3jmp-rvhc \
             --ignore-vuln GHSA-whj4-6x5x-4v2j \
             --ignore-vuln GHSA-2c2j-9gv5-cj73 \
-            --ignore-vuln GHSA-7f5h-v6xp-fcq8
+            --ignore-vuln GHSA-7f5h-v6xp-fcq8 \
+            --ignore-vuln PYSEC-2024-277
       - name: bandit
         # bandit's -x argument needs './path' style entries (not bare
         # names) for the directory-exclude to actually work in 1.7.x
