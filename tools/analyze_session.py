@@ -3,21 +3,28 @@ stats, optionally plot HR + RR over time.
 
 A paired-capture session lives at:
     data/captures/<subject>/<session>/
-        hr_log.csv         # from hr_logger.py (Polar H10), columns:
-                           #   timestamp_unix,hr_bpm
-        rr_log.csv         # from rr_logger.py (Vernier GDX-RB), columns:
-                           #   timestamp_unix,rr_bpm,rr_source[,force_n]
-        notes.txt          # optional free-text annotation
+        hr_log.csv             # from hr_logger.py (Polar H10), columns:
+                               #   timestamp_unix,hr_bpm
+        rr_log.csv             # from rr_logger.py (Vernier GDX-RB).
+        rr_log.csv.meta.json   # schema-version sidecar (v2+)
+        notes.txt              # optional free-text annotation
+
+RR schema versions:
+    v2 (current): timestamp_unix, force_n, rr_onboard_bpm
+                  10 Hz force samples, sparse onboard RR. Sidecar present.
+    v1 (legacy):  timestamp_unix, rr_bpm, rr_source[, force_n]
+                  1 Hz mixed onboard/force_fft. No sidecar.
 
 This tool:
     - Loads whichever of hr_log.csv / rr_log.csv exists (both, or one).
+    - Auto-detects RR schema version (sidecar first, column fallback).
     - Drops the first 30 s of RR by default (GDX-RB onboard DSP
       warmup window where rr_bpm == 0). Override with --include-warmup.
     - Pairs HR rows to the nearest RR row within ±15 s via
       pandas.merge_asof for any cross-stream stats.
     - Prints a tidy summary table to stdout.
-    - Saves session_summary.png alongside the CSVs (HR + RR time series
-      on shared time axis) unless --no-plot is set.
+    - Saves session_summary.png alongside the CSVs (HR + RR + raw force
+      time series on shared axis when force is available) unless --no-plot.
     - Returns nonzero exit on missing/empty inputs.
 
 Design intent: this is the "what does session N look like?" command
@@ -31,9 +38,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -63,6 +71,45 @@ def _load_csv(path: Path) -> Optional[pd.DataFrame]:
         return None
     df["t"] = pd.to_datetime(df["timestamp_unix"], unit="s")
     return df
+
+
+def _load_rr(session_dir: Path) -> Tuple[Optional[pd.DataFrame], int]:
+    """Load rr_log.csv, returning a normalized frame and the detected schema version.
+
+    Normalized columns: t, rr_bpm, force_n (NaN where unavailable).
+    Schema versions: 2 (current, sidecar present or v2 columns) or 1 (legacy).
+    Returns (None, 0) if no RR data is present.
+    """
+    csv_path = session_dir / "rr_log.csv"
+    df = _load_csv(csv_path)
+    if df is None:
+        return None, 0
+
+    sidecar = Path(str(csv_path) + ".meta.json")
+    version = 0
+    if sidecar.exists():
+        try:
+            meta = json.loads(sidecar.read_text())
+            version = int(meta.get("schema_version", 0))
+        except (json.JSONDecodeError, OSError, ValueError):
+            version = 0
+    if version == 0:
+        # Column-shape fallback.
+        if "force_n" in df.columns and "rr_onboard_bpm" in df.columns:
+            version = 2
+        else:
+            version = 1
+
+    if version >= 2:
+        # rr_onboard_bpm is sparse — most rows are force-only.
+        df = df.rename(columns={"rr_onboard_bpm": "rr_bpm"})
+        if "force_n" not in df.columns:
+            df["force_n"] = float("nan")
+    else:
+        # Legacy v1: ensure force_n exists (may be absent).
+        if "force_n" not in df.columns:
+            df["force_n"] = float("nan")
+    return df, version
 
 
 def _trim_rr_warmup(rr: pd.DataFrame, *, drop_suspect: bool = True) -> pd.DataFrame:
@@ -118,36 +165,68 @@ def _fmt(v) -> str:
 
 
 def _plot(
-    out_path: Path, hr: Optional[pd.DataFrame], rr: Optional[pd.DataFrame]
+    out_path: Path,
+    hr: Optional[pd.DataFrame],
+    rr_stats: Optional[pd.DataFrame],
+    rr_raw: Optional[pd.DataFrame],
 ) -> None:
+    """Three-panel plot: HR, raw force, sparse onboard RR.
+
+    The force panel is only rendered when force_n is non-NaN somewhere
+    (i.e. v2 captures, or legacy v1 captures recorded with --log-force).
+    `rr_stats` carries the warmup-trimmed RR points for the bottom panel;
+    `rr_raw` carries the full (untrimmed) frame for the force panel.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    if hr is not None and not hr.empty:
-        axes[0].plot(hr["t"], hr["hr_bpm"], color="#0066cc", linewidth=1.0)
-        axes[0].set_ylabel("HR (bpm)")
-        axes[0].set_title("Reference HR (Polar H10)")
-        axes[0].grid(True, alpha=0.3)
+    has_force = (
+        rr_raw is not None
+        and "force_n" in rr_raw.columns
+        and rr_raw["force_n"].notna().any()
+    )
+    n_panels = 3 if has_force else 2
+    fig, axes = plt.subplots(n_panels, 1, figsize=(10, 2.8 * n_panels), sharex=True)
+    if n_panels == 2:
+        ax_hr, ax_rr = axes
+        ax_force = None
     else:
-        axes[0].text(0.5, 0.5, "no HR data", transform=axes[0].transAxes, ha="center")
-    if rr is not None and not rr.empty:
-        axes[1].plot(
-            rr["t"],
-            rr["rr_bpm"],
+        ax_hr, ax_force, ax_rr = axes
+
+    if hr is not None and not hr.empty:
+        ax_hr.plot(hr["t"], hr["hr_bpm"], color="#0066cc", linewidth=1.0)
+        ax_hr.set_ylabel("HR (bpm)")
+        ax_hr.set_title("Reference HR (Polar H10)")
+        ax_hr.grid(True, alpha=0.3)
+    else:
+        ax_hr.text(0.5, 0.5, "no HR data", transform=ax_hr.transAxes, ha="center")
+
+    if ax_force is not None and rr_raw is not None:
+        force_pts = rr_raw[rr_raw["force_n"].notna()]
+        ax_force.plot(
+            force_pts["t"], force_pts["force_n"], color="#1D5C6E", linewidth=0.8
+        )
+        ax_force.set_ylabel("Force (N)")
+        ax_force.set_title("Raw belt force (Vernier GDX-RB)")
+        ax_force.grid(True, alpha=0.3)
+
+    if rr_stats is not None and not rr_stats.empty:
+        ax_rr.plot(
+            rr_stats["t"],
+            rr_stats["rr_bpm"],
             color="#00C39A",
             linewidth=1.5,
             marker=".",
             markersize=4,
         )
-        axes[1].set_ylabel("RR (brpm)")
-        axes[1].set_title("Reference RR (Vernier GDX-RB)")
-        axes[1].grid(True, alpha=0.3)
+        ax_rr.set_ylabel("RR (brpm)")
+        ax_rr.set_title("Reference RR (Vernier onboard DSP)")
+        ax_rr.grid(True, alpha=0.3)
     else:
-        axes[1].text(0.5, 0.5, "no RR data", transform=axes[1].transAxes, ha="center")
-    axes[1].set_xlabel("Time")
+        ax_rr.text(0.5, 0.5, "no RR data", transform=ax_rr.transAxes, ha="center")
+    ax_rr.set_xlabel("Time")
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
@@ -165,16 +244,23 @@ def analyze_session(
         return 2
 
     hr = _load_csv(session_dir / "hr_log.csv")
-    rr = _load_csv(session_dir / "rr_log.csv")
+    rr, rr_schema = _load_rr(session_dir)
     if hr is None and rr is None:
         print(f"ERROR: no hr_log.csv or rr_log.csv in {session_dir}", file=sys.stderr)
         return 2
 
-    rr_for_stats = rr
-    if rr is not None and not include_warmup:
-        rr_for_stats = _trim_rr_warmup(rr, drop_suspect=not include_suspect)
+    # Only rows where rr_bpm is finite contribute to RR stats.
+    rr_for_stats = None
+    if rr is not None:
+        rr_for_stats = rr[rr["rr_bpm"].notna()].copy()
+        if not include_warmup and not rr_for_stats.empty:
+            rr_for_stats = _trim_rr_warmup(
+                rr_for_stats, drop_suspect=not include_suspect
+            )
 
     print(f"Session: {session_dir}")
+    if rr is not None:
+        print(f"RR schema: v{rr_schema}")
     notes = session_dir / "notes.txt"
     if notes.exists():
         print(f"Notes:   {notes.read_text().strip()}")
@@ -185,6 +271,8 @@ def analyze_session(
         rows.append(_summarize_series("hr_bpm", hr["hr_bpm"]))
     if rr_for_stats is not None:
         rows.append(_summarize_series("rr_bpm", rr_for_stats["rr_bpm"]))
+    if rr is not None and rr["force_n"].notna().any():
+        rows.append(_summarize_series("force_n", rr["force_n"].dropna()))
     if rows:
         _print_summary_table(rows)
         print()
@@ -216,7 +304,7 @@ def analyze_session(
     if plot:
         out = session_dir / "session_summary.png"
         try:
-            _plot(out, hr, rr_for_stats)
+            _plot(out, hr, rr_for_stats, rr)
             print(f"Plot:    {out}")
         except ImportError:
             print("(matplotlib not installed; skipping plot)", file=sys.stderr)
