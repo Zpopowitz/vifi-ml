@@ -77,7 +77,7 @@ it. It is the same trap that bit WiFi, and it must be handled explicitly (§3 Ph
 
 ```
 IWRL6432 radar (60 GHz FMCW)
-  → chirp frames  (frame rate >=30-50 Hz for per-beat IBI; see Phase 1b)
+  → chirp frames  (frame rate ~100 Hz for per-beat IBI; see Phase 1b)
   → range FFT  ──────────────→ range profile (complex, per ~4 cm bin)
   → static clutter removal (MTI: slow-time mean / IIR subtraction)
   → subject range-bin selection + TRACKING (range + Doppler + presence)
@@ -120,7 +120,7 @@ integration; beamforming across the existing TX/RX channels) need no hardware ch
 
 ### Phase 0 — While the board ships (now, ~1–3 weeks, no radar hardware)
 
-- [ ] **Order an FTDI C232HM-DDHSL-0 USB-to-SPI cable (~$25–35) now.** Critical — see
+- [x] **Order an FTDI C232HM-DDHSL-0 USB-to-SPI cable (~$25–35) now.** Critical — see
       Phase 1b: the IWRL6432's UART exposes only *processed* output; raw range-cube
       data needs SPI, and the BOOST has **no onboard SPI FTDI chip**. The
       C232HM-DDHSL-0 is the exact cable TI's SDK docs and the
@@ -129,19 +129,23 @@ integration; beamforming across the existing TX/RX channels) need no hardware ch
       cable). It ships as 10 colour-coded flying-lead sockets — no extra connector to
       buy; you wire ~5–6 (SCLK, MOSI, MISO, CS, GND, optionally a GPIO handshake) onto
       the BOOST's 0.1″ headers.
-- [ ] **Confirm the raw-data path from TI docs, before the board arrives.** Read the
+- [x] **Confirm the raw-data path from TI docs, before the board arrives.** Read the
       MMWAVE-L-SDK *Motion-and-Presence-Detection* demo docs + the TI E2E thread on
       IWRL6432 SPI ADC capture, and the `ti_iwrl6432_spi_data_stream` repo. Key fact to
       internalise: **raw streaming requires low-power mode OFF (`lowPowerCfg 0`)** and
-      is incompatible with the headline low-power vital-signs demo.
-- [ ] Install the TI toolchain: mmWave SDK, **SysConfig**, Code Composer Studio,
-      Uniflash.
-- [ ] Study the FMCW vital-signs model — TI's mmWave vital-signs lab; the
-      circle-fit/DACM phase-demodulation literature.
-- [ ] Read the per-beat ML references: radarODE (arXiv 2408.01672), AirECG
-      (`github.com/LangchengZhao/AirECG`).
-- [ ] **Write the one-page demand thesis** (see §0). Who needs contactless per-beat on
-      a still subject, and why isn't a chest strap enough?
+      is incompatible with the headline low-power vital-signs demo. Findings:
+      `docs/RADAR_PHASE0_NOTES.md` §1 — incl. the C232HM wiring map, the Path A (raw
+      ADC) vs Path B (range cube) firmware decision, and the S1/SOP switch settings.
+- [x] Install the TI toolchain: MMWAVE-L-SDK, **SysConfig**, Code Composer Studio,
+      Uniflash. Installed in WSL2 and verified by a clean SDK example build —
+      as-built record in `docs/RADAR_PHASE0_NOTES.md` §2.
+- [x] Study the FMCW vital-signs model — TI's mmWave vital-signs lab; the
+      circle-fit/DACM phase-demodulation literature. Summary: `docs/RADAR_PHASE0_NOTES.md` §3.
+- [x] Read the per-beat ML references: radarODE (arXiv 2408.01672), AirECG
+      (`github.com/LangchengZhao/AirECG`). Summary + datasets: `docs/RADAR_PHASE0_NOTES.md` §4.
+- [x] **Write the one-page demand thesis** (see §0). Who needs contactless per-beat on
+      a still subject, and why isn't a chest strap enough? Draft: `docs/RADAR_DEMAND_THESIS.md`
+      (awaiting owner sign-off).
 
 ### Phase 1a — Smoke test on the stock demo (~1–2 days with hardware, no code)
 
@@ -162,14 +166,17 @@ The cheapest possible de-risk, before building anything:
 > realistically 2–3 weeks for someone new to the TI toolchain.
 
 - [ ] Flash the **Motion-and-Presence-Detection** demo (not the OOB demo) with
-      `lowPowerCfg 0`; wire the C232HM-DDHSL-0 for SPI range-cube streaming. Check the
+      `lowPowerCfg 0`; wire the C232HM-DDHSL-0 for SPI raw-ADC streaming (firmware
+      Path A — decided; see `docs/RADAR_PHASE0_NOTES.md` §1). Check the
       wire-colour → BOOST-pin map against TI's docs / the `loeens` repo, and set the
       board's debug/SPI DIP switches per the EVM user guide — miswiring can damage the
       board.
-- [ ] **Pin the chirp configuration explicitly:** frame rate **≥30–50 Hz** (the OOB
-      demo's ~20 Hz is too coarse for ≤30 ms IBI resolution), ~3.7 GHz sweep bandwidth
-      (for ~4 cm range bins), samples-per-chirp, slope, idle time. Document them.
-- [ ] Build the host-side capture tool: stream the range cube to disk, timestamped,
+- [ ] **Pin the chirp configuration explicitly:** frame rate **~100 Hz** (Phase 0
+      research revised this up from ≥30–50 Hz: the OOB demo's ~20 Hz quantizes IBI to
+      ±50 ms and 30 fps still gave weak HRV in the literature — see
+      `docs/RADAR_PHASE0_NOTES.md` §3), ~3.75 GHz sweep bandwidth (for ~4 cm range
+      bins), samples-per-chirp, slope, idle time. Document them.
+- [ ] Build the host-side capture tool: stream the raw ADC to disk, timestamped,
       run simultaneously with `hr_logger.py`.
 - [ ] **Radar ↔ H10 time synchronization.** The H10 is BLE with variable latency;
       unsynced timestamps are the dominant IBI-error source. Capture a shared sync
