@@ -94,11 +94,16 @@ host script, post-processing). **Pick one before flashing day:**
 | Host parser | TI `adcDataSPIFTDI` → `adcdata.txt` → MATLAB | Python (`pyftdi`/`numpy`/`xarray`) |
 | Setup cost | SysConfig toggle + a documented `dpc.c` build patch | minimal firmware, static config in `defines.h` |
 | Maturity | official TI, supported | community fork, university-derived, 0–2 stars |
-| Fit for ViFi | raw ADC = do range-FFT ourselves | **range cube is the more direct artifact for a phase-based HR pipeline** |
+| Fit for ViFi | **strict superset — raw ADC, we run the range FFT ourselves** | range cube saves host code, but is lossy vs raw ADC |
 
-**Leaning Path B** — the range cube (per-range-bin complex IQ) is exactly what
-the DSP chain in §3 consumes, so Path B skips re-implementing the range FFT.
-Path A is the safer/officially-supported fallback. Decide before flashing.
+**Decided: Path A** (raw ADC, 2026-05-20). Raw ADC is a strict superset of the
+range cube: given raw ADC we run the range FFT on the host and reconstruct the
+cube with our own windowing, but the reverse is lossy — the on-chip FFT's
+windowing, bin truncation, and fixed-point requantization cannot be undone.
+Path A is also the TI-supported firmware. Writing the range FFT ourselves is a
+cost to absorb, not a reason to surrender capability. For a vitals chirp config
+(single TX, modest samples/chirp) raw ADC is only a few KB/frame, so the larger
+data volume comfortably fits the SPI frame-idle window.
 
 Either path requires:
 - `lowPowerCfg 0` (low-power mode **OFF**) — raw streaming is **incompatible**
@@ -234,7 +239,6 @@ None of these block *building* firmware; all are needed to *flash / debug*:
   primary platform) but needs a udev rule and the same `usbipd-win` passthrough;
   the Windows-only Zadig driver swap does not apply.
 - Download the BOOST schematic; confirm SPI IO = 3.3 V on page 5 (§1).
-- Decide firmware Path A vs Path B (§1) before flashing day.
 
 ---
 
@@ -359,8 +363,9 @@ licence is unstated.
   lever.
 - **Refines** the chirp config: frame-rate target moves from "≥30–50 Hz" to
   **~100 Hz** (§3). Plan Phase 1b updated.
-- **New decision surfaced:** Path A (raw ADC) vs Path B (range cube) firmware —
-  not anticipated in the plan; leaning Path B (§1).
+- **Decision made:** firmware Path A — raw ADC via TI's Motion-and-Presence
+  demo. Not anticipated in the plan; chosen because raw ADC is a strict
+  capability superset of the range cube (§1).
 - **Confirms** the plan's honest framing of Gate 2: best classical-DSP IBI
   RMSE is ~15–26 ms on cooperative, still subjects, with HRV metrics still
   15–30% off. Clearing Gate 2 (F1 ≥ 0.9, IBI ≤ 30 ms) by **pure classical DSP
@@ -372,7 +377,7 @@ licence is unstated.
 
 ### Open decisions for the owner
 
-1. **Firmware path A vs B** — recommend B (range cube). Decide before flashing.
+1. **Firmware path** — ✅ decided: Path A (raw ADC, TI Motion-and-Presence demo). See §1.
 2. **Frame rate** — adopt ~100 Hz as the Phase 1b chirp-config target.
 3. **Dataset** — pull the Age-Balanced 60 GHz set (Zenodo) for Phase 3 prep;
    note the CC BY-NC-ND commercial restriction.

@@ -166,7 +166,8 @@ The cheapest possible de-risk, before building anything:
 > realistically 2–3 weeks for someone new to the TI toolchain.
 
 - [ ] Flash the **Motion-and-Presence-Detection** demo (not the OOB demo) with
-      `lowPowerCfg 0`; wire the C232HM-DDHSL-0 for SPI range-cube streaming. Check the
+      `lowPowerCfg 0`; wire the C232HM-DDHSL-0 for SPI raw-ADC streaming (firmware
+      Path A — decided; see `docs/RADAR_PHASE0_NOTES.md` §1). Check the
       wire-colour → BOOST-pin map against TI's docs / the `loeens` repo, and set the
       board's debug/SPI DIP switches per the EVM user guide — miswiring can damage the
       board.
@@ -175,7 +176,7 @@ The cheapest possible de-risk, before building anything:
       ±50 ms and 30 fps still gave weak HRV in the literature — see
       `docs/RADAR_PHASE0_NOTES.md` §3), ~3.75 GHz sweep bandwidth (for ~4 cm range
       bins), samples-per-chirp, slope, idle time. Document them.
-- [ ] Build the host-side capture tool: stream the range cube to disk, timestamped,
+- [ ] Build the host-side capture tool: stream the raw ADC to disk, timestamped,
       run simultaneously with `hr_logger.py`.
 - [ ] **Radar ↔ H10 time synchronization.** The H10 is BLE with variable latency;
       unsynced timestamps are the dominant IBI-error source. Capture a shared sync
