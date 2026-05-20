@@ -383,6 +383,13 @@ function isActive(href: string): boolean {
     .header-right { gap: 10px; }
     .menu-toggle { display: inline-flex; }
 
+    /* 44px touch targets on mobile. Desktop keeps the compact 34px icon
+       buttons and the 24px wordmark — those are pointer targets, not
+       thumb targets. The icons inside stay their original size. */
+    .brand { padding: 10px 0; }
+    .theme-toggle,
+    .menu-toggle { width: 44px; height: 44px; }
+
     /* Nav collapses into a dropdown panel pinned under the header. It is
        positioned against the sticky .site-header, so it spans the full
        header width and drops from its bottom edge. Hidden and
