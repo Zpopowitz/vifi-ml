@@ -23,6 +23,7 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 - Tests: `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
 
 ## Conventions
+- Never trade quality or accuracy for effort. Recommend and build the most correct, capable option; lower implementation effort is context worth noting, never the basis for a decision.
 - Tests live in `tests/`. Run with `pytest -v` from repo root.
 - Real captures are gitignored (`data/`). Models are gitignored (`models/`). Never commit either.
 - Don't add backwards-compat shims for renamed/removed code; just change call sites.
