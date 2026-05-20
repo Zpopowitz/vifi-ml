@@ -50,3 +50,7 @@ site/.astro/
 site/dist/
 site/.vercel/
 .gstack/
+
+# Agent/plugin tooling artifacts (not part of the ViFi project)
+.compound-engineering/
+install-agents.sh
