@@ -136,8 +136,9 @@ integration; beamforming across the existing TX/RX channels) need no hardware ch
       is incompatible with the headline low-power vital-signs demo. Findings:
       `docs/RADAR_PHASE0_NOTES.md` §1 — incl. the C232HM wiring map, the Path A (raw
       ADC) vs Path B (range cube) firmware decision, and the S1/SOP switch settings.
-- [ ] Install the TI toolchain: MMWAVE-L-SDK, **SysConfig**, Code Composer Studio,
-      Uniflash. Version-pinned checklist + install gotchas: `docs/RADAR_PHASE0_NOTES.md` §2.
+- [x] Install the TI toolchain: MMWAVE-L-SDK, **SysConfig**, Code Composer Studio,
+      Uniflash. Installed in WSL2 and verified by a clean SDK example build —
+      as-built record in `docs/RADAR_PHASE0_NOTES.md` §2.
 - [x] Study the FMCW vital-signs model — TI's mmWave vital-signs lab; the
       circle-fit/DACM phase-demodulation literature. Summary: `docs/RADAR_PHASE0_NOTES.md` §3.
 - [x] Read the per-beat ML references: radarODE (arXiv 2408.01672), AirECG

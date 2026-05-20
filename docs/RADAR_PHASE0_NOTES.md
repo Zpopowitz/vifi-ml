@@ -22,13 +22,14 @@ Mirrors the radar plan §3 Phase 0 list:
 |---|---|---|
 | Order the FTDI C232HM-DDHSL-0 USB-to-SPI cable | ✅ done | owner ordered 2026-05-20 |
 | Confirm the raw-data path from TI docs | ✅ done | §1 below |
-| Install the TI toolchain | ⬜ owner action | checklist in §2 |
+| Install the TI toolchain | ✅ done | §2 — installed in WSL2, verified by a build |
 | Study the FMCW vital-signs model | ✅ done | §3 below |
 | Read the per-beat ML references | ✅ done | §4 below |
 | Write the one-page demand thesis | ✅ done | `docs/RADAR_DEMAND_THESIS.md` |
 
-Five of six closed by research. The sixth — installing the toolchain — is a
-hands-on owner action; §2 is the checklist to run it.
+All six Phase 0 items are closed. §2 is the as-built record of the toolchain
+install; the rest are research findings. Phase 0 ends when the board arrives and
+Phase 1a (Gate 0 smoke test) begins.
 
 ---
 
@@ -146,34 +147,94 @@ cable into an unpowered board, and leave the cable's 3.3 V lead disconnected.
 
 ---
 
-## 2. TI toolchain install checklist (Phase 0 item 3 — owner action)
+## 2. TI toolchain — installed and verified (Phase 0 item 3 — DONE)
 
-Install on the **Windows host** (build firmware there; CCS + SDK to `C:/ti`).
+**Status: installed in WSL2 (Ubuntu 24.04) and verified 2026-05-20** by building
+a stock SDK example end to end. Host decision: WSL2 Linux, not the Windows host.
+The toolchain lives under `~/ti/`.
 
-| Tool | Version (current May 2026) | Notes |
+### As-built — what is installed
+
+| Tool | Version installed | Path |
 |---|---|---|
-| MMWAVE-L-SDK | 05.05.04.00 | the IWRL6432 uses the **L-SDK**, not the classic mmWave SDK. Must be ≥ 5.4 for BOOST SPI streaming |
-| SysConfig | 1.20.0 | pinned by SDK 5.5.x; used to enable "ADC Streaming via SPI" |
-| TI Arm CLANG compiler | 3.2.2.LTS | the SDK build toolchain |
-| Code Composer Studio (CCS) | current CCS 20.x / Theia line | build + debug; point product-discovery at the SDK, install SysConfig 1.20.0 in Preferences |
-| Uniflash | latest | flash the built `.appimage` to the BOOST QSPI flash (flashing mode) |
-| Python 3.x | — | SDK scripts: `pyserial`, `xmodem`, `tqdm`. `loeens` host reader: `pyftdi`, `numpy`, `xarray` |
+| MMWAVE-L-SDK | 05.05.04.02 | `~/ti/MMWAVE_L_SDK_05_05_04_02` |
+| Code Composer Studio | 20.5.1 (mmWave family only) | `~/ti/ccs2051` |
+| TI Arm-CLANG compiler | 4.0.4.LTS | bundled in CCS: `~/ti/ccs2051/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS` |
+| SysConfig | 1.27.1 | `~/ti/sysconfig_1.27.1` (also bundled in CCS) |
+| Uniflash | 9.5.0 | `~/ti/uniflash_9.5.0` |
+| mono | 6.8.0 | system (`apt`) — required for the SDK boot-image step |
 
-**Install gotchas:**
-- Put Python at the **top of system PATH** or the SDK scripts won't resolve it.
-- Building on Linux/WSL2 instead of Windows additionally needs the **Mono
-  runtime** or bootloader-image creation fails with `mono: not found`.
-- Corporate proxy: configure `pip` proxy explicitly.
+The IWRL6432 uses the **MMWAVE-L-SDK** ("L" = low-power), not the classic mmWave
+SDK. TI's download pages serve only the *latest* of each tool, so the installed
+versions are newer than the SDK's reference toolset — `imports.mak` was pinned
+to CCS 12.7.1 / compiler 3.2.2.LTS / SysConfig 1.20.0. **The drift turned out
+not to matter**; see the verification build below.
 
-**Pre-arrival actions worth doing now (before the board ships in):**
-1. Install MMWAVE-L-SDK 5.5.x + CCS + SysConfig 1.20.0.
-2. **Resolve the `pyftdi` / Windows driver problem on a spare FT232H breakout.**
-   `pyftdi` has no official Windows support — you must swap the FT232H's VCP
-   driver for libusb/WinUSB via **Zadig**, or run the host script from WSL2
-   with `usbipd-win` USB passthrough. Validate this driver stack before the
-   board arrives so day-1 isn't lost to it.
-3. Download the BOOST schematic; confirm SPI IO = 3.3 V on page 5.
-4. **Decide Path A vs Path B** (§1) so the firmware build is unambiguous.
+### Install procedure as run (reproducible)
+
+All four tools download from ti.com behind a `myti.ti.com` login + export-control
+acceptance (Linux installers), then installed unattended:
+
+1. **Privileged prerequisites** (`sudo`, once):
+   - `sudo apt-get install -y mono-complete` — the SDK boot-image step
+     (`out2rprc.exe`) runs under mono; without it the build fails `mono: not found`.
+   - `sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get
+     install -y libc6:i386 libstdc++6:i386 zlib1g:i386` — **the MMWAVE-L-SDK
+     installer is a 32-bit binary** (`Linux-x86`); a 64-bit-only WSL2 cannot run
+     it without i386 multiarch + 32-bit libc. CCS / SysConfig / Uniflash
+     installers are 64-bit and need none of this.
+2. **Unattended installs** (no display server needed), each into `~/ti/`:
+   - `sysconfig-*-setup.run --mode unattended --prefix ~/ti/sysconfig_1.27.1`
+   - `uniflash_*.run --mode unattended --prefix ~/ti/uniflash_9.5.0`
+   - `ccs_setup_*.run --mode unattended --enable-components PF_MMWAVE --prefix ~/ti/ccs2051`
+     (`--enable-components PF_MMWAVE` skips ~16 device families we do not need)
+   - `MMWAVE_L_SDK_*.bin --mode unattended --prefix ~/ti` (creates its own
+     `MMWAVE_L_SDK_<ver>` subdir)
+
+### SDK configuration — `imports.mak` edits
+
+The SDK build reads `~/ti/MMWAVE_L_SDK_05_05_04_02/imports.mak`, which is
+version-pinned. Three edits point it at the as-built toolchain:
+
+| Variable | Pinned default | Edited to |
+|---|---|---|
+| `CCS_PATH` | `$(TOOLS_PATH)/ccs1271/ccs` | `$(TOOLS_PATH)/ccs2051/ccs` |
+| `CGT_TI_ARM_CLANG_PATH` | `ti-cgt-armllvm_3.2.2.LTS` | `ti-cgt-armllvm_4.0.4.LTS` |
+| `SYSCFG_PATH` | `$(TOOLS_PATH)/sysconfig_1.20.0` | `$(TOOLS_PATH)/sysconfig_1.27.1` |
+
+`imports.mak` lives inside the installed SDK — redo these edits if the SDK is
+ever reinstalled. `CCS_ECLIPSE` (`$(CCS_PATH)/eclipse/eclipse`) does not resolve
+(CCS 20 is Theia-based), but command-line `make` builds do not use it.
+
+### Verification build
+
+Built `examples/empty/xwrL64xx-evm/m4fss0-0_nortos/ti-arm-clang` with `make`.
+The full chain succeeded: SysConfig 1.27.1 generated the config code with no
+version error, tiarmclang 4.0.4 compiled clean under `-Werror`, the link against
+the SDK's prebuilt 3.2.2-era libraries succeeded (so the compiler-version gap is
+a non-issue), and mono produced `empty.release.appimage` — a flashable boot
+image. The toolchain builds IWRL6432 firmware today.
+
+### Deferred — board-gated, one `sudo` round-trip when the BOOST arrives
+
+None of these block *building* firmware; all are needed to *flash / debug*:
+
+1. **Uniflash runtime libs.** Uniflash flagged missing `libusb-0.1.so.4`,
+   `libusb-1.0.so.0`, `libcanberra.so.0`, `libgconf-2.so.4`. Note `libgconf-2-4`
+   may not be in the Ubuntu 24.04 repos (GConf is deprecated) — confirm at flash
+   time; Uniflash CLI flashing may not need it.
+2. **CCS USB-driver script.** `~/ti/ccs2051/ccs/install_scripts/install_drivers.sh`
+   (XDS110 udev rules) must run as root before CCS / Uniflash can see the board.
+3. **WSL2 USB passthrough.** Reaching the BOOST's USB from WSL2 needs
+   `usbipd-win` on the Windows side — set up with the board in hand.
+
+### Still-open pre-board actions (not toolchain)
+
+- `pyftdi` for the host capture tool: on WSL2 it works natively (Linux is its
+  primary platform) but needs a udev rule and the same `usbipd-win` passthrough;
+  the Windows-only Zadig driver swap does not apply.
+- Download the BOOST schematic; confirm SPI IO = 3.3 V on page 5 (§1).
+- Decide firmware Path A vs Path B (§1) before flashing day.
 
 ---
 
