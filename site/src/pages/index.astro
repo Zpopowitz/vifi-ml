@@ -946,10 +946,19 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
          container edge instead. */
       margin: 0;
       padding: 20px 0;
+      /* Stacked into one column, each system reads as a centered card
+         rather than a ragged left-aligned list. */
+      text-align: center;
     }
-    .row-cost, .row-mae { text-align: left; }
+    .row-cost, .row-mae { text-align: center; }
     .diagram { font-size: 10px; padding: 16px 18px; }
+    /* Drop the dot markers + connector line on mobile. The items lose
+       their left padding here, so the dots and the rail line landed on
+       top of the step text. Without them the timeline reads as a clean
+       stacked list. */
     .timeline li { padding: 24px 0; }
+    .timeline::before,
+    .timeline li::before { display: none; }
   }
 
   /* ============ PRINT ============ */
