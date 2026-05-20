@@ -39,8 +39,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -71,28 +73,76 @@ if str(ROOT) not in sys.path:
 # Standard BLE Heart Rate Measurement characteristic UUID.
 HR_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
 
+# hr_log.csv schema version. v2 adds the rr_interval_ms column (per-beat
+# inter-beat intervals) and a sidecar meta json — beat-level ground truth
+# for the beat-detection HR pipeline.
+CSV_SCHEMA_VERSION = 2
 
-def _parse_hr(data: bytes) -> int:
-    """Parse the HR Measurement characteristic per Bluetooth spec.
 
-    Byte 0 is a flags byte; bit 0 indicates 8-bit vs 16-bit HR value.
-    Bytes 1+ hold the HR value.
+def parse_hr_measurement(data: bytes) -> tuple[int, list[float]]:
+    """Parse the BLE Heart Rate Measurement characteristic (0x2A37).
 
-    Returns -1 on malformed input (length < 2, or 16-bit flag with
-    length < 3). Without the length guard, a transient BLE corruption
-    or a spoofed peripheral can raise IndexError inside the BleakClient
-    callback and drop the whole capture session silently. Returning
-    sentinel -1 keeps the loop alive and lets the caller skip the row.
+    Returns (hr_bpm, rr_intervals_ms).
+
+    Flags byte (data[0]):
+      bit 0 — HR value format: 0 = uint8, 1 = uint16
+      bit 4 — RR-Interval present: one or more uint16 RR-intervals follow
+              the HR field, in 1/1024-second units (converted to ms here).
+
+    Returns (0, []) on malformed input (empty, or HR field truncated).
+    Without the length guards a transient BLE corruption or a spoofed
+    peripheral could raise IndexError inside the BleakClient callback and
+    drop the whole capture session silently. Truncated RR-interval blocks
+    are tolerated — we parse the complete pairs and stop.
     """
-    if len(data) < 2:
-        return -1
+    if not data:
+        return 0, []
     flags = data[0]
-    if flags & 0x01:
-        # 16-bit HR value, little-endian
-        if len(data) < 3:
-            return -1
-        return int.from_bytes(data[1:3], "little")
-    return data[1]
+    hr_uint16 = bool(flags & 0x01)
+    rri_present = bool(flags & 0x10)
+    idx = 1
+    if hr_uint16:
+        if len(data) < idx + 2:
+            return 0, []
+        hr = int.from_bytes(data[idx : idx + 2], "little")
+        idx += 2
+    else:
+        if len(data) < idx + 1:
+            return 0, []
+        hr = data[idx]
+        idx += 1
+    rri: list[float] = []
+    if rri_present:
+        while idx + 2 <= len(data):
+            rr_units = int.from_bytes(data[idx : idx + 2], "little")
+            rri.append(rr_units * 1000.0 / 1024.0)
+            idx += 2
+    return hr, rri
+
+
+def _write_hr_meta_sidecar(
+    csv_path: Path, ble_address: str, started_at_utc: str
+) -> None:
+    """Write hr_log.csv.meta.json alongside the CSV (schema-version sidecar)."""
+    meta = {
+        "schema_version": CSV_SCHEMA_VERSION,
+        "device": "Polar H10",
+        "ble_address": ble_address,
+        "columns": ["timestamp_unix", "hr_bpm", "rr_interval_ms"],
+        "started_at_utc": started_at_utc,
+        "notes": (
+            "rr_interval_ms is the per-beat inter-beat interval in "
+            "milliseconds, parsed from the H10 BLE Heart Rate Measurement "
+            "characteristic (0x2A37). One row per beat; rows from the same "
+            "notification share hr_bpm and timestamp_unix. An empty "
+            "rr_interval_ms cell means the notification carried no "
+            "RR-intervals. Beat times must be reconstructed downstream by "
+            "cumulatively summing rr_interval_ms, not by reusing the "
+            "shared notification timestamp."
+        ),
+    }
+    sidecar = Path(str(csv_path) + ".meta.json")
+    sidecar.write_text(json.dumps(meta, indent=2))
 
 
 async def scan() -> None:
@@ -157,23 +207,34 @@ async def _log_impl(
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     start_wall = time.time()
+    started_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     deadline = start_wall + duration_s
     total_count = 0
+    beat_count = 0
     reconnect_count = 0
 
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["timestamp_unix", "hr_bpm"])
+        writer.writerow(["timestamp_unix", "hr_bpm", "rr_interval_ms"])
+        _write_hr_meta_sidecar(out_path, address, started_at_utc)
 
         def on_hr(_characteristic, data: bytearray) -> None:
-            nonlocal total_count
-            hr = _parse_hr(bytes(data))
-            if hr < 0:
-                # Malformed packet (length < 2, or 16-bit flag with length < 3).
-                # Skip; keeping the callback alive matters more than the row.
+            nonlocal total_count, beat_count
+            hr, rri_list = parse_hr_measurement(bytes(data))
+            if hr <= 0:
+                # Malformed packet (empty, or HR field truncated). Skip;
+                # keeping the callback alive matters more than the row.
                 return
             t = time.time()
-            writer.writerow([f"{t:.3f}", hr])
+            # One CSV row per beat (RR-interval). H10 batches 1-2 per
+            # notification; rows in the same notification share t + hr.
+            # A notification with no RR-intervals still gets one row.
+            if rri_list:
+                for rri_ms in rri_list:
+                    writer.writerow([f"{t:.3f}", hr, f"{rri_ms:.1f}"])
+                beat_count += len(rri_list)
+            else:
+                writer.writerow([f"{t:.3f}", hr, ""])
             f.flush()
             total_count += 1
             if bus_publisher is not None:
@@ -181,8 +242,8 @@ async def _log_impl(
             if total_count % 10 == 0:
                 remaining = max(0.0, deadline - time.time())
                 print(
-                    f"  {total_count:4d} readings, last HR={hr} bpm, "
-                    f"{remaining:.0f}s left"
+                    f"  {total_count:4d} updates / {beat_count:4d} beats, "
+                    f"last HR={hr} bpm, {remaining:.0f}s left"
                 )
 
         while time.time() < deadline:
@@ -228,8 +289,8 @@ async def _log_impl(
 
     elapsed = time.time() - start_wall
     print(
-        f"Done. Logged {total_count} readings over {elapsed:.1f}s "
-        f"to {out_path} ({reconnect_count} reconnects)"
+        f"Done. Logged {total_count} HR updates / {beat_count} beats over "
+        f"{elapsed:.1f}s to {out_path} ({reconnect_count} reconnects)"
     )
     return total_count
 
