@@ -276,7 +276,12 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
 
   /* ============ LAYOUT ============ */
   .container { max-width: 1160px; margin: 0 auto; padding: 0 32px; }
-  .container-prose { max-width: 720px; padding: 0; }
+  /* Narrower reading column. No padding of its own — it is always either
+     nested inside a .container (hero) or combined onto one (.container
+     .container-prose), and in both cases the .container supplies the
+     horizontal padding. Declaring padding:0 here used to override that
+     and flush the section content against the viewport edge on mobile. */
+  .container-prose { max-width: 720px; }
 
   /* ============ HERO ============ */
   .hero {
@@ -912,6 +917,7 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
 
   /* ============ RESPONSIVE ============ */
   @media (max-width: 760px) {
+    .container { padding: 0 20px; }
     .hero { padding: 64px 0 80px; }
     h1.display { margin-bottom: 160px; }
     .ambient-trace { height: 140px; }
@@ -919,7 +925,11 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
     .comparison-row {
       grid-template-columns: 1fr;
       gap: 8px;
-      padding: 20px 24px;
+      /* Drop the desktop -24px hover bleed: against a 20px container it
+         would push the row 4px off-screen. Stacked rows sit flush to the
+         container edge instead. */
+      margin: 0;
+      padding: 20px 0;
     }
     .row-cost, .row-mae { text-align: left; }
     .diagram { font-size: 10px; padding: 16px 18px; }

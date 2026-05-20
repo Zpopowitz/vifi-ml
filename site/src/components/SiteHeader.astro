@@ -25,7 +25,7 @@ function isActive(href: string): boolean {
     </a>
 
     <div class="header-right">
-      <nav class="primary-nav" aria-label="Primary">
+      <nav class="primary-nav" id="primary-nav" aria-label="Primary">
         {c.nav.items.map((item) => (
           <a
             href={item.href}
@@ -50,6 +50,19 @@ function isActive(href: string): boolean {
         <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
+      </button>
+
+      <button
+        id="menu-toggle"
+        class="menu-toggle"
+        type="button"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="primary-nav"
+      >
+        <span class="menu-icon" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
       </button>
     </div>
   </div>
@@ -117,11 +130,56 @@ function isActive(href: string): boolean {
       }
     }
 
+    // Mobile menu. The hamburger toggles a .menu-open class on the header;
+    // CSS drives the dropdown panel and the icon morph. The header persists
+    // across view transitions, so bind once (dataset guard) and just reset
+    // the open state on every astro:page-load.
+    function closeMenu() {
+      var header = document.querySelector(".site-header");
+      var btn = document.getElementById("menu-toggle");
+      if (header) header.classList.remove("menu-open");
+      if (btn) {
+        btn.setAttribute("aria-expanded", "false");
+        btn.setAttribute("aria-label", "Open menu");
+      }
+    }
+    function bindMenu() {
+      var btn = document.getElementById("menu-toggle");
+      var header = document.querySelector(".site-header");
+      if (!btn || !header || btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var open = header.classList.toggle("menu-open");
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        btn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      });
+      // A nav choice dismisses the panel immediately, rather than waiting
+      // for the view transition to land.
+      header.querySelectorAll(".primary-nav a").forEach(function (a) {
+        a.addEventListener("click", closeMenu);
+      });
+    }
+
     function setup() {
       bindToggle();
       onScroll();
       updateCurrentNav();
+      bindMenu();
+      closeMenu();
     }
+
+    // Escape and outside-click both dismiss the mobile menu. Registered
+    // once at script scope (the inline script runs once per full load).
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeMenu();
+    });
+    document.addEventListener("click", function (e) {
+      var header = document.querySelector(".site-header");
+      if (header && header.classList.contains("menu-open") && !header.contains(e.target)) {
+        closeMenu();
+      }
+    });
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", setup);
@@ -268,18 +326,112 @@ function isActive(href: string): boolean {
     :global(:root:not([data-theme="light"])) .theme-toggle .icon-moon { display: none; }
   }
 
-  @media (max-width: 760px) {
-    .container { padding: 0 24px; gap: 16px; }
-    .primary-nav { gap: 18px; }
-    .primary-nav a { font-size: 13px; }
+  /* ============ MOBILE MENU TOGGLE ============ */
+  /* Hidden on desktop, where the horizontal nav is shown. Squared to
+     match .theme-toggle so the two read as a deliberate pair. */
+  .menu-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 0;
+    transition: color 180ms ease-out, border-color 180ms ease-out;
   }
-  @media (max-width: 480px) {
-    .container {
+  .menu-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .menu-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .menu-icon {
+    position: relative;
+    display: block;
+    width: 18px;
+    height: 12px;
+  }
+  .menu-icon span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1.5px;
+    background: currentColor;
+    border-radius: 1px;
+    /* Same easing as the page's scroll-reveal motion — the icon morph
+       reads as part of the site's zen flow, not a separate gesture. */
+    transition: transform 220ms cubic-bezier(.2,.6,.2,1),
+                opacity 140ms ease-out;
+  }
+  .menu-icon span:nth-child(1) { top: 0; }
+  .menu-icon span:nth-child(2) { top: 50%; transform: translateY(-50%); }
+  .menu-icon span:nth-child(3) { bottom: 0; }
+  /* Open state: the three bars fold into an X. */
+  .site-header.menu-open .menu-icon span:nth-child(1) {
+    transform: translateY(5.25px) rotate(45deg);
+  }
+  .site-header.menu-open .menu-icon span:nth-child(2) { opacity: 0; }
+  .site-header.menu-open .menu-icon span:nth-child(3) {
+    transform: translateY(-5.25px) rotate(-45deg);
+  }
+
+  @media (max-width: 760px) {
+    .container { padding: 0 20px; }
+    .header-right { gap: 10px; }
+    .menu-toggle { display: inline-flex; }
+
+    /* 44px touch targets on mobile. Desktop keeps the compact 34px icon
+       buttons and the 24px wordmark — those are pointer targets, not
+       thumb targets. The icons inside stay their original size. */
+    .brand { padding: 10px 0; }
+    .theme-toggle,
+    .menu-toggle { width: 44px; height: 44px; }
+
+    /* Nav collapses into a dropdown panel pinned under the header. It is
+       positioned against the sticky .site-header, so it spans the full
+       header width and drops from its bottom edge. Hidden and
+       non-focusable (visibility) until .menu-open. */
+    .primary-nav {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 12px;
+      flex-wrap: nowrap;
+      gap: 2px;
+      padding: 8px 20px 16px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--rule);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-6px);
+      transition: opacity 200ms ease-out,
+                  transform 200ms cubic-bezier(.2,.6,.2,1),
+                  visibility 0s linear 200ms;
     }
-    .header-right { width: 100%; justify-content: space-between; }
-    .primary-nav { gap: 14px; }
+    .site-header.menu-open .primary-nav {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      transition: opacity 200ms ease-out,
+                  transform 200ms cubic-bezier(.2,.6,.2,1),
+                  visibility 0s;
+    }
+    /* Full-width tap rows; the aria-current pill still applies. */
+    .primary-nav a {
+      display: block;
+      width: 100%;
+      font-size: 15px;
+      padding: 12px;
+    }
+  }
+
+  @media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+    .primary-nav,
+    .site-header.menu-open .primary-nav { transition: visibility 0s; }
+    .menu-icon span { transition: none; }
   }
 </style>

@@ -258,7 +258,11 @@ const sectionsWithSlugs = page.sections.map((s) => ({
   }
   .section-grid {
     display: grid;
-    grid-template-columns: 320px 1fr;
+    /* minmax(0, 1fr) not 1fr: a bare 1fr track has an auto (min-content)
+       floor, so a wide editorial-table would blow the column past the
+       container edge. minmax(0,...) lets the column shrink and hands
+       overflow to .table-wrap's overflow-x:auto instead. */
+    grid-template-columns: 320px minmax(0, 1fr);
     gap: 80px;
     align-items: start;
   }
@@ -378,6 +382,18 @@ const sectionsWithSlugs = page.sections.map((s) => ({
     margin: 32px 0;
     overflow-x: auto;
     max-width: 100%;
+    /* Scrolling-shadows affordance (Lea Verou technique). Paper-colored
+       "cover" layers ride with the content (background-attachment: local)
+       and mask "shadow" layers pinned to the wrap edges (scroll). A
+       shadow only peeks out when there is more table in that direction,
+       so a wide editorial-table signals its off-screen columns instead
+       of clipping silently. Fully masked when the table fits; tokens
+       keep it correct in dark mode. */
+    background:
+      linear-gradient(to right, var(--paper) 50%, transparent) 0 0 / 40px 100% no-repeat local,
+      linear-gradient(to left, var(--paper) 50%, transparent) 100% 0 / 40px 100% no-repeat local,
+      linear-gradient(to right, var(--rule), transparent) 0 0 / 16px 100% no-repeat scroll,
+      linear-gradient(to left, var(--rule), transparent) 100% 0 / 16px 100% no-repeat scroll;
   }
   .editorial-table {
     width: 100%;
@@ -444,15 +460,16 @@ const sectionsWithSlugs = page.sections.map((s) => ({
   @media (max-width: 960px) {
     .container { padding: 0 32px; }
     .section-grid {
-      grid-template-columns: 280px 1fr;
+      grid-template-columns: 280px minmax(0, 1fr);
       gap: 48px;
     }
   }
   @media (max-width: 760px) {
+    .container { padding: 0 20px; }
     .subpage-hero { padding: 56px 0 40px; }
     .subpage-section { padding: 48px 0; }
     .section-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: 24px;
     }
     .section-header { position: static; }
