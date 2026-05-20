@@ -14,8 +14,8 @@ per-beat noise floor; ~1.26 rad at 60 GHz). The owner ordered an IWRL6432BOOST o
 2026-05-20. Backstory: `memory/project_radar_pivot.md`, `project_hr_data_bottleneck.md`.
 
 **Tech stack:** TI IWRL6432 (single-chip 60 GHz FMCW radar), TI mmWave SDK, Code
-Composer Studio / SysConfig / Uniflash, an FTDI FT232H USB-SPI adapter (see §3 — this
-is a *required* second purchase), Python (numpy/scipy + PyTorch for the ML phase),
+Composer Studio / SysConfig / Uniflash, an FTDI C232HM-DDHSL-0 USB-to-SPI cable
+(see §3 — a *required* second purchase), Python (numpy/scipy + PyTorch for the ML phase),
 Polar H10 as per-beat ground truth (`hr_logger.py` v2, kept as-is).
 
 ---
@@ -104,15 +104,31 @@ host capture tool.
 **Dies (unused, not destructively deleted):** `preprocess.py` CSI feature extraction;
 `hr_net/` (CSI LSTM); the ESP32 CSI capture path; `calibrate_cfo_sfo`.
 
+**Hardware front-end note — the BOOST's antenna.** The IWRL6432BOOST ships with a
+**fixed on-board FR4 PCB antenna array** — etched into the board, no RF connector, not
+swappable. **No lens is included, and TI sells no lens accessory for it.** This is the
+antenna every TI vital-signs reference demo uses, and it is sufficient for the v2
+working range (~0.3–1 m; mount the sensor ~0.7 m from the chest). Range extension — a
+dielectric lens or an external high-gain antenna — is therefore a *custom-hardware*
+effort, not an off-the-shelf accessory; it belongs in Phase 4 if placement flexibility
+ever demands it, not Phase 1/2. The software range levers (longer coherent
+integration; beamforming across the existing TX/RX channels) need no hardware change.
+
 ---
 
 ## 3. Phased roadmap with decision gates
 
 ### Phase 0 — While the board ships (now, ~1–3 weeks, no radar hardware)
 
-- [ ] **Order an FTDI FT232H USB-SPI adapter (~$15–30) now.** Critical — see Phase 1b:
-      the IWRL6432's UART exposes only *processed* output; raw range-cube data needs
-      SPI, and the BOOST needs an FT232H to bridge SPI to USB.
+- [ ] **Order an FTDI C232HM-DDHSL-0 USB-to-SPI cable (~$25–35) now.** Critical — see
+      Phase 1b: the IWRL6432's UART exposes only *processed* output; raw range-cube
+      data needs SPI, and the BOOST has **no onboard SPI FTDI chip**. The
+      C232HM-DDHSL-0 is the exact cable TI's SDK docs and the
+      `ti_iwrl6432_spi_data_stream` reference build both specify (a generic FT232H
+      breakout is the same chip, but TI's tooling and pinout are written for this
+      cable). It ships as 10 colour-coded flying-lead sockets — no extra connector to
+      buy; you wire ~5–6 (SCLK, MOSI, MISO, CS, GND, optionally a GPIO handshake) onto
+      the BOOST's 0.1″ headers.
 - [ ] **Confirm the raw-data path from TI docs, before the board arrives.** Read the
       MMWAVE-L-SDK *Motion-and-Presence-Detection* demo docs + the TI E2E thread on
       IWRL6432 SPI ADC capture, and the `ti_iwrl6432_spi_data_stream` repo. Key fact to
@@ -146,7 +162,10 @@ The cheapest possible de-risk, before building anything:
 > realistically 2–3 weeks for someone new to the TI toolchain.
 
 - [ ] Flash the **Motion-and-Presence-Detection** demo (not the OOB demo) with
-      `lowPowerCfg 0`; wire the FT232H for SPI raw range-cube streaming.
+      `lowPowerCfg 0`; wire the C232HM-DDHSL-0 for SPI range-cube streaming. Check the
+      wire-colour → BOOST-pin map against TI's docs / the `loeens` repo, and set the
+      board's debug/SPI DIP switches per the EVM user guide — miswiring can damage the
+      board.
 - [ ] **Pin the chirp configuration explicitly:** frame rate **≥30–50 Hz** (the OOB
       demo's ~20 Hz is too coarse for ≤30 ms IBI resolution), ~3.7 GHz sweep bandwidth
       (for ~4 cm range bins), samples-per-chirp, slope, idle time. Document them.
@@ -240,7 +259,7 @@ highest-risk work behind the weakest premise.
 
 | # | Risk | Severity | Mitigation |
 |---|---|---|---|
-| 1 | **Raw-data access needs an FTDI FT232H + the right demo + low-power OFF** — not just the BOOST | **Critical** | Order FT232H in Phase 0; confirm the SPI path from TI docs before the board arrives; Phase 1b uses the Motion-and-Presence demo, `lowPowerCfg 0` |
+| 1 | **Raw-data access needs an FTDI C232HM-DDHSL-0 cable + the right demo + low-power OFF** — the BOOST has no onboard SPI FTDI chip | **Critical** | Order the C232HM-DDHSL-0 in Phase 0; confirm the SPI path + wire-colour/pin map from TI docs before the board arrives; Phase 1b uses the Motion-and-Presence demo, `lowPowerCfg 0` |
 | 2 | DSP chain omits mandatory steps (MTI, DC-offset circle-fit, harmonic handling) | High | Now explicit Phase 2 tasks (§3) |
 | 3 | Respiration harmonics contaminate the cardiac band — geometric, not fixed by SNR | High | Harmonic-comb notch; exploit cardiac higher harmonics; named Phase 2 task |
 | 4 | Radar ↔ H10 time-sync failure inflates IBI error | High | Shared sync event per session; score IBI/HRV (delay cancels) |
@@ -258,8 +277,9 @@ highest-risk work behind the weakest premise.
 
 ## 6. Cost & timeline
 
-- **Dev hardware:** IWRL6432BOOST ~$200 (ordered) **+ FTDI FT232H ~$15–30 (order now)**.
-  No DCA1000 needed.
+- **Dev hardware:** IWRL6432BOOST ~$200 (ordered) **+ FTDI C232HM-DDHSL-0 USB-to-SPI
+  cable ~$25–35 (order now)**. No DCA1000 needed. The BOOST's antenna is fixed on-board
+  FR4 PCB — no lens or external antenna to buy (see the hardware front-end note in §2).
 - **Production (Phase 4, deferred):** bare IWRL6432 chip ~$10–24 + custom AoP board;
   v2 sensor BOM ~$25–60.
 - **Timeline:** Phase 0 now. Phase 1a ~1–2 days. Phase 1b ~2–3 weeks. Phase 2 ~2–3
@@ -303,7 +323,7 @@ revision:
 
 | # | Finding | Resolution |
 |---|---|---|
-| E1 | **Data-access claim was wrong.** UART exposes only processed TLV output, not per-bin phase. Raw range-cube needs SPI + an **FTDI FT232H** + the Motion-and-Presence demo + `lowPowerCfg 0` (incompatible with the low-power vital demo). | §3 Phase 0/1b rewritten; FT232H added to the BOM; Risk #1 = Critical. |
+| E1 | **Data-access claim was wrong.** UART exposes only processed TLV output, not per-bin phase. Raw range-cube needs SPI + an FTDI USB-SPI adapter + the Motion-and-Presence demo + `lowPowerCfg 0` (incompatible with the low-power vital demo). | §3 Phase 0/1b rewritten; the exact cable (FTDI C232HM-DDHSL-0) verified against TI docs + the `loeens` reference build and added to the BOM; Risk #1 = Critical. |
 | E2 | Missing mandatory DSP steps: static clutter removal (MTI), DC-offset circle-fit / DACM phase demodulation. Naïve `atan2` on an off-centre IQ arc gives distorted harmonic-rich phase. | §1, §2, §3 Phase 2 — now explicit named steps. |
 | E3 | Chirp configuration unspecified — frame rate, bandwidth, samples/chirp. OOB ~20 Hz frame rate too coarse for ≤30 ms IBI. | §3 Phase 1b — explicit "pin the chirp config" task, ≥30–50 Hz. |
 | E4 | "Radar's higher SNR makes respiration-harmonic separation tractable" — **wrong reasoning.** The harmonic collision is geometric. | §1 + §3 Phase 2 corrected; Risk #3. |
