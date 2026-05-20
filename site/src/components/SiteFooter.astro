@@ -81,6 +81,11 @@ const c = landing.data;
   }
   .colophon .sep { color: var(--rule); margin: 0 8px; }
 
+  /* Mobile container padding — matches the 20px used site-wide so the
+     footer content lines up with the header and page sections. */
+  @media (max-width: 760px) {
+    .container { padding: 0 20px; }
+  }
   @media (max-width: 600px) {
     .meta { flex-direction: column; gap: 8px; }
     .contact { display: flex; flex-wrap: wrap; gap: 4px 0; }
