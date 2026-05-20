@@ -85,6 +85,13 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
   <main id="main">
     <!-- ============ HERO ============ -->
     <section class="hero">
+      <div class="container hero-content">
+        <h1 class="display wake wake-1">Hospital&#8209;grade vital signs from <em class="soften">$44</em> of WiFi&nbsp;hardware.</h1>
+      </div>
+
+      {/* Ambient RF braid. Absolutely centered in the hero on desktop;
+          dropped into normal flow as its own band on mobile (see the
+          760px media query) so it can never cross the headline or lede. */}
       <div class="ambient-trace" aria-hidden="true">
         {pairs.map((p) => (
           <div class="pair-scroller" style={`animation-duration: ${p.durationS}s`}>
@@ -98,8 +105,6 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
       </div>
 
       <div class="container hero-content">
-        <h1 class="display wake wake-1">Hospital&#8209;grade vital signs from <em class="soften">$44</em> of WiFi&nbsp;hardware.</h1>
-
         <div class="container-prose">
           <p class="lede wake wake-2">Continuous bedside monitoring costs $3,000 per room and gets reserved for the ICU. ViFi delivers wellness-grade contactless monitoring for <a class="cite-link" href="#proof-heading">1/68th the cost</a>, validated against a Polar H10 chest-strap at <a class="cite-link" href="#proof-heading">4.15 bpm cross-session MAE</a>.</p>
           <div class="cta-row wake wake-3">
@@ -919,8 +924,19 @@ const pairs: Pair[] = PAIR_CONFIGS.map((p) => ({
   @media (max-width: 760px) {
     .container { padding: 0 20px; }
     .hero { padding: 64px 0 80px; }
-    h1.display { margin-bottom: 160px; }
-    .ambient-trace { height: 140px; }
+    /* The hero is tall on mobile, so an absolutely-centered braid lands
+       on the lede text. Drop it into normal flow as its own band
+       between the headline and the lede — it can no longer overlap
+       either. The 160px headline margin (desktop's room for the
+       absolute braid) is no longer needed. */
+    h1.display { margin-bottom: 24px; }
+    .ambient-trace {
+      position: relative;
+      top: auto;
+      transform: none;
+      height: 130px;
+      margin: 0 0 24px 0;
+    }
     .proof, .why, .problem, .how, .roadmap, .pilot-cta { padding: 72px 0; }
     .comparison-row {
       grid-template-columns: 1fr;
