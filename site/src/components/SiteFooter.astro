@@ -85,10 +85,19 @@ const c = landing.data;
      footer content lines up with the header and page sections. */
   @media (max-width: 760px) {
     .container { padding: 0 20px; }
+    /* 13px footer links sit in a ~20px line box — too small to tap
+       reliably. Flex blockifies the links so vertical padding builds a
+       44px touch target; the dot separators center against them. */
+    .contact {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0 2px;
+    }
+    .contact a { padding: 12px 0; }
+    .contact .sep { margin: 0 6px; }
   }
   @media (max-width: 600px) {
     .meta { flex-direction: column; gap: 8px; }
-    .contact { display: flex; flex-wrap: wrap; gap: 4px 0; }
-    .contact .sep { margin: 0 6px; }
   }
 </style>
