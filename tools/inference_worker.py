@@ -50,6 +50,7 @@ from modules.bus import (  # noqa: E402
 )
 from observability import install_worker_metrics  # noqa: E402
 from preprocess import build_envelope_from_amps, extract_features  # noqa: E402
+from rr_dsp import RespirationTracker  # noqa: E402
 
 log = logging.getLogger("vifi.inference_worker")
 
@@ -116,16 +117,15 @@ def _resample(
 
 @dataclass
 class _ModelBundle:
-    """Loaded HR + optional RR model for the inference worker."""
+    """Loaded HR model for the inference worker.
+
+    RR is no longer model-based: it is computed by
+    `rr_dsp.RespirationTracker`, a stateful DSP path wired in alongside
+    the HR predictor in `loop`.
+    """
 
     hr_model: object
     hr_ratio_idx: Optional[int]
-    rr_model: object = None
-    rr_ratio_idx: Optional[int] = None
-
-    @property
-    def has_rr(self) -> bool:
-        return self.rr_model is not None
 
 
 def _resolve_pca_k_from_metadata(meta: dict) -> None:
@@ -181,13 +181,8 @@ def _resolve_pca_k_from_metadata(meta: dict) -> None:
 
 
 def _load_model(model: str = "synthetic") -> _ModelBundle:
-    """Load HR + optional RR models.
-
-    Returns a bundle. RR is optional: real captures don't have RR
-    ground truth yet so models_real typically only ships HR. The
-    bundle's `has_rr` flag tells callers whether to publish to
-    rr.predicted at all.
-    """
+    """Load the HR model. RR is handled separately by `rr_dsp`, so no
+    RR model is loaded here."""
     from xgboost import XGBRegressor
 
     if model == "synthetic":
@@ -200,7 +195,6 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
         raise ValueError(f"unknown --model: {model!r}")
 
     hr_path = model_dir / "hr_model.json"
-    rr_path = model_dir / "rr_model.json"
     meta_path = model_dir / "metadata.json"
     if not hr_path.exists() or not meta_path.exists():
         raise FileNotFoundError(
@@ -216,49 +210,26 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
     _resolve_pca_k_from_metadata(meta)
     feature_names = list(meta.get("feature_names", []))
     hr_ratio_idx: Optional[int] = None
-    rr_ratio_idx: Optional[int] = None
     try:
         hr_ratio_idx = feature_names.index("hr_peak_ratio")
     except ValueError:
         pass
-    try:
-        rr_ratio_idx = feature_names.index("rr_peak_ratio")
-    except ValueError:
-        pass
-
-    rr_model = None
-    if rr_path.exists():
-        rr_model = XGBRegressor()
-        rr_model.load_model(rr_path)
-        log.info(
-            "loaded %s model from %s (HR + RR, %d features)",
-            model,
-            model_dir,
-            len(feature_names),
-        )
-    else:
-        log.info(
-            "loaded %s model from %s (HR only, %d features)",
-            model,
-            model_dir,
-            len(feature_names),
-        )
-    return _ModelBundle(
-        hr_model=hr,
-        hr_ratio_idx=hr_ratio_idx,
-        rr_model=rr_model,
-        rr_ratio_idx=rr_ratio_idx,
+    log.info(
+        "loaded %s HR model from %s (%d features)",
+        model,
+        model_dir,
+        len(feature_names),
     )
+    return _ModelBundle(hr_model=hr, hr_ratio_idx=hr_ratio_idx)
 
 
 def run_once(
     window: _Window, fs_resample: float, window_s: float, bundle: _ModelBundle
 ) -> Optional[dict]:
-    """Run the bundle's models on the current window contents.
+    """Run the HR model on the current window contents.
 
-    Returns a dict with `hr_bpm` always (when there's enough data) and
-    `rr_bpm` whenever `bundle.has_rr`. Returns None if the window is
-    too short.
+    Returns a dict with `hr_bpm` and HR metadata, or None if the window
+    is too short. RR is computed separately; see `_publish_rr`.
     """
     pkts = window.snapshot()
     if len(pkts) < 16:
@@ -274,21 +245,62 @@ def run_once(
     if bundle.hr_ratio_idx is not None and bundle.hr_ratio_idx < feats.shape[1]:
         hr_conf = float(np.clip(feats[0, bundle.hr_ratio_idx], 0.0, 1.0))
 
-    out = {
+    return {
         "hr_bpm": round(hr, 2),
         "hr_confidence": round(hr_conf, 3),
         "window_s": window_s,
         "n_packets": int(len(pkts)),
         "n_subcarriers": int(grid.shape[1]),
     }
-    if bundle.has_rr:
-        rr = float(bundle.rr_model.predict(feats)[0])
-        rr_conf = 0.0
-        if bundle.rr_ratio_idx is not None and bundle.rr_ratio_idx < feats.shape[1]:
-            rr_conf = float(np.clip(feats[0, bundle.rr_ratio_idx], 0.0, 1.0))
-        out["rr_bpm"] = round(rr, 2)
-        out["rr_confidence"] = round(rr_conf, 3)
-    return out
+
+
+def _publish_rr(
+    bus: MessageBus,
+    rr_topic: str,
+    patient_id: str,
+    rr_window: _Window,
+    rr_tracker: RespirationTracker,
+    fs_resample: float,
+    rr_window_s: float,
+    metrics: Optional[dict] = None,
+) -> None:
+    """Resample the RR window, run the RespirationTracker, publish to
+    rr.predicted.
+
+    A no-op until the window spans (nearly) a full `rr_window_s`: RR needs
+    a long window, so it warms up well after HR is already predicting.
+    `rr_bpm` is null whenever the tracker reports the breath unavailable,
+    so the dashboard can blank the reading rather than show a stale value.
+    """
+    pkts = rr_window.snapshot()
+    if len(pkts) < 16:
+        return
+    if pkts[-1].ts_unix - pkts[0].ts_unix < 0.9 * rr_window_s:
+        return  # still warming up
+    motion = _resample(pkts, fs=fs_resample, duration_s=rr_window_s)
+    if motion is None:
+        return
+    reading = rr_tracker.update(motion, fs_resample)
+    ts_unix = pkts[-1].ts_unix
+    bus.publish(
+        rr_topic,
+        {
+            "ts_unix": ts_unix,
+            "patient_id": patient_id,
+            "window_start_s": ts_unix - rr_window_s,
+            "window_end_s": ts_unix,
+            "rr_bpm": round(reading.rr_bpm, 2) if reading.available else None,
+            "rr_confidence": round(reading.confidence, 3),
+            "rr_available": reading.available,
+            "rr_state": reading.state,
+            "window_s": rr_window_s,
+            "n_packets": len(pkts),
+            "n_subcarriers": int(motion.shape[1]),
+        },
+        ts_ms=int(ts_unix * 1000),
+    )
+    if metrics is not None and reading.available:
+        metrics["predictions_total"].labels(patient_id, "rr").inc()
 
 
 CONSUMER_GROUP = "inference"
@@ -322,6 +334,9 @@ def loop(
     stop: Optional["threading.Event"] = None,
     consumer_name: Optional[str] = None,
     metrics: Optional[dict] = None,
+    rr_tracker: Optional[RespirationTracker] = None,
+    rr_window_s: float = 60.0,
+    rr_stride_s: float = 10.0,
 ) -> None:
     """Subscribe -> buffer -> predict -> publish, with at-least-once
     consumer-group semantics (I083).
@@ -336,10 +351,10 @@ def loop(
         packets are re-delivered on restart and the window is rebuilt.
         Worst case: one stride window of duplicate work.
 
-    Publishes HR predictions to hr.predicted.<patient> always; RR
-    predictions to rr.predicted.<patient> only when the bundle has an
-    RR model (synthetic does, real currently doesn't until the first
-    Vernier paired captures land).
+    Publishes HR predictions to hr.predicted.<patient> every `stride_s`.
+    When `rr_tracker` is set, also publishes RR to rr.predicted.<patient>
+    every `rr_stride_s` over a longer `rr_window_s` window, once that
+    window has filled.
 
     Runs forever (until KeyboardInterrupt or stop event) unless
     `max_iterations` is set (used by tests to bound the loop
@@ -355,8 +370,12 @@ def loop(
     bus.create_group(in_topic, CONSUMER_GROUP, start_id=from_id)
 
     window = _Window(duration_s=window_s * 1.5)
+    # RR uses a separate, longer rolling window: respiration needs many
+    # breath cycles to resolve, where HR is happy with ~10 s.
+    rr_window = _Window(duration_s=rr_window_s) if rr_tracker is not None else None
     pending_acks: list[str] = []  # msg_ids fed into the current window
     last_predict = 0.0
+    last_rr_predict = 0.0
     iterations = 0
     log.info(
         "worker for patient_id=%r (group=%r consumer=%r): "
@@ -366,7 +385,7 @@ def loop(
         consumer,
         in_topic,
         hr_topic,
-        f" + {rr_topic}" if bundle.has_rr else " (RR disabled, no rr_model)",
+        f" + {rr_topic}" if rr_tracker is not None else " (RR disabled)",
     )
 
     while (max_iterations is None or iterations < max_iterations) and (
@@ -382,12 +401,13 @@ def loop(
         )
         for m in msgs:
             try:
-                window.push(
-                    _Packet(
-                        ts_unix=float(m.payload["ts_unix"]),
-                        amps=np.asarray(m.payload["amps"], dtype=np.float32),
-                    )
+                pkt = _Packet(
+                    ts_unix=float(m.payload["ts_unix"]),
+                    amps=np.asarray(m.payload["amps"], dtype=np.float32),
                 )
+                window.push(pkt)
+                if rr_window is not None:
+                    rr_window.push(pkt)
                 pending_acks.append(m.msg_id)
                 if metrics is not None:
                     metrics["packets_total"].labels(patient_id).inc()
@@ -416,6 +436,26 @@ def loop(
                     metrics["dlq_total"].labels(patient_id).inc()
 
         now = time.time()
+
+        # RR runs on its own slower cadence over a longer window,
+        # independent of the HR stride gate below.
+        if (
+            rr_tracker is not None
+            and rr_window is not None
+            and now - last_rr_predict >= rr_stride_s
+        ):
+            last_rr_predict = now
+            _publish_rr(
+                bus,
+                rr_topic,
+                patient_id,
+                rr_window,
+                rr_tracker,
+                fs_resample,
+                rr_window_s,
+                metrics,
+            )
+
         if now - last_predict < stride_s:
             continue
         if metrics is not None:
@@ -430,8 +470,6 @@ def loop(
         if metrics is not None:
             metrics["window_packets"].labels(patient_id).observe(pred["n_packets"])
             metrics["predictions_total"].labels(patient_id, "hr").inc()
-            if "rr_bpm" in pred:
-                metrics["predictions_total"].labels(patient_id, "rr").inc()
         last_predict = now
         # ts_unix is the right edge of the prediction window.
         ts_unix = window._buf[-1].ts_unix if len(window) else now
@@ -450,23 +488,6 @@ def loop(
             },
             ts_ms=int(ts_unix * 1000),
         )
-        if "rr_bpm" in pred:
-            bus.publish(
-                rr_topic,
-                {
-                    "ts_unix": ts_unix,
-                    "patient_id": patient_id,
-                    "window_start_s": ts_unix - window_s,
-                    "window_end_s": ts_unix,
-                    "rr_bpm": pred["rr_bpm"],
-                    "rr_confidence": pred["rr_confidence"],
-                    "window_s": pred["window_s"],
-                    "n_packets": pred["n_packets"],
-                    "n_subcarriers": pred["n_subcarriers"],
-                },
-                ts_ms=int(ts_unix * 1000),
-            )
-
         # Prediction is durably published — drain the pending ACKs.
         # A crash before this point re-delivers the messages on restart.
         for msg_id in pending_acks:
@@ -492,6 +513,16 @@ def main() -> None:
         help="resample rate for the envelope (Hz)",
     )
     p.add_argument("--model", choices=["synthetic", "real"], default="synthetic")
+    p.add_argument(
+        "--rr-window",
+        type=float,
+        default=60.0,
+        help="RR window in seconds (respiration needs a longer window than HR)",
+    )
+    p.add_argument(
+        "--rr-stride", type=float, default=10.0, help="emit an RR reading every N s"
+    )
+    p.add_argument("--no-rr", action="store_true", help="disable RR estimation")
     p.add_argument(
         "--from-start",
         action="store_true",
@@ -520,6 +551,7 @@ def main() -> None:
 
     bus = bus_from_env()
     bundle = _load_model(args.model)
+    rr_tracker = None if args.no_rr else RespirationTracker(args.fs_resample)
     # Worker-process Prometheus endpoint on a separate port (gated by
     # VIFI_METRICS_ENABLED). When disabled, returns (None, None) and
     # the loop's `if metrics is not None` guards skip the calls.
@@ -551,6 +583,9 @@ def main() -> None:
             from_id=EARLIEST if args.from_start else LATEST,
             stop=stop_evt,
             metrics=metrics_handles,
+            rr_tracker=rr_tracker,
+            rr_window_s=args.rr_window,
+            rr_stride_s=args.rr_stride,
         )
     except KeyboardInterrupt:
         log.info("shutting down (KeyboardInterrupt)")

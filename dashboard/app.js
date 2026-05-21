@@ -331,8 +331,13 @@
 
         const payload = msg.payload || {};
         const valueKey = stream === 'hr' ? 'hr_bpm' : 'rr_bpm';
-        const value = payload[valueKey];
-        if (typeof value !== 'number') return;
+        const raw = payload[valueKey];
+        // RR is published with a null value when the tracker gates the
+        // breath as unavailable. Keep it as null so the card blanks and
+        // the chart gaps, rather than dropping it and showing a stale
+        // reading. A genuinely malformed (non-numeric) value is dropped.
+        if (raw != null && typeof raw !== 'number') return;
+        const value = typeof raw === 'number' ? raw : null;
 
         const ts_ms = msg.ts_ms || Date.now();
         series[stream][role].push({ ts_ms, value, payload });
@@ -394,7 +399,8 @@
         set('confidence',
             fmt.confidence(pred && pred.payload[`${streamKind}_confidence`]));
 
-        const err = (pred && ref) ? pred.value - ref.value : null;
+        const err = (pred && ref && pred.value != null && ref.value != null)
+            ? pred.value - ref.value : null;
         const errorEl = card.querySelector('[data-field="error"]');
         if (errorEl) {
             errorEl.textContent = err == null ? '—' : fmt.signed(err);
@@ -435,8 +441,9 @@
         if (!refs.length || !preds.length) return { value: 0, n: 0 };
         let sum = 0, n = 0;
         for (const p of preds) {
+            if (p.value == null) continue;  // gated / unavailable reading
             const r = nearest(refs, p.ts_ms);
-            if (r && Math.abs(r.ts_ms - p.ts_ms) < 5_000) {
+            if (r && r.value != null && Math.abs(r.ts_ms - p.ts_ms) < 5_000) {
                 sum += Math.abs(p.value - r.value);
                 n += 1;
             }
@@ -483,7 +490,7 @@
 
         const tMax = Math.max(...all.map(p => p.ts_ms));
         const tMin = tMax - HISTORY_S * 1000;
-        const yValues = all.map(p => p.value);
+        const yValues = all.map(p => p.value).filter(v => v != null);
 
         const yMinFloor = streamKind === 'hr' ? 50 : 8;
         const yMaxFloor = streamKind === 'hr' ? 110 : 30;
@@ -531,10 +538,15 @@
             ctx.strokeStyle = getCSS('--accent');
             ctx.lineWidth = 2.25;
             ctx.beginPath();
-            buf.predicted.forEach((p, i) => {
+            // A gated RR window has a null value: break the line there
+            // rather than drawing through the gap.
+            let drawing = false;
+            buf.predicted.forEach((p) => {
+                if (p.value == null) { drawing = false; return; }
                 const x = xOf(p.ts_ms);
                 const y = yOf(p.value);
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                if (!drawing) { ctx.moveTo(x, y); drawing = true; }
+                else ctx.lineTo(x, y);
             });
             ctx.stroke();
         }
@@ -546,8 +558,10 @@
         }
         if (buf.predicted.length) {
             const last = buf.predicted[buf.predicted.length - 1];
-            drawDot(ctx, xOf(last.ts_ms), yOf(last.value),
-                    getCSS('--accent'));
+            if (last.value != null) {
+                drawDot(ctx, xOf(last.ts_ms), yOf(last.value),
+                        getCSS('--accent'));
+            }
         }
     }
 

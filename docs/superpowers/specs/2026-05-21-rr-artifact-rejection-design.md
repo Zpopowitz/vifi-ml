@@ -1,7 +1,7 @@
 # RR artifact rejection — design + validation
 
 **Date:** 2026-05-21
-**Status:** module implemented + validated; inference-path wiring pending
+**Status:** implemented, validated, and wired into the inference worker + dashboard
 **Branch:** `feat/rr-artifact-rejection`
 
 ## Problem
@@ -73,9 +73,16 @@ it honestly reports unavailable.
   variable breathing; a controlled capture (subject still, steady breathing)
   should see much higher availability.
 
-## Remaining work
+## Integration (done)
 
-- Wire `RespirationTracker` into `inference_worker.py` (60 s RR buffer; emit
-  reading + confidence + availability to `rr.predicted`).
-- Dashboard RR card honors the availability gate (shows "--" when unavailable).
-- Retire the unvalidated synthetic `rr_model.json` from the RR path.
+- `inference_worker.py` runs the `RespirationTracker` on a separate 60 s RR
+  buffer at its own cadence, alongside the 10 s HR path. It publishes
+  `rr_bpm` / `rr_confidence` / `rr_available` / `rr_state` to `rr.predicted`,
+  with `rr_bpm` null whenever the tracker gates the breath as unavailable.
+  The worker no longer loads the unvalidated synthetic `rr_model.json`.
+- The dashboard RR card blanks to "--" and the chart gaps on a gated reading
+  instead of showing a stale value.
+
+The `/predict` and `/predict/csi` REST endpoints still return a synthetic
+`rr_model` value; those are synthetic-input smoke-test endpoints, separate
+from the live dashboard path, and are left as a follow-up.
