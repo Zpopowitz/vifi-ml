@@ -1,9 +1,10 @@
 """Tests for tools.inference_worker.
 
-We exercise the loop end-to-end with a stub model so we don't need a
-trained XGBoost model on disk. Verifies:
+We exercise the loop end-to-end with stub HR/RR models so we don't need
+a trained model on disk. Verifies:
   - CSI packets published to csi.raw.<p> get consumed
-  - predictions get published to hr.predicted.<p> with the expected schema
+  - HR predictions get published to hr.predicted.<p> with the schema
+  - RR readings get published to rr.predicted.<p> via the RespirationTracker
   - malformed messages are dropped without crashing the loop
   - stride_s is respected
 """
@@ -11,7 +12,6 @@ trained XGBoost model on disk. Verifies:
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +27,7 @@ from modules.bus import (  # noqa: E402
     hr_predicted,
     rr_predicted,
 )
+from rr_dsp import RRReading  # noqa: E402
 from tools.inference_worker import (  # noqa: E402
     _ModelBundle,
     _Packet,
@@ -96,17 +97,20 @@ class _StubModel:
         return np.array([self.hr], dtype=np.float32)
 
 
+class _StubTracker:
+    """Returns a fixed RRReading; matches RespirationTracker.update."""
+
+    def __init__(self, reading: RRReading) -> None:
+        self.reading = reading
+        self.calls = 0
+
+    def update(self, motion: np.ndarray, fs: float | None = None) -> RRReading:
+        self.calls += 1
+        return self.reading
+
+
 def _hr_only_bundle(hr: float = 72.5) -> _ModelBundle:
     return _ModelBundle(hr_model=_StubModel(hr=hr), hr_ratio_idx=None)
-
-
-def _hr_rr_bundle(hr: float = 72.5, rr: float = 18.0) -> _ModelBundle:
-    return _ModelBundle(
-        hr_model=_StubModel(hr=hr),
-        hr_ratio_idx=None,
-        rr_model=_StubModel(hr=rr),
-        rr_ratio_idx=None,
-    )
 
 
 def _fill_window(
@@ -135,19 +139,9 @@ def test_run_once_predicts_hr_when_window_has_data():
     out = run_once(w, fs_resample=100.0, window_s=10.0, bundle=bundle)
     assert out is not None
     assert out["hr_bpm"] == 72.5
-    assert "rr_bpm" not in out  # HR-only bundle: no RR field
+    assert "rr_bpm" not in out  # run_once is HR-only; RR is a separate path
     assert out["n_subcarriers"] == 16
     assert out["window_s"] == 10.0
-
-
-def test_run_once_predicts_both_hr_and_rr_when_bundle_has_rr():
-    w = _Window(duration_s=15.0)
-    _fill_window(w, fs=100.0, duration_s=10.0, n_sub=16)
-    bundle = _hr_rr_bundle(hr=72.5, rr=18.0)
-    out = run_once(w, fs_resample=100.0, window_s=10.0, bundle=bundle)
-    assert out is not None
-    assert out["hr_bpm"] == 72.5
-    assert out["rr_bpm"] == 18.0
 
 
 # ---------------------------------------------------------------------------
@@ -207,15 +201,18 @@ def test_loop_consumes_csi_and_publishes_hr_predictions():
     assert p["window_end_s"] == p["ts_unix"]
     assert p["window_start_s"] == p["ts_unix"] - 10.0
 
-    # No RR predictions should have been published (HR-only bundle).
+    # No RR predictions: no rr_tracker was passed.
     rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0)
     assert rr_preds == []
 
 
-def test_loop_publishes_rr_predictions_when_bundle_has_rr():
+def test_loop_publishes_rr_via_tracker_once_window_fills():
     bus = InMemoryBus()
     patient = "bob"
-    _publish_synthetic_csi(bus, patient, n_sub=8)
+    _publish_synthetic_csi(bus, patient, n_packets=101, fs=10.0, n_sub=8)
+    tracker = _StubTracker(
+        RRReading(rr_bpm=18.0, confidence=0.9, available=True, state="tracking")
+    )
 
     loop(
         bus=bus,
@@ -223,18 +220,81 @@ def test_loop_publishes_rr_predictions_when_bundle_has_rr():
         window_s=10.0,
         stride_s=0.0,
         fs_resample=10.0,
-        bundle=_hr_rr_bundle(hr=72.0, rr=18.0),
+        bundle=_hr_only_bundle(hr=72.0),
         from_id=EARLIEST,
         max_iterations=2,
+        rr_tracker=tracker,
+        rr_window_s=6.0,
+        rr_stride_s=0.0,
     )
 
-    hr_preds = bus.read({hr_predicted(patient): EARLIEST}, block_ms=0)
+    rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0, count=10)
+    assert rr_preds, "tracker produced no RR prediction"
+    p = rr_preds[-1].payload
+    assert p["rr_bpm"] == 18.0
+    assert p["rr_available"] is True
+    assert p["rr_state"] == "tracking"
+    assert p["patient_id"] == patient
+    assert tracker.calls >= 1
+
+
+def test_loop_blanks_rr_bpm_when_tracker_unavailable():
+    bus = InMemoryBus()
+    patient = "dave"
+    _publish_synthetic_csi(bus, patient, n_packets=101, fs=10.0, n_sub=8)
+    tracker = _StubTracker(
+        RRReading(
+            rr_bpm=float("nan"), confidence=0.1, available=False, state="acquiring"
+        )
+    )
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_only_bundle(),
+        from_id=EARLIEST,
+        max_iterations=2,
+        rr_tracker=tracker,
+        rr_window_s=6.0,
+        rr_stride_s=0.0,
+    )
+
+    rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0, count=10)
+    assert rr_preds, "expected an RR message even when unavailable"
+    p = rr_preds[-1].payload
+    assert p["rr_bpm"] is None
+    assert p["rr_available"] is False
+
+
+def test_loop_skips_rr_while_window_warming_up():
+    bus = InMemoryBus()
+    patient = "carol"
+    # ~3 s of CSI: shorter than 0.9 * rr_window_s, so RR stays warming up.
+    _publish_synthetic_csi(bus, patient, n_packets=31, fs=10.0, n_sub=8)
+    tracker = _StubTracker(
+        RRReading(rr_bpm=18.0, confidence=0.9, available=True, state="tracking")
+    )
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_only_bundle(),
+        from_id=EARLIEST,
+        max_iterations=2,
+        rr_tracker=tracker,
+        rr_window_s=6.0,
+        rr_stride_s=0.0,
+    )
+
     rr_preds = bus.read({rr_predicted(patient): EARLIEST}, block_ms=0)
-    assert len(hr_preds) >= 1 and len(rr_preds) >= 1
-    assert hr_preds[-1].payload["hr_bpm"] == 72.0
-    assert rr_preds[-1].payload["rr_bpm"] == 18.0
-    # Both predictions should share the same ts_unix (same window).
-    assert hr_preds[-1].payload["ts_unix"] == rr_preds[-1].payload["ts_unix"]
+    assert rr_preds == []
+    assert tracker.calls == 0
 
 
 def test_loop_drops_malformed_messages_without_crashing():

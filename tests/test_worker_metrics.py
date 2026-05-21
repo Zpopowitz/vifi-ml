@@ -138,8 +138,7 @@ def test_metrics_increment_on_successful_prediction():
         metrics=metrics,
     )
     # At least one packet was ingested and at least one HR prediction
-    # was emitted. We don't assert on RR because _hr_only_bundle has
-    # no rr_model.
+    # was emitted. RR is not asserted here: no rr_tracker was passed.
     assert metrics["packets_total"].inc_calls, "no packets counted"
     assert metrics["predictions_total"].inc_calls, "no predictions counted"
     assert any(c[1] == 1.0 for c in metrics["predictions_total"].inc_calls)
@@ -165,12 +164,7 @@ def test_metrics_count_dlq_on_malformed_message():
         def predict(self, X):
             return np.array([70.0])
 
-    bundle = _ModelBundle(
-        hr_model=_NopHR(),
-        hr_ratio_idx=None,
-        rr_model=None,
-        rr_ratio_idx=None,
-    )
+    bundle = _ModelBundle(hr_model=_NopHR(), hr_ratio_idx=None)
     loop(
         bus=bus,
         patient_id=patient,
