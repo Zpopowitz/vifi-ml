@@ -18,6 +18,28 @@ research roadmap that came out of that session.
 
 ---
 
+## Current direction — radar v2 (2026-05-20)
+
+ViFi has pivoted from WiFi CSI to a 60 GHz mmWave radar (TI IWRL6432BOOST)
+for genuine beat-by-beat monitoring. WiFi CSI is shelved, not deleted — the
+operator commands further down still run the shelved CSI stack, but the
+active work is radar v2.
+
+- Plan: `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md`
+- Phase 0 research (complete): `docs/RADAR_PHASE0_NOTES.md`
+- Demand thesis (draft, owner sign-off pending): `docs/RADAR_DEMAND_THESIS.md`
+- **`radar/` — the FMCW DSP module.** The Phase 2 deliverable, built and
+  tested against a synthetic generator while the board ships: range FFT,
+  MTI clutter removal, range-bin tracking, DC-offset circle-fit + DACM
+  phase extraction, respiration-harmonic notch, beat detection, motion
+  gating, HR/HRV. Entry point: `from radar import RadarConfig,
+  synth_capture, process`. Tests: `tests/test_radar_*.py`.
+
+Phase 1 (hands-on capture, the Gate 0 smoke test) is gated on the board
+arriving.
+
+---
+
 ## Audit-plan execution status
 
 Sequenced PR roadmap from `docs/AUDIT_PLAN.md`. Tonight's session
