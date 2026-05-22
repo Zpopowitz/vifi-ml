@@ -10,6 +10,12 @@ catches), see `docs/AUDIT_PLAN.md`.
 
 ## Last updated
 
+2026-05-22. SP1 persistent live monitoring stack landed — Redis +
+dashboard + inference + audit run as boot-persistent `systemd` services
+on the Pi, and `./tools/capture.sh --live` streams a capture into it
+live. See `docs/LIVE_STACK.md` and the "Live monitoring stack" section
+in the operator commands below.
+
 2026-05-16. Reflects everything through PR-K + PR-I, plus the first
 home pilot session in `bedroom_1` and the topology shift to Pi-5-
 orchestrated sessions. See `docs/HOME_PILOT_LOG.md` for the empirical
@@ -167,7 +173,10 @@ cp models_real/hr_model.json models_real/mahalanobis.json \
    models_real/metadata.json models/
 ```
 
-### Bring up the live stack
+### Bring up the dev/analysis stack (laptop Docker Compose)
+
+For dev + analysis on the laptop (not the persistent Pi live stack —
+see the next section for that):
 
 ```bash
 cd ~/vifi-ml
@@ -177,6 +186,35 @@ docker compose ps            # all 4 containers should be Up + healthy
 
 Browser: http://localhost:8501 → log in with the API key from
 `.env`.
+
+### Live monitoring stack (SP1 — Pi systemd services)
+
+The persistent, sensor-agnostic live stack: Redis + dashboard +
+inference + audit run as boot-persistent `systemd` services on the Pi.
+Full runbook: `docs/LIVE_STACK.md`.
+
+```bash
+# One-time install (idempotent — re-run any time to install/repair).
+# From WSL; it resolves + SSHes to the Pi.
+./tools/setup_live_stack.sh
+
+# Day-to-day operation.
+./tools/live_stack.sh status     # 4 services + redis ping + dashboard /health
+./tools/live_stack.sh restart    # restart the 3 vifi-* services
+./tools/live_stack.sh logs       # last 100 journald lines, vifi-* units
+
+# Record a capture that streams live to the dashboard.
+./tools/capture.sh --live                  # 5-min capture, live on the dashboard
+./tools/capture.sh --live --duration 30     # short live smoke capture
+```
+
+Dashboard: **http://vifi-pi-room1.local:8000** → pick the `founder`
+room to watch predicted-vs-reference HR/RR. Plain `./tools/capture.sh`
+(no `--live`) is unchanged: file-only, no stack dependency.
+
+To show *real* predictions (not the synthetic-model default), sync the
+trained artifacts to the Pi, set `VIFI_INFERENCE_MODEL=real` in
+`/etc/vifi/live.env`, and `./tools/live_stack.sh restart`.
 
 ### Pre-capture sanity (before each session) — run on Pi
 

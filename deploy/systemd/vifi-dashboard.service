@@ -1,0 +1,19 @@
+[Unit]
+Description=ViFi live dashboard (FastAPI api:app + dashboard SPA)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/LIVE_STACK.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+MemoryMax=1G
+SyslogIdentifier=vifi-dashboard
+
+[Install]
+WantedBy=multi-user.target
