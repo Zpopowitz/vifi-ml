@@ -212,9 +212,9 @@ Dashboard: **http://vifi-pi-room1.local:8000** → pick the `founder`
 room to watch predicted-vs-reference HR/RR. Plain `./tools/capture.sh`
 (no `--live`) is unchanged: file-only, no stack dependency.
 
-To show *real* predictions (not the synthetic-model default), sync the
-trained artifacts to the Pi, set `VIFI_INFERENCE_MODEL=real` in
-`/etc/vifi/live.env`, and `./tools/live_stack.sh restart`.
+The inference worker serves the **real model only** — no synthetic
+fallback. Sync the trained artifacts to the Pi (see "sync from laptop"
+above) before bringing the stack up, or `vifi-inference` will not start.
 
 ### Pre-capture sanity (before each session) — run on Pi
 

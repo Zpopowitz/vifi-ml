@@ -156,22 +156,21 @@ the dropdown to see predicted-vs-reference HR/RR update in real time.
 `/etc/vifi/live.env` (installed from `deploy/systemd/vifi-live.env.example`) is
 read by all four services via `EnvironmentFile`:
 
-| Variable               | Default                       | Purpose                                            |
-|------------------------|-------------------------------|----------------------------------------------------|
-| `VIFI_BUS_URL`         | `redis://localhost:6379/0`    | Redis the loggers + workers + dashboard share      |
-| `VIFI_PATIENT_ID`      | `founder`                     | Namespaces every bus topic; matches `--subject-id` |
-| `VIFI_BUS_MAXLEN`      | `120000`                      | Per-stream entry cap (~22 min of 90 Hz CSI)        |
-| `VIFI_INFERENCE_MODEL` | `synthetic`                   | `synthetic` (ships with repo) or `real` (needs artifacts) |
-| `VIFI_AUTH_MODE`       | `none`                        | SP1 bench mode; SP7 flips to `api_key`             |
+| Variable          | Default                    | Purpose                                            |
+|-------------------|----------------------------|----------------------------------------------------|
+| `VIFI_BUS_URL`    | `redis://localhost:6379/0` | Redis the loggers + workers + dashboard share      |
+| `VIFI_PATIENT_ID` | `founder`                  | Namespaces every bus topic; matches `--subject-id` |
+| `VIFI_BUS_MAXLEN` | `120000`                   | Per-stream entry cap (~22 min of 90 Hz CSI)        |
+| `VIFI_AUTH_MODE`  | `none`                     | SP1 bench mode; SP7 flips to `api_key`             |
 
 After editing the file, `./tools/live_stack.sh restart` to apply.
 
-**Using the real model.** `VIFI_INFERENCE_MODEL=synthetic` lets the stack come
-up cleanly out of the box, but the synthetic model's predictions are not
-meaningful against real CSI. To show real predicted-vs-reference HR, sync the
-trained artifacts to the Pi (see `docs/STATUS.md` → "sync from laptop"), set
-`VIFI_INFERENCE_MODEL=real` in `/etc/vifi/live.env`, then
-`./tools/live_stack.sh restart`.
+**The model.** The inference worker serves the real model only — the one
+trained on real paired captures. There is no synthetic fallback: the stack
+shows real numbers or no numbers, never fabricated ones. The real model
+artifacts must be on the Pi before `vifi-inference` will start; sync them with
+`docs/STATUS.md` → "sync from laptop" (or set `VIFI_REAL_MODEL_DIR` if they
+live somewhere other than `models_real/`).
 
 ---
 
@@ -180,7 +179,7 @@ trained artifacts to the Pi (see `docs/STATUS.md` → "sync from laptop"), set
 | Symptom                                   | Cause / fix                                                                 |
 |--------------------------------------------|------------------------------------------------------------------------------|
 | `capture.sh --live` exits at preflight     | Stack down. `./tools/setup_live_stack.sh` (install/repair) or `./tools/live_stack.sh restart`. |
-| Dashboard shows the room but no predictions| `vifi-inference` crash-looping. `./tools/live_stack.sh logs`. Usually a missing model when `VIFI_INFERENCE_MODEL=real` — sync artifacts or set it back to `synthetic`. |
+| Dashboard shows the room but no predictions| `vifi-inference` crash-looping. `./tools/live_stack.sh logs`. Usually the real model artifacts are missing — sync them to the Pi (`docs/STATUS.md` → "sync from laptop"). |
 | Dashboard `/health` unreachable            | `vifi-dashboard` down or port 8000 blocked. `systemctl status vifi-dashboard` on the Pi. |
 | `redis-cli ping` ≠ `PONG`                  | `redis-server` down. `sudo systemctl restart redis-server`. |
 | Predictions stop mid-capture               | Bus trimmed past un-read entries, or CSI stream gap. Check `redis-cli xlen csi.raw.founder` is growing. |
