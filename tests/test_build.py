@@ -72,22 +72,30 @@ def test_requirements_pins_core_libs():
         assert pkg in req, f"missing {pkg} in requirements.txt"
 
 
+def _dashboard_js() -> str:
+    """Every dashboard ES module concatenated. The SPA's JavaScript is
+    split into js/*.js modules, so structural checks scan the whole set
+    rather than a single file."""
+    js_dir = ROOT / "dashboard" / "js"
+    return "\n".join(p.read_text() for p in sorted(js_dir.glob("*.js")))
+
+
 def test_dashboard_spa_files_exist():
-    """Static SPA dashboard (HTML/CSS/JS) replaces the legacy
-    Streamlit dashboard.py. Just sanity-check the required files
-    are present and non-empty so a missing file in CI is loud.
+    """Static SPA dashboard: index.html, styles.css, and the js/ ES
+    modules. Sanity-check the required files are present and non-empty
+    so a missing file in CI is loud.
 
     Schema-level checks are out of scope for unit tests; the SPA
     smoke-test at compose-up time covers the WebSocket integration."""
     d = ROOT / "dashboard"
     assert d.is_dir(), "dashboard/ directory missing"
-    for name in ("index.html", "styles.css", "app.js"):
+    for name in ("index.html", "styles.css", "js/main.js"):
         path = d / name
         assert path.exists(), f"dashboard/{name} missing"
         assert path.stat().st_size > 0, f"dashboard/{name} is empty"
     # The JS must reference /api/v1/stream so it stays in sync with the
     # FastAPI WebSocket route.
-    assert "/api/v1/stream" in (d / "app.js").read_text()
+    assert "/api/v1/stream" in _dashboard_js()
 
 
 def test_dashboard_login_overlay_present():
@@ -95,42 +103,42 @@ def test_dashboard_login_overlay_present():
     by accident, every clinic deployment exposes the dashboard
     unauthenticated. Catch the regression at build time."""
     html = (ROOT / "dashboard" / "index.html").read_text()
-    js = (ROOT / "dashboard" / "app.js").read_text()
+    js = _dashboard_js()
     css = (ROOT / "dashboard" / "styles.css").read_text()
     # Markup
     assert 'id="login-overlay"' in html
     assert 'id="login-form"' in html
     assert 'id="login-key"' in html
     assert 'id="login-submit"' in html
-    # JS gates the app on key verification.
-    assert "verifyKeyAndStart" in js
+    # JS gates the app on key verification against /health.
     assert "vifiApiKey" in js
     assert "showLogin" in js
-    # CSS provides at least the overlay container.
-    assert ".login-overlay" in css
-    assert ".login-card" in css
+    assert "/health" in js
+    # CSS provides the overlay container.
+    assert ".login" in css
+    assert ".login__card" in css
 
 
 def test_dashboard_room_dropdown_replaces_text_input():
     """Patient-id picker must be a <select>, not a free-text <input>.
     Free-text was the dev placeholder; clinical UX wants a list."""
     html = (ROOT / "dashboard" / "index.html").read_text()
-    js = (ROOT / "dashboard" / "app.js").read_text()
-    # Top-bar uses a <select id="patient-id">
-    assert "<select" in html and 'id="patient-id"' in html
+    js = _dashboard_js()
+    # Top-bar uses a <select id="room-select">
+    assert "<select" in html and 'id="room-select"' in html
     # JS hits /api/v1/rooms to populate it.
     assert "/api/v1/rooms" in js
     # Refresh button + handler exist.
-    assert 'id="patient-refresh"' in html
+    assert 'id="room-refresh"' in html
     assert "refreshRooms" in js
 
 
-def test_dashboard_logout_button_present():
+def test_dashboard_signout_present():
     """Operators need a way to clear their session locally."""
     html = (ROOT / "dashboard" / "index.html").read_text()
-    js = (ROOT / "dashboard" / "app.js").read_text()
-    assert 'id="logout-button"' in html
-    assert "logoutButton" in js
+    js = _dashboard_js()
+    assert 'id="signout"' in html
+    assert "STORAGE_KEY" in js
 
 
 def test_dockerignore_excludes_heavy_dirs():

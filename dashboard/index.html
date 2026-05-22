@@ -4,163 +4,139 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="ViFi live vital-sign monitor.">
+  <meta name="color-scheme" content="light dark">
   <title>ViFi — Live Monitor</title>
+
+  <!-- Set the theme before first paint so dark mode never flashes light. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('vifi-theme');
+        if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      } catch (e) { document.documentElement.dataset.theme = 'light'; }
+    })();
+  </script>
+
+  <link rel="preload" href="./fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./fonts/inter-tight.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./styles.css">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2300C39A' d='M16 28L4 16l4-4 8 8 8-8 4 4-12 12z'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%230E9F66' d='M3 17h6l3-8 5 14 4-9 2 3h6' stroke='%230E9F66' stroke-width='2' fill='none' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
-  <!-- Login overlay. Shown when no API key is stored, or after a 401.
-       Hides itself once a key is verified against /health. -->
-  <div id="login-overlay" class="login-overlay" hidden>
-    <div class="login-card" role="dialog" aria-labelledby="login-title">
-      <div class="brand login-brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">ViFi</span>
+  <!-- Login overlay. Shown by js/auth.js when no API key is stored or
+       after a 401. Hidden once a key verifies against /health. -->
+  <div id="login-overlay" class="login" hidden>
+    <div class="login__card" role="dialog" aria-labelledby="login-title" aria-modal="true">
+      <div class="brand brand--login">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__name">ViFi</span>
       </div>
-      <h1 id="login-title" class="login-title">Sign in</h1>
-      <p class="login-help">
-        Paste the API key issued for your clinic. ViFi stores it on
-        this device only.
+      <h1 id="login-title" class="login__title">Sign in</h1>
+      <p class="login__help">
+        Paste the API key issued for your clinic. ViFi stores it on this
+        device only.
       </p>
-      <form id="login-form" class="login-form" autocomplete="off">
-        <label class="login-field">
-          <span>API key</span>
-          <input type="password"
-                 id="login-key"
-                 name="key"
-                 inputmode="text"
-                 placeholder="vifi_…"
-                 autocomplete="off"
-                 spellcheck="false"
-                 required>
-          <button type="button"
-                  id="login-show"
-                  class="login-show"
-                  aria-label="Show / hide key">show</button>
+      <form id="login-form" class="login__form" autocomplete="off">
+        <label class="field">
+          <span class="field__label">API key</span>
+          <span class="field__control">
+            <input type="password" id="login-key" name="key" inputmode="text"
+                   placeholder="vifi_…" autocomplete="off" spellcheck="false" required>
+            <button type="button" id="login-show" class="field__reveal"
+                    aria-label="Show or hide key">show</button>
+          </span>
         </label>
-        <button type="submit" id="login-submit" class="login-submit">
+        <button type="submit" id="login-submit" class="btn btn--primary btn--block">
           Verify and continue
         </button>
-        <p id="login-error" class="login-error" hidden></p>
+        <p id="login-error" class="login__error" role="alert" hidden></p>
       </form>
-      <p class="login-footer">
-        Don't have a key? Ask the system operator. ViFi never sends
-        keys to external services.
+      <p class="login__footer">
+        No key? Ask your system operator. ViFi never sends keys to
+        external services.
       </p>
     </div>
   </div>
 
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">ViFi</span>
-      <span class="brand-divider" aria-hidden="true"></span>
-      <span class="brand-context">Live Monitor</span>
-    </div>
-    <nav class="topbar-controls">
-      <label class="patient-picker">
-        <span>Room</span>
-        <select id="patient-id"
-                aria-label="Active room"
-                class="patient-select">
+    <a class="brand" href="/" aria-label="ViFi Live Monitor">
+      <span class="brand__mark" aria-hidden="true"></span>
+      <span class="brand__name">ViFi</span>
+      <span class="brand__context">Live Monitor</span>
+    </a>
+    <div class="topbar__controls">
+      <label class="room">
+        <span class="room__label">Room</span>
+        <select id="room-select" class="room__select" aria-label="Active room">
           <option value="default">default</option>
         </select>
-        <button type="button"
-                id="patient-refresh"
-                class="patient-refresh"
-                aria-label="Refresh room list"
-                title="Refresh room list">⟳</button>
       </label>
-      <span id="connection-status" class="status status-idle" role="status">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span class="status-text">Connecting</span>
+      <button type="button" id="room-refresh" class="iconbtn"
+              aria-label="Refresh room list" title="Refresh room list">⟳</button>
+      <span id="conn-status" class="status" role="status" data-state="idle">
+        <span class="status__dot" aria-hidden="true"></span>
+        <span class="status__text">Connecting</span>
       </span>
-      <button type="button"
-              id="logout-button"
-              class="logout-button"
-              hidden
-              aria-label="Sign out">
-        Sign out
-      </button>
-    </nav>
+      <button type="button" id="theme-toggle" class="iconbtn"
+              aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+      <button type="button" id="signout" class="btn btn--ghost" hidden>Sign out</button>
+    </div>
   </header>
 
-  <main class="layout">
-    <!-- Heart rate card -->
-    <section class="vital-card" data-vital="hr" aria-labelledby="hr-title">
-      <header class="vital-head">
-        <h2 id="hr-title">Heart rate</h2>
-        <span class="vital-units">bpm</span>
-      </header>
-      <div class="vital-figures">
-        <div class="vital-primary">
-          <span class="vital-label">Predicted</span>
-          <span class="vital-value" data-field="predicted">—</span>
-          <span class="vital-meta" data-field="confidence">—</span>
-        </div>
-        <div class="vital-secondary">
-          <span class="vital-label">Reference</span>
-          <span class="vital-value" data-field="reference">—</span>
-          <span class="vital-meta" data-field="source">Polar H10</span>
-        </div>
-        <div class="vital-tertiary">
-          <span class="vital-label">Error</span>
-          <span class="vital-value vital-error" data-field="error">—</span>
-          <span class="vital-meta" data-field="mae">MAE 2 min: —</span>
-        </div>
-      </div>
-      <figure class="vital-chart">
-        <canvas id="hr-canvas" width="800" height="160"></canvas>
-        <figcaption class="vital-chart-legend">
-          <span class="legend-dot legend-predicted"></span>Predicted
-          <span class="legend-dot legend-reference"></span>Reference
-        </figcaption>
-      </figure>
-    </section>
-
-    <!-- Respiratory rate card -->
-    <section class="vital-card" data-vital="rr" aria-labelledby="rr-title">
-      <header class="vital-head">
-        <h2 id="rr-title">Respiratory rate</h2>
-        <span class="vital-units">brpm</span>
-      </header>
-      <div class="vital-figures">
-        <div class="vital-primary">
-          <span class="vital-label">Predicted</span>
-          <span class="vital-value" data-field="predicted">—</span>
-          <span class="vital-meta" data-field="confidence">—</span>
-        </div>
-        <div class="vital-secondary">
-          <span class="vital-label">Reference</span>
-          <span class="vital-value" data-field="reference">—</span>
-          <span class="vital-meta" data-field="source">Vernier GDX-RB</span>
-        </div>
-        <div class="vital-tertiary">
-          <span class="vital-label">Error</span>
-          <span class="vital-value vital-error" data-field="error">—</span>
-          <span class="vital-meta" data-field="mae">MAE 2 min: —</span>
-        </div>
-      </div>
-      <figure class="vital-chart">
-        <canvas id="rr-canvas" width="800" height="160"></canvas>
-        <figcaption class="vital-chart-legend">
-          <span class="legend-dot legend-predicted"></span>Predicted
-          <span class="legend-dot legend-reference"></span>Reference
-        </figcaption>
-      </figure>
-    </section>
-  </main>
+  <!-- Vital cards are injected here by js/cards.js from the vital
+       registry (js/registry.js). One registry entry per vital. -->
+  <main class="monitor" id="monitor" aria-live="polite"></main>
 
   <footer class="footer">
-    <span id="api-status">API: —</span>
-    <span class="footer-divider">·</span>
-    <a href="/docs" class="footer-link">API docs</a>
-    <span class="footer-divider">·</span>
-    <a href="/health" class="footer-link">Health</a>
-    <span class="footer-divider">·</span>
-    <span id="build-version">—</span>
+    <span id="api-status" class="footer__status">API: —</span>
+    <nav class="footer__links">
+      <a href="/docs" class="footer__link">API docs</a>
+      <a href="/health" class="footer__link">Health</a>
+    </nav>
+    <span id="build-version" class="footer__version">—</span>
   </footer>
 
-  <script src="./app.js" defer></script>
+  <!-- Card markup, cloned once per registered vital. data-field hooks
+       are the only contract between markup and js/cards.js. -->
+  <template id="vital-card">
+    <section class="card" data-vital>
+      <header class="card__head">
+        <h2 class="card__title" data-field="title"></h2>
+        <span class="card__badge" data-field="status">Waiting</span>
+      </header>
+
+      <div class="card__hero">
+        <span class="card__value" data-field="predicted">—</span>
+        <span class="card__units" data-field="units"></span>
+      </div>
+      <p class="card__confidence" data-field="confidence"></p>
+
+      <dl class="card__compare">
+        <div class="metric">
+          <dt class="metric__label">Reference</dt>
+          <dd class="metric__value" data-field="reference">—</dd>
+          <dd class="metric__note" data-field="source"></dd>
+        </div>
+        <div class="metric">
+          <dt class="metric__label">Error</dt>
+          <dd class="metric__value" data-field="error">—</dd>
+          <dd class="metric__note" data-field="mae">MAE 2 min: —</dd>
+        </div>
+      </dl>
+
+      <figure class="card__chart">
+        <canvas data-field="canvas"></canvas>
+        <figcaption class="card__legend">
+          <span class="legend"><span class="legend__swatch legend__swatch--predicted"></span>Predicted</span>
+          <span class="legend"><span class="legend__swatch legend__swatch--reference"></span>Reference</span>
+        </figcaption>
+      </figure>
+    </section>
+  </template>
+
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
