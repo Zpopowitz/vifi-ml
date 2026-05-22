@@ -288,7 +288,10 @@ def _publish_rr(
     reading = rr_tracker.update(motion, fs_resample)
     log.info(
         "rr: %s (rr=%.1f conf=%.2f, %d packets)",
-        reading.state, reading.rr_bpm, reading.confidence, len(pkts),
+        reading.state,
+        reading.rr_bpm,
+        reading.confidence,
+        len(pkts),
     )
     ts_unix = pkts[-1].ts_unix
     bus.publish(
