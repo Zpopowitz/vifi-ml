@@ -50,9 +50,12 @@ def test_roadmap_listing(client):
     r = client.get("/roadmap")
     assert r.status_code == 200
     body = r.json()
-    # HR is real-hardware validated; RR is synthetic-only until Vernier captures land.
-    assert body["shipped"] == ["hr"]
-    assert body["synthetic_only"] == ["rr"]
+    # Both HR and RR ship end-to-end on the one (real) model; live RR is via
+    # rr_dsp. The legacy `synthetic_only` bucket is gone -- there is no
+    # synthetic serving model.
+    assert "hr" in body["shipped"]
+    assert "rr" in body["shipped"]
+    assert "synthetic_only" not in body
     planned_caps = set(body["planned"].keys())
     assert {"apnea", "gait", "falls", "transients", "multi_patient"} <= planned_caps
     # presence is now shipped, not in the planned list

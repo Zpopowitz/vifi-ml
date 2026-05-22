@@ -7,7 +7,7 @@ Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree wi
 ## Where things live
 - DSP + features: `preprocess.py`
 - Synthetic generator (sanity-only): `data_gen.py`
-- Training: `train.py` (baseline), `tools/retrain_on_real.py` (real captures), `tools/train_quantile_models.py` (CIs)
+- Training: `train.py` (CI test-fixture model from synthetic data — not a serving model), `tools/retrain_on_real.py` (the real serving model, from real captures), `tools/train_quantile_models.py` (CIs). The API and inference worker serve the real model only; there is no synthetic fallback.
 - Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
 - Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
 - **Operator status + commands:** `docs/STATUS.md` ← read first

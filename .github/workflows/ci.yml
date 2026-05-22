@@ -74,7 +74,10 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Sanity check — hypothesis must be importable
         run: python -c "import hypothesis; print('hypothesis', hypothesis.__version__)"
-      - name: Train synthetic models (needed by some tests)
+      - name: Build the test-fixture model (needed by tests of the predict pipeline)
+        # train.py trains an XGBoost regressor on synthetic data and writes it
+        # to models/. The test suite loads it as the single bundle's fixture --
+        # there is no longer a separate "synthetic serving model" concept.
         run: python train.py -n 500
       - name: Remove any stale coverage data
         # Belt-and-suspenders alongside `parallel = false` in

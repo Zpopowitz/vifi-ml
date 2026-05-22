@@ -2,11 +2,15 @@
 
 Endpoints:
     GET  /health                -> service liveness + model metadata
-    POST /predict               -> synthetic IQ window in, HR/RR out
-    POST /predict/csi           -> per-packet CSI amplitudes (ESP32-CSI-Tool style) -> HR/RR
-    POST /predict/demo          -> generate synthetic + predict (smoke test)
+    POST /predict               -> IQ window in, HR (and RR if the model has one) out
+    POST /predict/csi           -> per-packet CSI amplitudes (ESP32-CSI-Tool style) in, HR out
     POST /predict/capture       -> real ESP32-S3 capture text in, HR timeline out
     POST /identify              -> fingerprint-match a capture against stored calibrations
+
+The service serves the real (trained-on-real-captures) model only -- there is
+no synthetic fallback. Tests + CI exercise the pipeline by pointing the same
+bundle at a fixture model dir built by `train.py` (synthetic *data*, real-shaped
+artifact); the distinction is the dir, not a separate "synthetic model" code path.
 """
 
 from __future__ import annotations
@@ -50,20 +54,17 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from api_internals.bundles import (
-    RealModelBundle,
-    SyntheticModelBundle,
-    load_synthetic_models as _load_synthetic_models,
-)
-from data_gen import generate_sample
+from api_internals.bundles import RealModelBundle
 from preprocess import (
     FEATURE_SET_VERSION,
     build_envelope_from_amps,
     extract_features,
 )
 
-MODEL_DIR = Path("models")
-REAL_MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
+# Single model dir: the real (trained-on-real-captures) model -- the only
+# model the API ever serves. Override the location with VIFI_REAL_MODEL_DIR;
+# tests pass a fixture dir built by train.py explicitly to create_app.
+MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
 MODEL_VERSION = "xgb-1.0"
 
 logging.basicConfig(
@@ -74,7 +75,7 @@ log = logging.getLogger("vifi.api")
 
 
 # ---------------------------------------------------------------------------
-# Synthetic-pipeline schemas (legacy, used by /predict and /predict/demo)
+# Feature-vector schemas (/predict + /predict/csi)
 # ---------------------------------------------------------------------------
 
 
@@ -96,20 +97,15 @@ class IQRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     hr_bpm: float
-    rr_bpm: float
+    # rr is Optional: the production real model (from tools/retrain_on_real.py)
+    # doesn't necessarily ship an RR regressor -- live RR is computed by rr_dsp
+    # (PCA + continuity tracker), not by a trained model. The CI fixture model
+    # built by train.py does have one, so tests still see rr_bpm populated.
+    rr_bpm: Optional[float] = None
     hr_confidence: float
-    rr_confidence: float
+    rr_confidence: Optional[float] = None
     model_version: str
     n_samples: int
-
-
-class DemoRequest(BaseModel):
-    hr_bpm: Optional[float] = None
-    rr_bpm: Optional[float] = None
-    duration_s: float = 10.0
-    fs: float = 100.0
-    snr_db: float = 20.0
-    seed: Optional[int] = None
 
 
 class CSIRequest(BaseModel):
@@ -137,12 +133,9 @@ class HealthResponse(BaseModel):
     hr_tol_bpm: float
     rr_tol_bpm: float
     feature_names: List[str]
-    synthetic_model_loaded: bool
-    synthetic_model_dir: str
-    synthetic_model_metadata: Optional[dict] = None
-    real_model_loaded: bool
-    real_model_dir: str
-    real_model_metadata: Optional[dict] = None
+    model_loaded: bool
+    model_dir: str
+    model_metadata: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -245,10 +238,11 @@ class IdentifyRequest(BaseModel):
 # Loaders
 # ---------------------------------------------------------------------------
 
-# Bundle classes (SyntheticModelBundle / RealModelBundle) were
-# extracted to api_internals/bundles.py in PR-H. They are imported
-# at the top of this file alongside the other dependencies; the
-# names remain available on `api` (back-compat for tests + tools).
+# The single model bundle (RealModelBundle) lives in
+# api_internals/bundles.py; it is imported at the top of this file and the
+# name remains available on `api` (back-compat for tests + tools). The
+# previously-shipped SyntheticModelBundle is gone -- the API serves the real
+# model only, no synthetic fallback.
 
 
 # ---------------------------------------------------------------------------
@@ -656,11 +650,11 @@ _csi_to_envelope = build_envelope_from_amps
 # ---------------------------------------------------------------------------
 
 
-def create_app(
-    model_dir: Path = MODEL_DIR, real_model_dir: Path = REAL_MODEL_DIR
-) -> FastAPI:
-    """Build the FastAPI app. Always succeeds — missing models are reported
-    via 503 from the relevant endpoints, not as a boot failure.
+def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
+    """Build the FastAPI app. Always succeeds — a missing model is reported
+    via 503 from the relevant endpoints, not as a boot failure. There is one
+    model: the real (trained-on-real-captures) bundle. Tests pass a fixture
+    `model_dir` (e.g. `Path("models")` built by `train.py`) explicitly.
     """
     sec_status = validate_config_or_raise()
     log.info("security config: %s", sec_status)
@@ -716,16 +710,13 @@ def create_app(
 
     install_middleware(app)
 
-    # If real_model_dir uses the versioned layout
-    # (`<dir>/current` symlink → `<dir>/<sha>/`), resolve to the
-    # active version before constructing the bundle. Falls back to
-    # the dir itself for legacy in-place / --no-versioned layouts.
+    # If model_dir uses the versioned layout (`<dir>/current` symlink →
+    # `<dir>/<sha>/`), resolve to the active version before constructing the
+    # bundle. Falls back to the dir itself for legacy in-place layouts.
     from tools.model_swap import resolve_active_model_dir  # noqa: PLC0415
 
-    real_model_dir = resolve_active_model_dir(real_model_dir)
-
-    synthetic_bundle = SyntheticModelBundle(model_dir)
-    real_bundle = RealModelBundle(real_model_dir)
+    model_dir = resolve_active_model_dir(model_dir)
+    bundle = RealModelBundle(model_dir)
 
     @app.middleware("http")
     async def _timing(request: Request, call_next):
@@ -741,29 +732,20 @@ def create_app(
         )
         return response
 
-    # /readyz + /health are in api_internals/routes_meta.py (PR-H4
-    # split). Bundle refs are captured by the factory so the
-    # is_loaded reads stay coherent with the predict path's lazy
-    # load.
+    # /readyz + /health are in api_internals/routes_meta.py (PR-H4 split).
+    # The bundle ref is captured by the factory so its is_loaded reads stay
+    # coherent with the predict path's lazy load.
     from api_internals.routes_meta import register_meta_routes  # noqa: PLC0415
 
-    register_meta_routes(
-        app,
-        synthetic_bundle,
-        real_bundle,
-        model_dir,
-        real_model_dir,
-    )
+    register_meta_routes(app, bundle, model_dir)
 
-    # /predict, /predict/demo, /predict/csi, /predict/capture,
-    # /identify are in api_internals/routes_predict.py (PR-H3 split).
-    # The factory captures both bundles by reference so /health's
-    # is_loaded reads stay coherent.
+    # /predict, /predict/csi, /predict/capture, /identify are in
+    # api_internals/routes_predict.py (PR-H3 split). One bundle now.
     from api_internals.routes_predict import (  # noqa: PLC0415
         register_predict_routes,
     )
 
-    register_predict_routes(app, synthetic_bundle, real_bundle)
+    register_predict_routes(app, bundle)
 
     # /predict/presence is shipped (not stubbed); kept inline because
     # it doesn't need any closure deps from create_app.
@@ -840,22 +822,16 @@ def create_app(
 
     mount_dashboard_spa(app, dashboard_dir=ROOT / "dashboard")
 
-    # Warm-up: load models on startup if available so first user doesn't
-    # pay the cold-load latency (I175).
+    # Warm-up: load the model on startup if available so the first user
+    # doesn't pay the cold-load latency (I175).
     @app.on_event("startup")
     async def _warmup():  # noqa: ANN202
-        if synthetic_bundle.is_available():
+        if bundle.is_available():
             try:
-                synthetic_bundle.load()
-                log.info("warm: synthetic models loaded")
+                bundle.load()
+                log.info("warm: model loaded from %s", model_dir)
             except Exception as exc:
-                log.info("warm: synthetic load skipped: %s", exc)
-        if (real_model_dir / "hr_model.json").exists():
-            try:
-                real_bundle.load()
-                log.info("warm: real models loaded")
-            except Exception as exc:
-                log.info("warm: real load skipped: %s", exc)
+                log.info("warm: model load skipped: %s", exc)
 
     return app
 

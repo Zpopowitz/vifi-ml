@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed — synthetic serving model
+
+The synthetic model has been removed as a serving / production concept
+everywhere — the API, the inference worker, the live monitoring stack.
+Nothing in the system can publish a fabricated prediction.
+
+- **`api.py` + `api_internals/bundles.py`:** `SyntheticModelBundle` and
+  `load_synthetic_models` deleted. `create_app(model_dir)` now takes a
+  single dir; `HealthResponse` drops `synthetic_model_*` and renames
+  `real_model_*` to `model_*`. The `/predict/demo` endpoint (synthetic-data
+  smoke-test surface) is gone — a missing model is a 503, never a
+  fabricated number.
+- **`tools/inference_worker.py`:** the `--model` flag and the
+  `--model synthetic` choice are gone. The worker loads the real model
+  only (env override `VIFI_REAL_MODEL_DIR`).
+- **Tests + CI:** the CI step that built the test fixture is renamed from
+  "Train synthetic models" to "Build the test-fixture model" — the
+  artifact `train.py` produces is now loaded as the single bundle's CI
+  fixture, not as a separate "synthetic model" code path.
+- **Out of scope (kept):** `data_gen.py` (DSP-test data generator),
+  `radar/synth.py` (radar synthetic generator the radar DSP unit tests
+  depend on), and `train.py` (now framed as a test-fixture builder).
+
+Spec/plan: `docs/superpowers/plans/2026-05-22-synthetic-model-removal-plan.md`.
+
 ### Added — SP1 persistent sensor-agnostic live monitoring stack
 
 - **Always-on monitoring stack on the Pi.** Redis, dashboard, inference

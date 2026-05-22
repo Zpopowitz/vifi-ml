@@ -40,7 +40,7 @@ Continuous, contactless monitoring on commodity hardware — at $20/bed instead 
 
 ```bash
 pip install -r requirements.txt
-python train.py                  # trains synthetic baseline → ./models/
+python train.py                  # builds a test-fixture model from synthetic data → ./models/ (CI/dev only — not a serving model)
 uvicorn api:app --port 8000
 # Dashboard is now a static SPA served by the api container —
 # no separate `streamlit run` needed. Just open http://localhost:8501
@@ -277,7 +277,7 @@ Firmware: Espressif ESP-IDF v6.0 [`wifi_csi_rx`](https://github.com/espressif/es
 | 80% prediction-interval suppression | Shipped — quantile XGBoost, configurable width | `tools/train_quantile_models.py` |
 | Per-prediction audit log | Shipped — JSONL, daily-rotating, FDA-grade | `audit.py` |
 | Paired-capture orchestrator | Shipped — one command, three loggers, validates session.json | `tools/run_paired_session.py` |
-| Respiratory rate (RR) | Pipeline + synthetic regressor only; awaiting first Vernier paired captures | `rr_logger.py`, `train.py` (synthetic) |
+| Respiratory rate (RR) | Live serving via `rr_dsp` (PCA + continuity tracker); a trained RR regressor remains in the CI test fixture only | `rr_logger.py`, `rr_dsp.py` |
 | Presence / occupancy | Shipped, variance-threshold detection | `modules/presence.py` |
 | Per-packet CSI ingest | Shipped | `api.py :: /predict/csi`, `tools/esp32_csi_collector.py` |
 | ESP32 capture + HR ground-truth | Shipped, hands-free | `tools/csi_capture.py`, `hr_logger.py` |
@@ -309,7 +309,7 @@ vifi-ml/
 │
 ├── data_gen.py                # synthetic CSI generator
 ├── preprocess.py              # DSP pipeline (bandpass, FFT, features)
-├── train.py                   # XGBoost regressors (synthetic baseline)
+├── train.py                   # XGBoost regressors built from synthetic data (CI test-fixture model only; not a serving model)
 ├── calibration.py             # per-subject calibration + RF fingerprinting + RollingFingerprintTracker
 ├── quality.py                 # Mahalanobis OOD detector
 ├── audit.py                   # JSONL audit log writer (postmarket surveillance)
