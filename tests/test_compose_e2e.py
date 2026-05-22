@@ -134,9 +134,14 @@ def test_health_endpoint_responds(compose_stack):
     with urllib.request.urlopen(HEALTH_URL, timeout=5) as r:  # nosec B310
         assert r.status == 200
         body = r.read()
-    # Body should contain the model_loaded fields and no PHI.
     text = body.decode("utf-8")
-    assert "synthetic" in text.lower() or "code_version" in text
+    # /health must return a real HealthResponse body, not just a 200 from
+    # something else proxying through. Anchor on the single-model fields
+    # the post-synthetic-removal schema exposes; "synthetic" must NOT
+    # appear anywhere in the response.
+    assert "model_loaded" in text
+    assert "model_dir" in text
+    assert "synthetic" not in text.lower()
 
 
 def test_rooms_endpoint_responds(compose_stack):

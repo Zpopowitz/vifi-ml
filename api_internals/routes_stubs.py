@@ -85,7 +85,9 @@ def register_stub_routes(app: FastAPI) -> None:
     @app.get("/roadmap")
     def roadmap():
         return {
-            "shipped": ["hr"],
-            "synthetic_only": ["rr"],
+            # HR is shipped end-to-end on the real model. RR ships via
+            # rr_dsp (PCA + continuity tracker) in the live worker, with an
+            # optional trained-RR regressor when present in the model dir.
+            "shipped": ["hr", "rr"],
             "planned": _ROADMAP,
         }

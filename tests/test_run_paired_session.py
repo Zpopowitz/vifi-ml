@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from tools.run_paired_session import (  # noqa: E402
     PROTOCOL_VERSION,
+    _build_commands,
     build_session_metadata,
     run_session,
     session_dir_name,
@@ -53,6 +54,12 @@ def _base_args(**overrides) -> Namespace:
         antenna_model=None,
         antenna_gain_dbi=None,
         wifi_channel=11,
+        # Live bus mode (default off; worker params used only by --spawn-workers).
+        bus=False,
+        spawn_workers=False,
+        window=10.0,
+        stride=5.0,
+        fs=100.0,
     )
     defaults.update(overrides)
     return Namespace(**defaults)
@@ -205,6 +212,65 @@ def test_geometry_fields_propagated_when_set():
     assert meta["antenna_height_cm"] == 110.0
     assert meta["antenna_model"] == "ALFA APA-M25"
     assert meta["antenna_gain_dbi"] == 8.0
+
+
+def _cmd_paths(args, tmp_path):
+    """_build_commands with throwaway output paths under tmp_path."""
+    return _build_commands(
+        args,
+        capture_path=tmp_path / "capture.txt",
+        hr_log_path=tmp_path / "hr_log.csv",
+        rr_log_path=tmp_path / "rr_log.csv",
+    )
+
+
+def test_build_commands_plain_capture_has_no_bus_and_no_workers(tmp_path):
+    """Plain capture: loggers only, no --bus, no inference/audit workers."""
+    cmds = _cmd_paths(_base_args(bus=False, spawn_workers=False), tmp_path)
+    assert set(cmds) == {"CSI", "HR", "RR"}
+    for name in ("CSI", "HR", "RR"):
+        assert "--bus" not in cmds[name], f"{name} must not get --bus"
+
+
+def test_build_commands_bus_only_is_publish_only(tmp_path):
+    """--bus alone: loggers publish, but no workers are spawned."""
+    cmds = _cmd_paths(_base_args(bus=True, spawn_workers=False), tmp_path)
+    assert set(cmds) == {"CSI", "HR", "RR"}, "no INFER/AUDIT without --spawn-workers"
+    for name in ("CSI", "HR", "RR"):
+        argv = cmds[name]
+        assert "--bus" in argv
+        # patient-id is wired to subject-id so the bus topics are namespaced.
+        assert argv[argv.index("--patient-id") + 1] == "founder"
+
+
+def test_build_commands_spawn_workers_adds_inference_and_audit(tmp_path):
+    """--bus --spawn-workers: loggers publish AND ephemeral workers spawn."""
+    cmds = _cmd_paths(_base_args(bus=True, spawn_workers=True), tmp_path)
+    assert set(cmds) == {"CSI", "HR", "RR", "INFER", "AUDIT"}
+    assert cmds["INFER"][:5] == [
+        sys.executable,
+        "-u",
+        "-m",
+        "tools.inference_worker",
+        "--patient-id",
+    ]
+    assert cmds["AUDIT"][2:5] == ["-m", "tools.audit_subscriber", "--patient-id"]
+    # Worker window/stride/fs flow through from the report args.
+    assert cmds["INFER"][cmds["INFER"].index("--window") + 1] == "10.0"
+    assert cmds["INFER"][cmds["INFER"].index("--stride") + 1] == "5.0"
+    assert cmds["INFER"][cmds["INFER"].index("--fs-resample") + 1] == "100.0"
+
+
+def test_build_commands_respects_no_h10_and_no_rr(tmp_path):
+    cmds = _cmd_paths(_base_args(no_h10=True, no_rr=True), tmp_path)
+    assert set(cmds) == {"CSI"}
+
+
+def test_spawn_workers_without_bus_is_rejected(tmp_path):
+    """--spawn-workers without --bus is a misconfiguration -- fail fast."""
+    args = _base_args(bus=False, spawn_workers=True, data_root=tmp_path)
+    with pytest.raises(SystemExit, match="spawn-workers"):
+        run_session(args)
 
 
 def test_geometry_fields_validate_in_locked_schema(tmp_path):

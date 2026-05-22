@@ -1,0 +1,19 @@
+[Unit]
+Description=ViFi live inference worker (CSI raw stream -> HR/RR predictions)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/LIVE_STACK.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.inference_worker --patient-id ${VIFI_PATIENT_ID} --window 10 --stride 5 --fs-resample 100
+Restart=always
+RestartSec=3
+MemoryMax=2G
+SyslogIdentifier=vifi-inference
+
+[Install]
+WantedBy=multi-user.target

@@ -45,13 +45,11 @@ def shared_bus():
 
 @pytest.fixture
 def client(shared_bus, tmp_path):
-    """FastAPI test client with a built app. Models are not needed for
-    /api/v1/stream so we point at empty model dirs."""
+    """FastAPI test client with a built app. The model is not needed for
+    /api/v1/stream so we point at an empty model dir."""
     from api import create_app
 
-    app = create_app(
-        model_dir=tmp_path / "no_synth", real_model_dir=tmp_path / "no_real"
-    )
+    app = create_app(model_dir=tmp_path / "no_model")
     return TestClient(app)
 
 

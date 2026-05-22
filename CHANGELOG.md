@@ -5,6 +5,65 @@ All notable changes to ViFi are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed — synthetic serving model
+
+The synthetic model has been removed as a serving / production concept
+everywhere — the API, the inference worker, the live monitoring stack.
+Nothing in the system can publish a fabricated prediction.
+
+- **`api.py` + `api_internals/bundles.py`:** `SyntheticModelBundle` and
+  `load_synthetic_models` deleted. `create_app(model_dir)` now takes a
+  single dir; `HealthResponse` drops `synthetic_model_*` and renames
+  `real_model_*` to `model_*`. The `/predict/demo` endpoint (synthetic-data
+  smoke-test surface) is gone — a missing model is a 503, never a
+  fabricated number.
+- **`tools/inference_worker.py`:** the `--model` flag and the
+  `--model synthetic` choice are gone. The worker loads the real model
+  only (env override `VIFI_REAL_MODEL_DIR`).
+- **Tests + CI:** the CI step that built the test fixture is renamed from
+  "Train synthetic models" to "Build the test-fixture model" — the
+  artifact `train.py` produces is now loaded as the single bundle's CI
+  fixture, not as a separate "synthetic model" code path.
+- **Out of scope (kept):** `data_gen.py` (DSP-test data generator),
+  `radar/synth.py` (radar synthetic generator the radar DSP unit tests
+  depend on), and `train.py` (now framed as a test-fixture builder).
+
+Spec/plan: `docs/superpowers/plans/2026-05-22-synthetic-model-removal-plan.md`.
+
+### Added — SP1 persistent sensor-agnostic live monitoring stack
+
+- **Always-on monitoring stack on the Pi.** Redis, dashboard, inference
+  worker, and audit subscriber now run as four boot-persistent, self-
+  restarting `systemd` services (`deploy/systemd/`). A capture publishes into
+  a stack that is already there, instead of the stack being spun up per
+  session. Install + operate it with the new `tools/setup_live_stack.sh`
+  (idempotent) and `tools/live_stack.sh {status,restart,logs}`.
+- **`./tools/capture.sh --live`.** A capture can now stream into the live
+  stack so the dashboard shows predicted-vs-reference HR/RR in real time.
+  `--live` preflights the stack (Redis ping, dashboard `/health`,
+  `vifi-inference` active) and exits before recording if it is down. Plain
+  `./tools/capture.sh` is unchanged: file-only, no stack dependency. `--live`
+  is strictly additive — the capture files are still written exactly as
+  before.
+- **Sensor-agnostic bus contract.** Vitals topics (`hr.predicted`,
+  `rr.predicted`, `presence`) are named by physiology, not sensor. A new
+  sensor adds exactly one raw topic and one inference worker; the dashboard
+  and vitals topics never change. This is what lets the 60 GHz radar (SP2)
+  plug in additively. Documented in the new `docs/LIVE_STACK.md` runbook.
+
+### Changed
+
+- **`run_paired_session.py --bus` is now publish-only.** It publishes the
+  logger streams to the bus but no longer spawns inference + audit workers —
+  the persistent stack already runs them. The new `--spawn-workers` flag
+  restores the old ephemeral-worker behavior for stack-less standalone runs,
+  CI, and tests; `--spawn-workers` without `--bus` is rejected.
+- **`tools/capture.sh` Pi resolution.** Resolves the Pi via `getent` first
+  (mirrored-mode WSL) with the Windows PowerShell call as a fallback
+  (NAT-mode WSL), rather than always shelling out to PowerShell.
+
 ## [0.3.0] - 2026-05-16
 
 ### Added — multipath A1 + envelope-builder consolidation + cross-environment story

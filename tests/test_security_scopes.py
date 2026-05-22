@@ -30,7 +30,7 @@ def _fresh_api_with_env(monkeypatch, env: dict[str, str]):
         del sys.modules["security"]
     from api import create_app  # noqa: PLC0415
 
-    return create_app(model_dir=ROOT / "models", real_model_dir=ROOT / "models")
+    return create_app(model_dir=ROOT / "models")
 
 
 def test_keys_from_env_implicitly_own_all_scopes(monkeypatch):

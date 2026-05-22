@@ -1,13 +1,15 @@
-"""Lazy-loaded model bundles (synthetic + real).
+"""Lazy-loaded model bundle.
 
-Extracted from api.py by PR-H. No behavior change — the classes
-were copied verbatim, only their imports rewired so they live in
-their own module instead of inside the 1265-line api.py.
+One bundle, one model: the real (trained-on-real-captures) HR model with
+optional quantile models + Mahalanobis OOD detector. The synthetic-model
+serving path has been removed -- the API never publishes fabricated
+predictions. Tests that exercise inference pipeline mechanics load this
+same bundle pointed at a fixture model dir built by `train.py`; the
+distinction is the dir, not a separate "synthetic" concept.
 
-Loading is lazy: the constructor just records the model_dir; the
-first call to `.load()` reads the artifacts. Missing artifacts
-surface as HTTPException(503), so the API can boot even without
-models present (dev environments, CI without paired captures).
+Loading is lazy: the constructor records the model_dir; the first call to
+`.load()` reads the artifacts. Missing artifacts surface as
+`HTTPException(503)` so the API can still boot for diagnostics.
 """
 
 from __future__ import annotations
@@ -27,12 +29,12 @@ def _check_pca_k_compat(meta: dict, *, model_dir: Path) -> None:
     the runtime PCA env. Same policy as
     `tools/inference_worker._resolve_pca_k_from_metadata`; duplicated
     here because the API server reads models through a different code
-    path. Raises HTTPException 503 so the dev API still surfaces a
-    diagnostic message rather than crashing the worker process.
+    path. Raises HTTPException 503 so the API still surfaces a
+    diagnostic message rather than crashing.
 
     Strict type/value validation: rejects malformed `pca_k` types
     (string, float, bool) instead of silently coercing them via `int()`
-    — a `metadata.json` with `pca_k: 1.7` would otherwise pass an
+    -- a `metadata.json` with `pca_k: 1.7` would otherwise pass an
     `int(1.7) == int(1)` equality check while having been trained
     with a different effective K. JSON has no native int/float
     distinction so bool also passes `isinstance(int)`; exclude it.
@@ -73,45 +75,13 @@ def _check_pca_k_compat(meta: dict, *, model_dir: Path) -> None:
         )
 
 
-def load_synthetic_models(model_dir: Path):  # noqa: D401
-    # See `_load_synthetic_models_impl` for the body. This wrapper enforces
-    # `_check_pca_k_compat` on every caller — the lazy bundle wrapper already
-    # does, but direct callers (tests, ad-hoc scripts, `tools/retrain_on_real`)
-    # would otherwise bypass the version barrier.
-    hr, rr, meta = _load_synthetic_models_impl(model_dir)
-    _check_pca_k_compat(meta, model_dir=model_dir)
-    return hr, rr, meta
+class RealModelBundle:
+    """Lazy-loaded HR model + metadata + optional quantile models + optional
+    Mahalanobis OOD detector. The single serving bundle.
 
-
-def _load_synthetic_models_impl(model_dir: Path):
-    """Eager loader (kept for tests that want a hard error on missing
-    models, instead of the SyntheticModelBundle's 503 path).
-
-    create_app() does not call this directly; SyntheticModelBundle
-    handles lazy loading + graceful 503. Use this in tests or scripts
-    that want a hard RuntimeError if files are missing.
-    """
-    hr_path = model_dir / "hr_model.json"
-    rr_path = model_dir / "rr_model.json"
-    meta_path = model_dir / "metadata.json"
-    if not hr_path.exists() or not rr_path.exists() or not meta_path.exists():
-        raise RuntimeError(
-            f"synthetic models not found in {model_dir}; run `python train.py` first"
-        )
-    hr = XGBRegressor()
-    rr = XGBRegressor()
-    hr.load_model(hr_path)
-    rr.load_model(rr_path)
-    meta = json.loads(meta_path.read_text())
-    return hr, rr, meta
-
-
-class SyntheticModelBundle:
-    """Lazy-loaded synthetic-pipeline models (HR + RR + metadata).
-
-    Loaded on first /predict or /predict/demo call so the app can boot
-    without synthetic models present. Missing models surface as 503,
-    not boot failure.
+    Loaded on first /predict-family call so the app can boot without a
+    model present (CI before `train.py`, dev environments before
+    artifacts are synced). Missing artifacts surface as 503.
     """
 
     def __init__(self, model_dir: Path):
@@ -119,6 +89,9 @@ class SyntheticModelBundle:
         self._loaded = False
         self.hr = None
         self.rr = None
+        self.q_low = None
+        self.q_high = None
+        self.mahalanobis = None  # quality.MahalanobisDetector | None
         self.metadata: dict = {}
         self.feature_names: list[str] = []
         self.hr_ratio_idx: Optional[int] = None
@@ -129,61 +102,9 @@ class SyntheticModelBundle:
         return self._loaded
 
     def is_available(self) -> bool:
-        return (
-            (self.model_dir / "hr_model.json").exists()
-            and (self.model_dir / "rr_model.json").exists()
-            and (self.model_dir / "metadata.json").exists()
-        )
-
-    def load(self) -> None:
-        if self._loaded:
-            return
-        if not self.is_available():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    f"synthetic models not found in {self.model_dir}; "
-                    "run `python train.py` to train them, or skip the "
-                    "synthetic endpoints and use /predict/capture instead."
-                ),
-            )
-        hr, rr, meta = load_synthetic_models(self.model_dir)
-        _check_pca_k_compat(meta, model_dir=self.model_dir)
-        self.hr = hr
-        self.rr = rr
-        self.metadata = meta
-        self.feature_names = list(meta["feature_names"])
-        try:
-            self.hr_ratio_idx = self.feature_names.index("hr_peak_ratio")
-            self.rr_ratio_idx = self.feature_names.index("rr_peak_ratio")
-        except ValueError:
-            # Older metadata without these names; confidence falls back to 0.
-            self.hr_ratio_idx = None
-            self.rr_ratio_idx = None
-        self._loaded = True
-
-
-class RealModelBundle:
-    """Lazy-loaded real-capture model + metadata + optional quantile
-    models + optional Mahalanobis OOD detector.
-
-    Loaded on first /predict/capture or /identify call so the app can
-    boot without real models present (developer environments, CI
-    without paired captures, etc.).
-    """
-
-    def __init__(self, model_dir: Path):
-        self.model_dir = model_dir
-        self._loaded = False
-        self.hr = None
-        self.q_low = None
-        self.q_high = None
-        self.mahalanobis = None  # quality.MahalanobisDetector | None
-        self.metadata: dict = {}
-
-    @property
-    def is_loaded(self) -> bool:
-        return self._loaded
+        return (self.model_dir / "hr_model.json").exists() and (
+            self.model_dir / "metadata.json"
+        ).exists()
 
     def load(self) -> None:
         if self._loaded:
@@ -194,9 +115,11 @@ class RealModelBundle:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    f"real-capture model not found in {self.model_dir}. "
-                    "Train one with tools/retrain_on_real.py, or set "
-                    "VIFI_REAL_MODEL_DIR to point at an existing model."
+                    f"model not found in {self.model_dir}. Train one with "
+                    "tools/retrain_on_real.py from a paired capture, sync "
+                    "the trained artifacts to this host, or set "
+                    "VIFI_REAL_MODEL_DIR to point at an existing model. "
+                    "There is no synthetic fallback."
                 ),
             )
         meta = json.loads(meta_path.read_text())
@@ -215,6 +138,16 @@ class RealModelBundle:
         hr.load_model(hr_path)
         self.hr = hr
 
+        # RR model is optional -- live serving uses rr_dsp (PCA + continuity
+        # tracker) instead of a trained RR regressor on most paths. If the
+        # fixture/training dir ships one, load it for the legacy /predict
+        # surface.
+        rr_path = self.model_dir / "rr_model.json"
+        if rr_path.exists():
+            rr = XGBRegressor()
+            rr.load_model(rr_path)
+            self.rr = rr
+
         q_low_path = self.model_dir / "hr_model_q_low.json"
         q_high_path = self.model_dir / "hr_model_q_high.json"
         if q_low_path.exists() and q_high_path.exists():
@@ -228,12 +161,21 @@ class RealModelBundle:
         mahalanobis_path = self.model_dir / "mahalanobis.json"
         if mahalanobis_path.exists():
             # Lazy import: quality.py pulls scipy which we don't want
-            # at boot for environments that never load a real model.
+            # at boot for environments that never load a model.
             from quality import MahalanobisDetector  # noqa: PLC0415
 
             self.mahalanobis = MahalanobisDetector.load(mahalanobis_path)
 
         self.metadata = meta
+        self.feature_names = list(meta.get("feature_names", []))
+        try:
+            self.hr_ratio_idx = self.feature_names.index("hr_peak_ratio")
+        except ValueError:
+            self.hr_ratio_idx = None
+        try:
+            self.rr_ratio_idx = self.feature_names.index("rr_peak_ratio")
+        except ValueError:
+            self.rr_ratio_idx = None
         self._loaded = True
 
     def has_quantiles(self) -> bool:

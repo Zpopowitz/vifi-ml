@@ -16,8 +16,10 @@ Multi-patient: run one worker per patient.
 
 Pipeline matches `_csi_to_envelope` + `extract_features` from api.py
 (variance-rank top-K subcarriers -> normalized envelope -> 9-dim
-feature vector -> XGBoost). Currently uses the synthetic model; switch
-to the real model with `--model real`.
+feature vector -> XGBoost). The worker serves the real model only --
+trained on real paired captures -- so it never publishes fabricated
+predictions to the bus. The model dir defaults to `models_real/`;
+override with `VIFI_REAL_MODEL_DIR`.
 """
 
 from __future__ import annotations
@@ -180,31 +182,30 @@ def _resolve_pca_k_from_metadata(meta: dict) -> None:
         )
 
 
-def _load_model(model: str = "synthetic") -> _ModelBundle:
+def _load_model() -> _ModelBundle:
     """Load the HR model. RR is handled separately by `rr_dsp`, so no
-    RR model is loaded here."""
+    RR model is loaded here.
+
+    Loads the real (trained-on-real-captures) model only -- there is no
+    synthetic fallback. Override the location with VIFI_REAL_MODEL_DIR.
+    """
+    import json
+
     from xgboost import XGBRegressor
 
-    if model == "synthetic":
-        model_dir = ROOT / "models"
-    elif model == "real":
-        import os
-
-        model_dir = Path(os.environ.get("VIFI_REAL_MODEL_DIR", ROOT / "models_real"))
-    else:
-        raise ValueError(f"unknown --model: {model!r}")
-
+    model_dir = Path(os.environ.get("VIFI_REAL_MODEL_DIR", ROOT / "models_real"))
     hr_path = model_dir / "hr_model.json"
     meta_path = model_dir / "metadata.json"
     if not hr_path.exists() or not meta_path.exists():
         raise FileNotFoundError(
-            f"model not found in {model_dir}. Train it first "
-            f"(python train.py for synthetic, "
-            f"tools/retrain_on_real.py for real)."
+            f"real model not found in {model_dir}. Train one with "
+            f"tools/retrain_on_real.py from a paired capture, or sync "
+            f"the trained artifacts to this host (docs/STATUS.md -> "
+            f"'sync from laptop'). The inference worker does not fall "
+            f"back to a synthetic model."
         )
     hr = XGBRegressor()
     hr.load_model(hr_path)
-    import json
 
     meta = json.loads(meta_path.read_text())
     _resolve_pca_k_from_metadata(meta)
@@ -214,12 +215,7 @@ def _load_model(model: str = "synthetic") -> _ModelBundle:
         hr_ratio_idx = feature_names.index("hr_peak_ratio")
     except ValueError:
         pass
-    log.info(
-        "loaded %s HR model from %s (%d features)",
-        model,
-        model_dir,
-        len(feature_names),
-    )
+    log.info("loaded HR model from %s (%d features)", model_dir, len(feature_names))
     return _ModelBundle(hr_model=hr, hr_ratio_idx=hr_ratio_idx)
 
 
@@ -529,7 +525,9 @@ def main() -> None:
         default=100.0,
         help="resample rate for the envelope (Hz)",
     )
-    p.add_argument("--model", choices=["synthetic", "real"], default="synthetic")
+    # The worker serves the real model only -- VIFI_REAL_MODEL_DIR overrides
+    # the default models_real/ location. There is intentionally no --model
+    # flag and no synthetic fallback: fake numbers never reach the bus.
     p.add_argument(
         "--rr-window",
         type=float,
@@ -567,7 +565,7 @@ def main() -> None:
     validate_at_boot()
 
     bus = bus_from_env()
-    bundle = _load_model(args.model)
+    bundle = _load_model()
     rr_tracker = None if args.no_rr else RespirationTracker(args.fs_resample)
     # Worker-process Prometheus endpoint on a separate port (gated by
     # VIFI_METRICS_ENABLED). When disabled, returns (None, None) and

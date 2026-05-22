@@ -30,6 +30,12 @@ Optional:
     --notes             any free-text observation
     --no-rr             skip the respiration belt (useful if it's not present)
     --no-h10            explicitly skip the Polar H10 (no --h10-address)
+    --bus               publish each capture stream to the ViFi message bus
+                        (set VIFI_BUS_URL=redis://... to reach a persistent
+                        stack). Publish-only: does not spawn workers.
+    --spawn-workers     additionally spawn an ephemeral inference + audit
+                        stack (requires --bus). For stack-less standalone
+                        runs / CI; a persistent live stack is preferred.
     --dry-run           print the plan but don't spawn anything
 
 Ctrl-C while running gracefully terminates all three subprocesses and
@@ -135,6 +141,13 @@ def _validate_args(args: argparse.Namespace) -> None:
             "--no-h10 to explicitly skip it. Without H10 there's no HR ground "
             "truth, so the session can't be used to retrain the model."
         )
+    if args.spawn_workers and not args.bus:
+        raise SystemExit(
+            "--spawn-workers needs --bus: the ephemeral inference + audit "
+            "workers consume the bus, but without --bus the loggers never "
+            "publish to it. Pass --bus --spawn-workers together (or just "
+            "--bus to publish into an already-running persistent stack)."
+        )
 
 
 def _stream_subprocess_output(
@@ -186,6 +199,91 @@ def _terminate_gracefully(
         print(f"[orchestrator] error stopping {name}: {exc}", flush=True)
 
 
+def _build_commands(
+    args: argparse.Namespace,
+    capture_path: Path,
+    hr_log_path: Path,
+    rr_log_path: Path,
+) -> dict[str, list[str]]:
+    """Assemble the subprocess argv for every component of a session.
+
+    Pure (no side effects) so the spawn-dispatch logic is unit-testable
+    without real serial / BLE devices. Keys: ``CSI`` always; ``HR`` unless
+    --no-h10; ``RR`` unless --no-rr; ``INFER`` and ``AUDIT`` only when
+    --spawn-workers is set.
+
+    --bus is publish-only: it adds ``--bus`` to the logger argv so they
+    publish to an external (typically persistent) stack, but spawns no
+    workers. --spawn-workers additionally runs an ephemeral inference +
+    audit stack -- for stack-less standalone runs, CI, and tests.
+    """
+    bus_args: list[str] = []
+    if args.bus:
+        bus_args = ["--bus", "--patient-id", args.subject_id]
+
+    cmds: dict[str, list[str]] = {}
+    cmds["CSI"] = [
+        sys.executable,
+        "-u",
+        str(ROOT / "tools" / "csi_capture.py"),
+        "--port",
+        args.csi_port,
+        "--duration",
+        str(args.duration),
+        "--out",
+        str(capture_path),
+        *bus_args,
+    ]
+    if not args.no_h10:
+        cmds["HR"] = [
+            sys.executable,
+            "-u",
+            str(ROOT / "hr_logger.py"),
+            "--address",
+            args.h10_address,
+            "--duration",
+            str(args.duration),
+            "--out",
+            str(hr_log_path),
+            *bus_args,
+        ]
+    if not args.no_rr:
+        cmds["RR"] = [
+            sys.executable,
+            "-u",
+            str(ROOT / "rr_logger.py"),
+            "--duration",
+            str(args.duration),
+            "--out",
+            str(rr_log_path),
+            *bus_args,
+        ]
+    if args.spawn_workers:
+        cmds["INFER"] = [
+            sys.executable,
+            "-u",
+            "-m",
+            "tools.inference_worker",
+            "--patient-id",
+            args.subject_id,
+            "--window",
+            str(args.window),
+            "--stride",
+            str(args.stride),
+            "--fs-resample",
+            str(args.fs),
+        ]
+        cmds["AUDIT"] = [
+            sys.executable,
+            "-u",
+            "-m",
+            "tools.audit_subscriber",
+            "--patient-id",
+            args.subject_id,
+        ]
+    return cmds
+
+
 def run_session(args: argparse.Namespace) -> int:
     _validate_args(args)
     metadata = build_session_metadata(args)
@@ -209,83 +307,20 @@ def run_session(args: argparse.Namespace) -> int:
     hr_log_path = session_dir / "hr_log.csv"
     rr_log_path = session_dir / "rr_log.csv"
 
-    bus_args: list[str] = []
-    if args.bus:
-        bus_args = ["--bus", "--patient-id", args.subject_id]
-        if not os.environ.get("VIFI_BUS_URL"):
-            print(
-                "[orchestrator] WARNING: --bus is on but VIFI_BUS_URL is "
-                "unset; loggers will fall back to in-memory (process-local) "
-                "bus, which other processes (inference worker, dashboard) "
-                "won't see. Set VIFI_BUS_URL=redis://... before retrying."
-            )
+    if args.bus and not os.environ.get("VIFI_BUS_URL"):
+        print(
+            "[orchestrator] WARNING: --bus is on but VIFI_BUS_URL is "
+            "unset; loggers will fall back to in-memory (process-local) "
+            "bus, which other processes (inference worker, dashboard) "
+            "won't see. Set VIFI_BUS_URL=redis://... before retrying."
+        )
 
-    csi_cmd = [
-        sys.executable,
-        "-u",
-        str(ROOT / "tools" / "csi_capture.py"),
-        "--port",
-        args.csi_port,
-        "--duration",
-        str(args.duration),
-        "--out",
-        str(capture_path),
-        *bus_args,
-    ]
-
-    h10_cmd = None
-    if not args.no_h10:
-        h10_cmd = [
-            sys.executable,
-            "-u",
-            str(ROOT / "hr_logger.py"),
-            "--address",
-            args.h10_address,
-            "--duration",
-            str(args.duration),
-            "--out",
-            str(hr_log_path),
-            *bus_args,
-        ]
-
-    rr_cmd = None
-    if not args.no_rr:
-        rr_cmd = [
-            sys.executable,
-            "-u",
-            str(ROOT / "rr_logger.py"),
-            "--duration",
-            str(args.duration),
-            "--out",
-            str(rr_log_path),
-            *bus_args,
-        ]
-
-    inference_cmd: Optional[list[str]] = None
-    audit_cmd: Optional[list[str]] = None
-    if args.bus:
-        inference_cmd = [
-            sys.executable,
-            "-u",
-            "-m",
-            "tools.inference_worker",
-            "--patient-id",
-            args.subject_id,
-            "--window",
-            str(args.window),
-            "--stride",
-            str(args.stride),
-            "--fs-resample",
-            str(args.fs),
-        ]
-        audit_cmd = [
-            sys.executable,
-            "-u",
-            "-m",
-            "tools.audit_subscriber",
-            "--patient-id",
-            args.subject_id,
-        ]
+    cmds = _build_commands(args, capture_path, hr_log_path, rr_log_path)
+    csi_cmd = cmds["CSI"]
+    h10_cmd: Optional[list[str]] = cmds.get("HR")
+    rr_cmd: Optional[list[str]] = cmds.get("RR")
+    inference_cmd: Optional[list[str]] = cmds.get("INFER")
+    audit_cmd: Optional[list[str]] = cmds.get("AUDIT")
 
     procs: dict[str, subprocess.Popen] = {}
     threads: list[threading.Thread] = []
@@ -341,17 +376,19 @@ def run_session(args: argparse.Namespace) -> int:
                 flush=True,
             )
             if args.bus:
+                bus_url = os.environ.get("VIFI_BUS_URL", "in-memory bus")
+                workers = (
+                    "ephemeral workers spawned"
+                    if args.spawn_workers
+                    else "publish-only (persistent stack consumes)"
+                )
                 print(
                     f"[orchestrator] bus mode active (patient_id="
-                    f"{args.subject_id}). Open the dashboard at "
-                    f"http://localhost:8501 to watch predicted vs "
-                    f"reference in real time. After the session "
-                    f"finishes, run "
-                    f"`python -m tools.analyze_session "
-                    f"{session_dir}` for a summary + plot, or "
-                    f"`python -m tools.preflight ...` before the "
-                    f"next session to catch dumb hardware issues "
-                    f"early.",
+                    f"{args.subject_id}, {workers}); streams publishing "
+                    f"to {bus_url}. Watch predicted-vs-reference live on "
+                    f"the dashboard (vifi-dashboard service, port 8000). "
+                    f"After the session, `python -m tools.analyze_session "
+                    f"{session_dir}` for a summary + plot.",
                     flush=True,
                 )
 
@@ -606,10 +643,22 @@ def main() -> None:
         action="store_true",
         help=(
             "publish each capture stream to the ViFi "
-            "message bus and spawn the inference worker "
-            "+ audit subscriber. Set "
-            "VIFI_BUS_URL=redis://... to share with the "
-            "dashboard. Patient id = --subject-id."
+            "message bus (publish-only). Set "
+            "VIFI_BUS_URL=redis://... to reach a persistent "
+            "stack shared with the dashboard. Patient id = "
+            "--subject-id. Does NOT spawn workers -- add "
+            "--spawn-workers for that."
+        ),
+    )
+    g_bus.add_argument(
+        "--spawn-workers",
+        action="store_true",
+        help=(
+            "additionally spawn an ephemeral inference "
+            "worker + audit subscriber (requires --bus). "
+            "Use for stack-less standalone runs, CI, or "
+            "tests; with a persistent live stack the "
+            "workers already run as services, so omit this."
         ),
     )
 

@@ -1,0 +1,19 @@
+[Unit]
+Description=ViFi audit subscriber (bus topics -> append-only audit JSONL)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/LIVE_STACK.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.audit_subscriber --patient-id ${VIFI_PATIENT_ID}
+Restart=always
+RestartSec=3
+MemoryMax=1G
+SyslogIdentifier=vifi-audit
+
+[Install]
+WantedBy=multi-user.target

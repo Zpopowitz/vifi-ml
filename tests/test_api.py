@@ -42,9 +42,10 @@ def test_health(client):
     assert body["status"] == "ok"
     assert body["model_version"]
     assert len(body["feature_names"]) >= 5
-    assert body["synthetic_model_loaded"] is True
-    assert "real_model_loaded" in body
-    assert "real_model_dir" in body
+    # One model now -- the CI fixture from `train.py` is loaded as the bundle.
+    assert body["model_loaded"] is True
+    assert "model_dir" in body
+    assert "model_metadata" in body
 
 
 def test_predict_returns_json(client):
@@ -69,12 +70,12 @@ def test_predict_returns_json(client):
     assert abs(body["rr_bpm"] - 18.0) <= 2.0
 
 
-def test_predict_demo_endpoint(client):
+def test_predict_demo_endpoint_is_gone(client):
+    """/predict/demo was the synthetic-data demo endpoint -- removed when
+    the synthetic serving path was purged. It must now 404 (no such route),
+    not produce fabricated numbers."""
     r = client.post("/predict/demo", json={"hr_bpm": 80.0, "rr_bpm": 15.0, "seed": 0})
-    assert r.status_code == 200
-    body = r.json()
-    assert abs(body["hr_bpm"] - 80.0) <= 5.0
-    assert abs(body["rr_bpm"] - 15.0) <= 2.0
+    assert r.status_code in (404, 405)
 
 
 def test_predict_rejects_mismatched_lengths(client):
@@ -122,14 +123,17 @@ def test_batch_accuracy_above_92_percent(client):
 # ---------------------------------------------------------------------------
 
 
-def _client_without_real_models(tmp_path: Path) -> TestClient:
+def _client_without_model(tmp_path: Path) -> TestClient:
+    """TestClient over an app whose bundle points at an empty dir -- model
+    is absent, every predict-family endpoint should 503 cleanly without
+    crashing the app at boot."""
     from api import create_app
 
-    return TestClient(create_app(Path("models"), tmp_path / "no_real_models"))
+    return TestClient(create_app(tmp_path / "no_model"))
 
 
-def test_predict_capture_503_when_no_real_model(tmp_path):
-    client = _client_without_real_models(tmp_path)
+def test_predict_capture_503_when_no_model(tmp_path):
+    client = _client_without_model(tmp_path)
     r = client.post(
         "/predict/capture",
         json={
@@ -137,14 +141,11 @@ def test_predict_capture_503_when_no_real_model(tmp_path):
         },
     )
     assert r.status_code == 503
-    assert (
-        "model not found" in r.json()["detail"].lower()
-        or "real" in r.json()["detail"].lower()
-    )
+    assert "model not found" in r.json()["detail"].lower()
 
 
-def test_identify_503_when_no_real_model(tmp_path):
-    client = _client_without_real_models(tmp_path)
+def test_identify_503_when_no_model(tmp_path):
+    client = _client_without_model(tmp_path)
     r = client.post(
         "/identify",
         json={
@@ -158,45 +159,35 @@ def test_identify_503_when_no_real_model(tmp_path):
 
 
 def test_predict_capture_validates_request(tmp_path):
-    client = _client_without_real_models(tmp_path)
+    client = _client_without_model(tmp_path)
     # Missing required field
     r = client.post("/predict/capture", json={})
     assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# Synthetic-model graceful degradation
+# Graceful degradation when no model is present
 #
-# The app must boot when synthetic models aren't trained yet; /predict and
-# /predict/demo should 503 rather than crash, and /health must still respond.
+# The app must boot when no model is trained yet; /predict, /predict/csi,
+# /predict/capture should 503 rather than crash, and /health must still
+# respond. There is no synthetic fallback -- a missing model is a 503, not
+# a fabricated number.
 # ---------------------------------------------------------------------------
 
 
-def _client_without_any_models(tmp_path: Path) -> TestClient:
-    from api import create_app
-
-    return TestClient(
-        create_app(
-            model_dir=tmp_path / "no_synth",
-            real_model_dir=tmp_path / "no_real",
-        )
-    )
-
-
-def test_app_boots_with_no_synthetic_models(tmp_path):
-    """The whole point of the fix: create_app must not raise when models
-    are absent. uvicorn was returning 500 on every request because the
-    module-level app was None."""
-    client = _client_without_any_models(tmp_path)
+def test_app_boots_with_no_model(tmp_path):
+    """create_app must not raise when no model is present. Without this,
+    uvicorn would 500 on every request because the module-level app was
+    never constructed."""
+    client = _client_without_model(tmp_path)
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["synthetic_model_loaded"] is False
-    assert body["real_model_loaded"] is False
+    assert body["model_loaded"] is False
 
 
-def test_predict_503_when_no_synthetic_model(tmp_path):
-    client = _client_without_any_models(tmp_path)
+def test_predict_503_when_no_model(tmp_path):
+    client = _client_without_model(tmp_path)
     r = client.post(
         "/predict",
         json={
@@ -206,13 +197,11 @@ def test_predict_503_when_no_synthetic_model(tmp_path):
         },
     )
     assert r.status_code == 503
-    assert "synthetic" in r.json()["detail"].lower()
-
-
-def test_predict_demo_503_when_no_synthetic_model(tmp_path):
-    client = _client_without_any_models(tmp_path)
-    r = client.post("/predict/demo", json={"hr_bpm": 75.0, "rr_bpm": 18.0})
-    assert r.status_code == 503
+    # The error message must mention the model -- and must NOT advertise a
+    # synthetic fallback, because there isn't one.
+    detail = r.json()["detail"].lower()
+    assert "model not found" in detail
+    assert "synthetic fallback" not in detail or "no synthetic" in detail
 
 
 # ---------------------------------------------------------------------------
