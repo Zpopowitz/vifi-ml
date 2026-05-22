@@ -262,25 +262,37 @@ def _publish_rr(
     rr_tracker: RespirationTracker,
     fs_resample: float,
     rr_window_s: float,
+    rr_first_ts: float,
     metrics: Optional[dict] = None,
 ) -> None:
     """Resample the RR window, run the RespirationTracker, publish to
     rr.predicted.
 
-    A no-op until the window spans (nearly) a full `rr_window_s`: RR needs
-    a long window, so it warms up well after HR is already predicting.
+    A no-op until CSI has been collected for nearly a full `rr_window_s`,
+    measured as elapsed time from the first packet seen (`rr_first_ts`).
+    Measuring elapsed time rather than the buffered packets' own span
+    means a gap or burst in the CSI stream does not reset the warmup.
     `rr_bpm` is null whenever the tracker reports the breath unavailable,
-    so the dashboard can blank the reading rather than show a stale value.
+    so the dashboard blanks the reading rather than showing a stale value.
     """
     pkts = rr_window.snapshot()
     if len(pkts) < 16:
         return
-    if pkts[-1].ts_unix - pkts[0].ts_unix < 0.9 * rr_window_s:
-        return  # still warming up
+    elapsed = pkts[-1].ts_unix - rr_first_ts
+    if elapsed < 0.9 * rr_window_s:
+        log.info("rr: warming up — %.0f/%.0f s collected", elapsed, rr_window_s)
+        return
     motion = _resample(pkts, fs=fs_resample, duration_s=rr_window_s)
     if motion is None:
         return
     reading = rr_tracker.update(motion, fs_resample)
+    log.info(
+        "rr: %s (rr=%.1f conf=%.2f, %d packets)",
+        reading.state,
+        reading.rr_bpm,
+        reading.confidence,
+        len(pkts),
+    )
     ts_unix = pkts[-1].ts_unix
     bus.publish(
         rr_topic,
@@ -376,6 +388,7 @@ def loop(
     pending_acks: list[str] = []  # msg_ids fed into the current window
     last_predict = 0.0
     last_rr_predict = 0.0
+    rr_first_ts: Optional[float] = None  # ts of the first CSI packet, for RR warmup
     iterations = 0
     log.info(
         "worker for patient_id=%r (group=%r consumer=%r): "
@@ -408,6 +421,8 @@ def loop(
                 window.push(pkt)
                 if rr_window is not None:
                     rr_window.push(pkt)
+                    if rr_first_ts is None:
+                        rr_first_ts = pkt.ts_unix
                 pending_acks.append(m.msg_id)
                 if metrics is not None:
                     metrics["packets_total"].labels(patient_id).inc()
@@ -442,6 +457,7 @@ def loop(
         if (
             rr_tracker is not None
             and rr_window is not None
+            and rr_first_ts is not None
             and now - last_rr_predict >= rr_stride_s
         ):
             last_rr_predict = now
@@ -453,6 +469,7 @@ def loop(
                 rr_tracker,
                 fs_resample,
                 rr_window_s,
+                rr_first_ts,
                 metrics,
             )
 
