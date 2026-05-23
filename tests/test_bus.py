@@ -12,6 +12,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -226,6 +228,9 @@ def test_bus_from_env_in_memory_for_non_redis_url(monkeypatch):
 
 def test_bus_from_env_redis_uses_default_maxlen_when_unset(monkeypatch):
     """Unset VIFI_BUS_MAXLEN must NOT mean unbounded -- production OOM hazard."""
+    # redis-py is the `[bus]` extra in requirements.txt; CI installs the
+    # base deps only and skips this branch. Locally + on the Pi we have it.
+    pytest.importorskip("redis")
     from modules.bus import DEFAULT_BUS_MAXLEN, RedisStreamBus
 
     monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
@@ -237,6 +242,7 @@ def test_bus_from_env_redis_uses_default_maxlen_when_unset(monkeypatch):
 
 def test_bus_from_env_redis_honors_explicit_zero_as_unbounded(monkeypatch):
     """An operator can opt into unbounded streams by setting VIFI_BUS_MAXLEN=0."""
+    pytest.importorskip("redis")
     from modules.bus import RedisStreamBus
 
     monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
@@ -248,6 +254,7 @@ def test_bus_from_env_redis_honors_explicit_zero_as_unbounded(monkeypatch):
 
 def test_bus_from_env_redis_honors_explicit_value(monkeypatch):
     """An explicit value overrides the default."""
+    pytest.importorskip("redis")
     from modules.bus import RedisStreamBus
 
     monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
