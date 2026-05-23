@@ -42,6 +42,18 @@ def csi_raw(patient_id: str) -> str:
     return f"csi.raw.{patient_id}"
 
 
+def radar_raw(patient_id: str) -> str:
+    """Per-patient radar raw-ADC topic (SP2).
+
+    Same shape as csi_raw -- the sensor-agnostic contract names raw
+    streams by sensor and vitals streams by physiology. A radar
+    inference worker publishes onto the existing hr.predicted /
+    rr.predicted topics, so adding radar is exactly "one raw topic +
+    one inference worker" and nothing downstream changes.
+    """
+    return f"radar.raw.{patient_id}"
+
+
 def hr_reference(patient_id: str) -> str:
     return f"hr.reference.{patient_id}"
 
@@ -78,6 +90,7 @@ def all_topics(patient_id: str) -> list[str]:
     """Every published topic for a single patient (excludes DLQs)."""
     return [
         csi_raw(patient_id),
+        radar_raw(patient_id),
         hr_reference(patient_id),
         hr_predicted(patient_id),
         rr_reference(patient_id),
