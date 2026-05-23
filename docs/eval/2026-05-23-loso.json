@@ -1,0 +1,30 @@
+{
+  "ran_at_utc": "2026-05-23T16:00:00Z",
+  "tool": "tools.eval_loso",
+  "command": "python -m tools.eval_loso --pair data/captures/founder/session_20260516T000227Z/{capture.txt,hr_log.csv} --pair data/captures/founder/session_20260519T231733Z/{capture.txt,hr_log.csv} --pair data/captures/founder/session_20260520T014522Z/{capture.txt,hr_log.csv}",
+  "calibration_mode": "per_session",
+  "calibration_seconds": 30,
+  "window": 6.0,
+  "stride": 2.0,
+  "fs": 100,
+  "seed": 42,
+  "n_sessions": 3,
+  "subject_count": 1,
+  "subjects": ["founder"],
+  "room": "bedroom_1",
+  "antenna": "ALFA APA-M25 patch",
+  "wifi_channel": 1,
+  "folds": [
+    {"session": "session_20260516T000227Z", "n_train": 120, "n_held": 36, "hr_mae_bpm": 13.938, "within_5_pct": 19.4},
+    {"session": "session_20260519T231733Z", "n_train": 96,  "n_held": 60, "hr_mae_bpm": 7.964,  "within_5_pct": 33.3},
+    {"session": "session_20260520T014522Z", "n_train": 96,  "n_held": 60, "hr_mae_bpm": 19.784, "within_5_pct": 0.0,  "note": "post-cardio, elevated HR, model trained band 80-100 bpm so saturates"}
+  ],
+  "cross_session_hr_mae_bpm": 13.90,
+  "cross_session_within_5_pct": 17.6,
+  "notes": [
+    "This number replaces the 4.15 bpm claim that does not reproduce.",
+    "Captures synthesized at 70-89 Hz (no IDF timestamps in capture.txt; metadata sidecar drives the rate).",
+    "Single subject, single room, single antenna config; the corpus is intentionally narrow.",
+    "Worst fold (19.78 bpm) is the post-cardio session where actual HR exceeds the 80-100 bpm training band."
+  ]
+}

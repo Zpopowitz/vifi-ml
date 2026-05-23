@@ -33,6 +33,16 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterator, Optional, Protocol
 
+# Default approximate cap on Redis Stream length, applied at publish time
+# when VIFI_BUS_MAXLEN is unset. 120000 entries is roughly 22 min of 90 Hz
+# CSI; AOF persists across reboots. This is the documented default in
+# deploy/systemd/vifi-live.env.example. The fallback exists so a Pi with a
+# hand-edited /etc/vifi/live.env that omits the var does not get unbounded
+# Redis growth (production OOM hazard). Set VIFI_BUS_MAXLEN=0 to opt back
+# into unbounded streams for short-lived scripts.
+DEFAULT_BUS_MAXLEN: int = 120_000
+
+
 # ---------------------------------------------------------------------------
 # Topic helpers
 # ---------------------------------------------------------------------------
@@ -70,6 +80,25 @@ def rr_predicted(patient_id: str) -> str:
     return f"rr.predicted.{patient_id}"
 
 
+def apnea_events(patient_id: str) -> str:
+    """Per-patient apnea-event topic.
+
+    Sensor-agnostic: the apnea detector consumes a respiratory envelope
+    (from CSI rr_dsp or radar.pipeline) and emits events on this single
+    topic regardless of upstream sensor. The dashboard + audit subscribe
+    here; downstream alerting (SP3) reads this stream.
+
+    Payload shape (one event per Redis Streams entry):
+        ts_unix        float    when the event was published
+        start_s_unix   float    apnea start (Unix epoch)
+        duration_s     float    pause length in seconds
+        type           str      "central" (v1; classifier deferred)
+        confidence     float    0..1, how deep below the rms floor
+        sensor         str      "csi" | "radar"  -- which worker emitted
+    """
+    return f"apnea.events.{patient_id}"
+
+
 def dlq(topic: str) -> str:
     """Dead-letter topic for `topic` (I086).
 
@@ -95,6 +124,7 @@ def all_topics(patient_id: str) -> list[str]:
         hr_predicted(patient_id),
         rr_reference(patient_id),
         rr_predicted(patient_id),
+        apnea_events(patient_id),
     ]
 
 
@@ -867,7 +897,18 @@ def bus_from_env() -> MessageBus:
     """
     url = os.environ.get("VIFI_BUS_URL", "")
     if url.startswith("redis://") or url.startswith("rediss://"):
+        # Default to a finite cap (~22 min of 90 Hz CSI) rather than the
+        # legacy unbounded behaviour. An unset VIFI_BUS_MAXLEN previously
+        # meant "let Redis grow forever", which is an OOM hazard on a
+        # production Pi if an operator hand-edits /etc/vifi/live.env and
+        # drops the var. Set explicitly to "0" to opt back into unbounded
+        # for short-lived scripts that don't need trimming.
         maxlen_env = os.environ.get("VIFI_BUS_MAXLEN")
-        maxlen = int(maxlen_env) if maxlen_env else None
+        if maxlen_env is None:
+            maxlen: Optional[int] = DEFAULT_BUS_MAXLEN
+        elif maxlen_env == "0":
+            maxlen = None
+        else:
+            maxlen = int(maxlen_env)
         return RedisStreamBus(url, maxlen=maxlen)
     return InMemoryBus()

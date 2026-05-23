@@ -12,6 +12,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -24,6 +26,7 @@ from modules.bus import (  # noqa: E402
     _id_gt,
     _parse_id,
     all_topics,
+    apnea_events,
     bus_from_env,
     csi_raw,
     hr_predicted,
@@ -48,6 +51,14 @@ def test_all_topics_covers_each_stream_and_role():
     # Every stream-role pair should be present and unique.
     assert len(set(topics)) == len(topics)
     assert all(t.endswith(".alice") for t in topics)
+
+
+def test_apnea_events_topic_helper():
+    """apnea.events.<pid> follows the sensor-agnostic vitals topic convention."""
+    assert apnea_events("alice") == "apnea.events.alice"
+    assert apnea_events("bob") != apnea_events("alice")
+    # The helper must be included in all_topics so audit + dashboard subscribe.
+    assert apnea_events("alice") in all_topics("alice")
 
 
 # ---------------------------------------------------------------------------
@@ -213,3 +224,41 @@ def test_bus_from_env_in_memory_for_non_redis_url(monkeypatch):
     monkeypatch.setenv("VIFI_BUS_URL", "memory")
     bus = bus_from_env()
     assert isinstance(bus, InMemoryBus)
+
+
+def test_bus_from_env_redis_uses_default_maxlen_when_unset(monkeypatch):
+    """Unset VIFI_BUS_MAXLEN must NOT mean unbounded -- production OOM hazard."""
+    # redis-py is the `[bus]` extra in requirements.txt; CI installs the
+    # base deps only and skips this branch. Locally + on the Pi we have it.
+    pytest.importorskip("redis")
+    from modules.bus import DEFAULT_BUS_MAXLEN, RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.delenv("VIFI_BUS_MAXLEN", raising=False)
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen == DEFAULT_BUS_MAXLEN
+
+
+def test_bus_from_env_redis_honors_explicit_zero_as_unbounded(monkeypatch):
+    """An operator can opt into unbounded streams by setting VIFI_BUS_MAXLEN=0."""
+    pytest.importorskip("redis")
+    from modules.bus import RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("VIFI_BUS_MAXLEN", "0")
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen is None
+
+
+def test_bus_from_env_redis_honors_explicit_value(monkeypatch):
+    """An explicit value overrides the default."""
+    pytest.importorskip("redis")
+    from modules.bus import RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("VIFI_BUS_MAXLEN", "5000")
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen == 5000

@@ -89,16 +89,12 @@ exclude = ["build/", "data/", "models/"]
 module = ["pseudonymize", "config", "__version__"]
 strict = true
 
-[[tool.mypy.overrides]]
-# Type-check but don't require full annotations — these modules have a
-# mix of typed + untyped helpers; gradual cleanup tracked in
-# DEFERRED_ITEMS.md.
-module = ["security", "audit", "preprocess", "calibration", "quality",
-          "data_gen", "train", "observability"]
-strict = false
-# Don't fail on missing annotations; warn-only.
-disallow_untyped_defs = false
-disallow_untyped_calls = false
+# Note: the previous lenient override block for security, audit, preprocess,
+# calibration, quality, data_gen, train, observability was removed. CI only
+# invokes mypy on the strict modules above; the lenient block was inert
+# (mypy reported it as unused) and gave a false sense of type coverage on
+# those 8 modules. To add a module to type-checked status: add it to the
+# `mypy` line in `.github/workflows/ci.yml` and fix the resulting errors.
 
 # ---------------------------------------------------------------------------
 # pytest: test discovery + markers
@@ -108,6 +104,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# pytest-asyncio: pin the fixture loop scope explicitly so we don't trip the
+# pending default-change warning on every run. "function" matches the future
+# default and is what every async fixture in this repo wants today.
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "e2e: end-to-end tests requiring docker compose (slow)",
     "perf: performance regression tests (timing-sensitive)",

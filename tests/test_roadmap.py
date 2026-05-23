@@ -81,14 +81,16 @@ def test_presence_endpoint_works(client):
 def test_module_stubs_import_and_raise():
     import numpy as np
 
-    from modules import apnea, falls, gait, transient_events
+    from modules import falls, gait, transient_events
     from modules.four_node_sync import FourNodeArray
 
     dummy = np.zeros((100, 8), dtype=np.float32)
 
-    # presence has been implemented (see test_tools.py), no longer a stub.
-    with pytest.raises(NotImplementedError):
-        apnea.detect_apnea(dummy[:, 0], fs=100.0)
+    # presence (test_tools.py) and apnea (test_apnea.py) have internal
+    # implementations and are no longer module-level stubs. Their
+    # public API surface stays 501 until live wiring lands as a
+    # deliberate post-board step; /roadmap still lists apnea as planned
+    # from the user's perspective.
 
     with pytest.raises(NotImplementedError):
         gait.analyze_gait(dummy, fs=100.0)

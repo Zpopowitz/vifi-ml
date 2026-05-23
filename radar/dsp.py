@@ -54,16 +54,24 @@ class DspInfo:
 
 
 def range_fft(adc: np.ndarray, window: str = "hann") -> np.ndarray:
-    """Range FFT — one FFT per chirp across the fast-time axis.
+    """Range FFT -- one FFT per chirp across the fast-time axis.
 
-    `adc` is `(n_chirps, n_fast)` complex. A window is applied before the
-    FFT to suppress the spectral leakage from strong clutter into the
-    chest bin (the same I001 reasoning as `preprocess.py`). Returns the
-    complex range profile, same shape.
+    `adc` is complex, either:
+      - 2-D `(n_chirps, n_fast)` -- legacy single-RX path
+      - 3-D `(n_chirps, n_fast, n_rx)` -- multi-RX path; the FFT runs
+        independently per RX (the per-RX range profiles are coherent-
+        combined later in the pipeline via `mrc_combine`).
+
+    A Hann window is applied before the FFT to suppress spectral leakage
+    from strong clutter into the chest bin (I001 reasoning, same as
+    `preprocess.py`). Returns the complex range profile with the same
+    shape as the input.
     """
     adc = np.asarray(adc)
-    if adc.ndim != 2:
-        raise ValueError("adc must be 2-D (n_chirps, n_fast)")
+    if adc.ndim not in (2, 3):
+        raise ValueError(
+            "adc must be 2-D (n_chirps, n_fast) or 3-D (n_chirps, n_fast, n_rx)"
+        )
     if not np.all(np.isfinite(adc)):
         raise ValueError("adc contains non-finite samples")
     n_fast = adc.shape[1]
@@ -73,7 +81,10 @@ def range_fft(adc: np.ndarray, window: str = "hann") -> np.ndarray:
         win = np.ones(n_fast)
     else:
         raise ValueError(f"unknown window: {window!r}")
-    return np.fft.fft(adc * win[None, :], axis=1)
+    if adc.ndim == 2:
+        return np.fft.fft(adc * win[None, :], axis=1)
+    # 3-D: broadcast window across n_fast axis only; FFT axis is 1.
+    return np.fft.fft(adc * win[None, :, None], axis=1)
 
 
 def remove_clutter(range_profile: np.ndarray, method: str = "mean") -> np.ndarray:
@@ -83,12 +94,18 @@ def remove_clutter(range_profile: np.ndarray, method: str = "mean") -> np.ndarra
     every bin; the chest's sub-mm motion is buried under them. This must
     run before any phase is touched.
 
+    Accepts either 2-D `(n_chirps, n_bins)` (legacy single-RX) or 3-D
+    `(n_chirps, n_bins, n_rx)` (multi-RX); operates along the slow-time
+    axis 0 either way. The RX axis is preserved untouched.
+
     - ``mean``: subtract the per-bin slow-time mean. Zero-phase, needs
-      the whole buffer — best for offline analysis.
+      the whole buffer -- best for offline analysis.
     - ``iir``: first-order IIR high-pass. Streaming-friendly, adds a
-      little phase lag — the on-hardware choice.
+      little phase lag -- the on-hardware choice.
     """
     rp = np.asarray(range_profile)
+    if rp.ndim not in (2, 3):
+        raise ValueError("range_profile must be 2-D or 3-D")
     if method == "mean":
         cleaned: np.ndarray = rp - rp.mean(axis=0, keepdims=True)
         return cleaned
@@ -96,13 +113,44 @@ def remove_clutter(range_profile: np.ndarray, method: str = "mean") -> np.ndarra
         alpha = 0.95
         out = np.zeros_like(rp)
         prev_in = rp[0]
-        prev_out = np.zeros(rp.shape[1], dtype=rp.dtype)
+        # Initial state has the same shape as one slow-time slice:
+        # (n_bins,) in 2-D mode, (n_bins, n_rx) in 3-D mode.
+        prev_out = np.zeros(rp.shape[1:], dtype=rp.dtype)
         for n in range(1, rp.shape[0]):
             prev_out = alpha * (prev_out + rp[n] - prev_in)
             out[n] = prev_out
             prev_in = rp[n]
         return out
     raise ValueError(f"unknown clutter method: {method!r}")
+
+
+def mrc_combine(profile_3d: np.ndarray) -> np.ndarray:
+    """Combine a `(n_chirps, n_bins, n_rx)` profile across the RX axis.
+
+    Equal-weight coherent summation, then normalize by sqrt(n_rx). This
+    is a simple form of maximal-ratio combining suitable for the BOOST's
+    three PCB-co-located RX antennas seeing the same chest target: each
+    RX has the same expected signal phase to a stationary reflector, so
+    coherent summation gives a sqrt(n_rx) amplitude gain (n_rx gain in
+    power), which is 4.77 dB for 3 RX. Independent thermal noise across
+    channels does not gain from coherent summation, so the SNR
+    improvement is 10*log10(n_rx) dB on white noise.
+
+    Proper SNR-weighted MRC (per-bin noise estimation, per-RX phase
+    pre-rotation) is a future refinement; the equal-weight version
+    captures the dominant accuracy win without the bookkeeping. See the
+    pipeline plan if you want to tune it for a particular noise model.
+    """
+    p = np.asarray(profile_3d)
+    if p.ndim == 2:
+        return p
+    if p.ndim != 3:
+        raise ValueError("profile must be 3-D (n_chirps, n_bins, n_rx)")
+    n_rx = p.shape[2]
+    if n_rx <= 0:
+        raise ValueError("n_rx must be positive")
+    combined: np.ndarray = p.sum(axis=2) / np.sqrt(n_rx)
+    return combined
 
 
 def bin_energy(clean_profile: np.ndarray) -> np.ndarray:
@@ -265,6 +313,11 @@ def extract_displacement(
     """
     profile = range_fft(adc)
     clean = remove_clutter(profile, method=clutter_method)
+    # MRC across RX channels when the input is multi-RX. No-op for 2-D
+    # (single-RX) input so the legacy single-channel test path is
+    # unchanged.
+    if clean.ndim == 3:
+        clean = mrc_combine(clean)
     bin_track = track_range_bin(clean, config, gate_m=gate_m)
     iq = chest_iq(clean, bin_track)
     disp, center, radius = displacement_from_iq(iq, config)

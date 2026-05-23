@@ -2,19 +2,23 @@
 
 **Two sensors, one platform.**
 
-- **Shipped baseline (WiFi CSI):** 4.15 bpm cross-session HR MAE on ~$50 of
-  ESP32-S3 hardware vs Polar H10 ground truth, LOSO across 3 paired captures,
-  single subject. Pipeline: variance-rank top-K subcarriers → Butterworth
-  0.1-3 Hz → 4x zero-padded FFT → parabolic peak refinement → 9-dim feature
-  vector → XGBoost. Saturates around 88-90 bpm on elevated HR (data-bound,
-  not algorithm-bound, per `project-hr-data-bottleneck`). The live stack
-  currently runs this.
+- **Shipped baseline (WiFi CSI):** 13.90 bpm cross-session HR MAE on
+  ESP32-S3 hardware vs Polar H10 ground truth, LOSO across the 3 HR-labeled
+  paired captures in `data/captures/founder/`, single subject (see
+  `docs/eval/2026-05-23-loso.json`). Per-fold: 13.94 / 7.96 / 19.78 bpm
+  (worst fold is the elevated-HR post-cardio session, where the model
+  saturates around 88-90 bpm; data-bound per `project-hr-data-bottleneck`).
+  Pipeline: variance-rank top-K subcarriers → Butterworth 0.1-3 Hz → 4x
+  zero-padded FFT → parabolic peak refinement → 9-dim feature vector →
+  XGBoost. The live stack currently runs this.
 - **Current direction (60 GHz FMCW radar, v2):** TI IWRL6432BOOST (ordered
-  2026-05-20). The `radar/` DSP module is built and tested; SP2 (merged)
-  wired the radar inference worker into the same sensor-agnostic bus the
-  CSI worker uses, so swapping sensors is a one-command operator action
-  (`./tools/setup_live_stack.sh --with-radar`). Beat-by-beat HR/HRV
-  becomes tractable once the board arrives — see `docs/RADAR_STARTUP.md`.
+  2026-05-20). The `radar/` DSP module is built and tested against synth;
+  SP2 (merged) wired the radar inference worker into the same sensor-agnostic
+  bus the CSI worker uses, so swapping sensors is a one-command operator
+  action (`./tools/setup_live_stack.sh --with-radar`). Board-day work is
+  pinning `UsbFrameSource._parse_chunk`; runbook in `docs/RADAR_STARTUP.md`.
+  Known gap: the DSP pipeline is single-RX end-to-end; the board has 3 RX
+  antennas. Adding MRC combining is on the pre-board work list.
 
 Both sensors publish to the same vitals topics (`hr.predicted.<pid>`,
 `rr.predicted.<pid>`). The dashboard does not know or care which one is
@@ -22,8 +26,9 @@ upstream; a `sensor:` field on each message is the only marker.
 
 Truth lives in `docs/STATUS.md` (current operator state),
 `docs/LIVE_STACK.md` (the live monitoring runbook),
-`docs/RADAR_STARTUP.md` (board-day runbook), and `RESULTS.md`. If those
-disagree with this file, those win.
+`docs/RADAR_STARTUP.md` (board-day runbook), and
+`docs/eval/2026-05-23-loso.json` (current authoritative LOSO eval).
+If those disagree with this file, those win.
 
 For task-oriented lookup ("I want to do X, where does that code / doc
 live?"), `docs/NAVIGATION.md` is the fast path. `tools/README.md`
