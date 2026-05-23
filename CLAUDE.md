@@ -1,8 +1,29 @@
 # ViFi — Contactless Patient Monitoring (notes for Claude)
 
-Headline: **4.15 bpm cross-session HR MAE on $50 of ESP32-S3 hardware** vs Polar H10 ground truth, leave-one-session-out across 3 paired captures (LOSO), single subject. Pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz → 4× zero-padded FFT → parabolic peak refinement → 9-dim feature vector → XGBoost.
+**Two sensors, one platform.**
 
-Truth lives in `README.md`, `RESULTS.md`, and `ROADMAP.md`. If those disagree with this file, those win.
+- **Shipped baseline (WiFi CSI):** 4.15 bpm cross-session HR MAE on ~$50 of
+  ESP32-S3 hardware vs Polar H10 ground truth, LOSO across 3 paired captures,
+  single subject. Pipeline: variance-rank top-K subcarriers → Butterworth
+  0.1-3 Hz → 4x zero-padded FFT → parabolic peak refinement → 9-dim feature
+  vector → XGBoost. Saturates around 88-90 bpm on elevated HR (data-bound,
+  not algorithm-bound, per `project-hr-data-bottleneck`). The live stack
+  currently runs this.
+- **Current direction (60 GHz FMCW radar, v2):** TI IWRL6432BOOST (ordered
+  2026-05-20). The `radar/` DSP module is built and tested; SP2 (merged)
+  wired the radar inference worker into the same sensor-agnostic bus the
+  CSI worker uses, so swapping sensors is a one-command operator action
+  (`./tools/setup_live_stack.sh --with-radar`). Beat-by-beat HR/HRV
+  becomes tractable once the board arrives — see `docs/RADAR_STARTUP.md`.
+
+Both sensors publish to the same vitals topics (`hr.predicted.<pid>`,
+`rr.predicted.<pid>`). The dashboard does not know or care which one is
+upstream; a `sensor:` field on each message is the only marker.
+
+Truth lives in `docs/STATUS.md` (current operator state),
+`docs/LIVE_STACK.md` (the live monitoring runbook),
+`docs/RADAR_STARTUP.md` (board-day runbook), and `RESULTS.md`. If those
+disagree with this file, those win.
 
 ## Where things live
 - DSP + features: `preprocess.py`
