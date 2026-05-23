@@ -25,6 +25,10 @@ Truth lives in `docs/STATUS.md` (current operator state),
 `docs/RADAR_STARTUP.md` (board-day runbook), and `RESULTS.md`. If those
 disagree with this file, those win.
 
+For task-oriented lookup ("I want to do X, where does that code / doc
+live?"), `docs/NAVIGATION.md` is the fast path. `tools/README.md`
+indexes every script in `tools/` by purpose.
+
 ## Where things live
 
 ### Live monitoring platform (sensor-agnostic, SP1 + SP2)

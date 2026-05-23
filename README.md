@@ -33,7 +33,7 @@ ViFi is contactless patient monitoring across two sensors that share a single pl
 | Hardware | TI IWRL6432BOOST, ~$300 eval board | Ordered 2026-05-20, plug-and-play via `./tools/setup_live_stack.sh --with-radar` |
 | Status | Hardware-gated on board arrival | Board-day runbook: [`docs/RADAR_STARTUP.md`](./docs/RADAR_STARTUP.md) |
 
-Full WiFi methodology: [RESULTS.md](./RESULTS.md). Cross-sensor roadmap: [ROADMAP.md](./ROADMAP.md). Live stack: [LIVE_STACK.md](./docs/LIVE_STACK.md).
+Full WiFi methodology: [RESULTS.md](./RESULTS.md). Cross-sensor roadmap: [ROADMAP.md](./ROADMAP.md). Live stack: [LIVE_STACK.md](./docs/LIVE_STACK.md). Navigating the codebase: [NAVIGATION.md](./docs/NAVIGATION.md) for tasks + concepts, [tools/README.md](./tools/README.md) for every script.
 
 ---
 
