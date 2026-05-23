@@ -76,6 +76,8 @@ class SynthMeta:
     """True heartbeat peak times (s) — reference for beat-detection F1."""
     motion_window_s: tuple[float, float] | None = None
     """If set, the (start, end) of an injected gross-motion segment."""
+    apnea_window_s: tuple[float, float] | None = None
+    """If set, the (start, end) of an injected respiratory pause."""
     clutter_bins: tuple[float, ...] = field(default_factory=tuple)
     """Range bins occupied by static clutter targets."""
 
@@ -153,6 +155,7 @@ def synth_capture(
     n_clutter: int = 4,
     motion_window_s: tuple[float, float] | None = None,
     motion_amplitude_m: float = 0.02,
+    apnea_window_s: tuple[float, float] | None = None,
     seed: int = 0,
 ) -> tuple[np.ndarray, SynthMeta]:
     """Generate one synthetic FMCW capture.
@@ -189,6 +192,18 @@ def synth_capture(
         # A slow cm-scale sway: large, low-frequency, swamps the vitals.
         sway = motion_amplitude_m * np.sin(2.0 * np.pi * 0.4 * (t - lo))
         displacement = displacement + np.where(mask, sway, 0.0)
+
+    if apnea_window_s is not None:
+        # Zero displacement during the apnea window. Clinically an apnea
+        # is cessation of airflow; the chest stops moving entirely, so
+        # both breathing and the small heartbeat component disappear from
+        # the radar's perspective (the heartbeat amplitude is sub-mm and
+        # the chest-wall noise floor swamps it without breathing motion
+        # to entrain on). This is the synthetic "ground truth" for testing
+        # apnea detection downstream.
+        lo, hi = apnea_window_s
+        apnea_mask = (t >= lo) & (t < hi)
+        displacement = np.where(apnea_mask, 0.0, displacement)
 
     # --- fast-time tone basis: column m, normalised range-bin freq ---
     m = np.arange(n_fast)
@@ -257,6 +272,7 @@ def synth_capture(
         heartbeat_m=heartbeat,
         beat_times_s=beat_times,
         motion_window_s=motion_window_s,
+        apnea_window_s=apnea_window_s,
         clutter_bins=tuple(clutter_bins),
     )
     return adc.astype(np.complex128), meta

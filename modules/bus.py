@@ -80,6 +80,25 @@ def rr_predicted(patient_id: str) -> str:
     return f"rr.predicted.{patient_id}"
 
 
+def apnea_events(patient_id: str) -> str:
+    """Per-patient apnea-event topic.
+
+    Sensor-agnostic: the apnea detector consumes a respiratory envelope
+    (from CSI rr_dsp or radar.pipeline) and emits events on this single
+    topic regardless of upstream sensor. The dashboard + audit subscribe
+    here; downstream alerting (SP3) reads this stream.
+
+    Payload shape (one event per Redis Streams entry):
+        ts_unix        float    when the event was published
+        start_s_unix   float    apnea start (Unix epoch)
+        duration_s     float    pause length in seconds
+        type           str      "central" (v1; classifier deferred)
+        confidence     float    0..1, how deep below the rms floor
+        sensor         str      "csi" | "radar"  -- which worker emitted
+    """
+    return f"apnea.events.{patient_id}"
+
+
 def dlq(topic: str) -> str:
     """Dead-letter topic for `topic` (I086).
 
@@ -105,6 +124,7 @@ def all_topics(patient_id: str) -> list[str]:
         hr_predicted(patient_id),
         rr_reference(patient_id),
         rr_predicted(patient_id),
+        apnea_events(patient_id),
     ]
 
 

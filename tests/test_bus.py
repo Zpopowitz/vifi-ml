@@ -24,6 +24,7 @@ from modules.bus import (  # noqa: E402
     _id_gt,
     _parse_id,
     all_topics,
+    apnea_events,
     bus_from_env,
     csi_raw,
     hr_predicted,
@@ -48,6 +49,14 @@ def test_all_topics_covers_each_stream_and_role():
     # Every stream-role pair should be present and unique.
     assert len(set(topics)) == len(topics)
     assert all(t.endswith(".alice") for t in topics)
+
+
+def test_apnea_events_topic_helper():
+    """apnea.events.<pid> follows the sensor-agnostic vitals topic convention."""
+    assert apnea_events("alice") == "apnea.events.alice"
+    assert apnea_events("bob") != apnea_events("alice")
+    # The helper must be included in all_topics so audit + dashboard subscribe.
+    assert apnea_events("alice") in all_topics("alice")
 
 
 # ---------------------------------------------------------------------------
