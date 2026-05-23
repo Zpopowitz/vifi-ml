@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — SP2 radar stream integration (board-day ready)
+
+The day the IWRL6432BOOST arrives, plug it into the Pi and run one
+command (`./tools/setup_live_stack.sh --with-radar`) — beat-by-beat HR,
+HRV, and RR start drawing on the existing dashboard with zero code or
+topic change. Sensor-agnostic-bus contract from SP1 proven by the
+additivity of this change.
+
+- **`tools/radar_collector.py`** — IWRL6432BOOST data UART → per-chirp
+  publish to `radar.raw.<pid>` (new sensor-specific raw topic). Two
+  frame sources: `usb` for the real board (production) and `synth` for
+  pytest + dev (never used in any systemd unit per the "no fake
+  numbers" rule). The TLV parser is a documented skeleton that fails
+  loudly until board-day pins it against a real-board byte fixture.
+- **`tools/radar_inference_worker.py`** — consumes `radar.raw.<pid>`,
+  accumulates a rolling window of chirps, runs the existing `radar/`
+  DSP (range FFT → MTI → DC-offset circle-fit + DACM → harmonic notch
+  → beat detection → motion gating → HR/HRV), and publishes to
+  **`hr.predicted.<pid>` and `rr.predicted.<pid>`** — the same vitals
+  topics the dashboard already reads. A `sensor: "radar"` field on
+  each message is the only marker telling consumers which upstream
+  produced it.
+- **`deploy/systemd/vifi-radar-collector.service`** and
+  **`vifi-radar-inference.service`** — boot-persistent, `Restart=always`.
+- **`tools/setup_live_stack.sh --with-radar`** — installs the two
+  radar units alongside the four SP1 services. Idempotent.
+  `tools/live_stack.sh` `status` / `restart` automatically include
+  them when present, so the operator commands stay the same.
+- **`docs/RADAR_STARTUP.md`** — board-day runbook: connect the board,
+  flash the chirp config via TI Sensing Hub, pin the TLV parser
+  against a real-board byte dump, set `VIFI_RADAR_PORT`, watch the
+  bus.
+- **Tests** — `tests/test_radar_collector.py` and
+  `tests/test_radar_inference_worker.py` exercise the full
+  collector → bus → worker chain against `radar.synth_capture` with
+  no hardware. Worker recovers HR within 6 bpm of synth ground truth
+  (72 bpm) and RR within 6 bpm of 15 bpm.
+
+Spec/plan: `docs/superpowers/specs/2026-05-22-radar-integration-sp2-design.md`,
+`docs/superpowers/plans/2026-05-22-radar-integration-sp2-plan.md`.
+
+
+
 ### Removed — synthetic serving model
 
 The synthetic model has been removed as a serving / production concept

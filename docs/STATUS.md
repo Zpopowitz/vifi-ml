@@ -216,6 +216,19 @@ The inference worker serves the **real model only** — no synthetic
 fallback. Sync the trained artifacts to the Pi (see "sync from laptop"
 above) before bringing the stack up, or `vifi-inference` will not start.
 
+To also install the SP2 radar units (the IWRL6432BOOST plumbing,
+disabled until the board is plugged in and `VIFI_RADAR_PORT` is set):
+
+```bash
+./tools/setup_live_stack.sh --with-radar
+```
+
+Board-day runbook lives in `docs/RADAR_STARTUP.md`. Two extra services
+land alongside the four SP1 ones: `vifi-radar-collector` (frames →
+`radar.raw.<pid>`) and `vifi-radar-inference` (radar DSP →
+`hr.predicted.<pid>` / `rr.predicted.<pid>`, same vitals topics the
+dashboard already consumes).
+
 ### Pre-capture sanity (before each session) — run on Pi
 
 ```bash
