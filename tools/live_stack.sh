@@ -46,11 +46,18 @@ pi_run() {  # pi_run [--tty] "<command string>"
 cmd_status() {
   echo "ViFi live stack — status"
   pi_run '
-    for svc in redis-server vifi-dashboard vifi-inference vifi-audit; do
-      printf "  %-20s %s\n" "$svc" "$(systemctl is-active "$svc" 2>/dev/null || echo unknown)"
+    svcs="redis-server vifi-dashboard vifi-inference vifi-audit"
+    # Radar units are SP2, only installed when setup_live_stack.sh --with-radar
+    # was used. Show them only if the unit file is present, so a CSI-only
+    # bench output stays clean.
+    for r in vifi-radar-collector vifi-radar-inference; do
+      [[ -f /etc/systemd/system/$r.service ]] && svcs="$svcs $r"
     done
-    printf "  %-20s %s\n" "redis ping" "$(redis-cli ping 2>/dev/null || echo FAIL)"
-    printf "  %-20s %s\n" "dashboard /health" \
+    for svc in $svcs; do
+      printf "  %-24s %s\n" "$svc" "$(systemctl is-active "$svc" 2>/dev/null || echo unknown)"
+    done
+    printf "  %-24s %s\n" "redis ping" "$(redis-cli ping 2>/dev/null || echo FAIL)"
+    printf "  %-24s %s\n" "dashboard /health" \
       "$(curl -fsS -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo unreachable)"
   '
 }
@@ -58,8 +65,12 @@ cmd_status() {
 cmd_restart() {
   echo "Restarting the vifi-* services..."
   pi_run --tty '
-    sudo systemctl restart vifi-dashboard vifi-inference vifi-audit &&
-    echo "restarted: vifi-dashboard vifi-inference vifi-audit"
+    svcs="vifi-dashboard vifi-inference vifi-audit"
+    for r in vifi-radar-collector vifi-radar-inference; do
+      [[ -f /etc/systemd/system/$r.service ]] && svcs="$svcs $r"
+    done
+    sudo systemctl restart $svcs &&
+    echo "restarted: $svcs"
   '
 }
 

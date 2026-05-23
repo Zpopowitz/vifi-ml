@@ -49,14 +49,15 @@ subprocesses (via the orchestrator) — no per-session workers.
 
 Topics are `<stream>.<role>.<patient_id>` (defined in `modules/bus.py`):
 
-| Topic                  | Producer            | Role                              |
-|------------------------|---------------------|-----------------------------------|
-| `csi.raw.<pid>`        | `csi_capture --bus` | Sensor-specific raw stream        |
-| `hr.reference.<pid>`   | `hr_logger --bus`   | Ground-truth HR (Polar H10)       |
-| `rr.reference.<pid>`   | `rr_logger --bus`   | Ground-truth RR (Vernier belt)    |
-| `hr.predicted.<pid>`   | inference worker    | Inferred HR (sensor-agnostic)     |
-| `rr.predicted.<pid>`   | inference worker    | Inferred RR (sensor-agnostic)     |
-| `presence.<pid>`       | inference worker    | Presence / occupancy              |
+| Topic                  | Producer                                          | Role                              |
+|------------------------|---------------------------------------------------|-----------------------------------|
+| `csi.raw.<pid>`        | `csi_capture --bus`                               | Sensor-specific raw stream        |
+| `radar.raw.<pid>`      | `radar_collector --bus`                           | Sensor-specific raw stream (SP2)  |
+| `hr.reference.<pid>`   | `hr_logger --bus`                                 | Ground-truth HR (Polar H10)       |
+| `rr.reference.<pid>`   | `rr_logger --bus`                                 | Ground-truth RR (Vernier belt)    |
+| `hr.predicted.<pid>`   | CSI inference worker **or** radar inference worker | Inferred HR (sensor-agnostic)     |
+| `rr.predicted.<pid>`   | CSI inference worker **or** radar inference worker | Inferred RR (sensor-agnostic)     |
+| `presence.<pid>`       | inference worker                                  | Presence / occupancy              |
 
 **The rule that makes the platform sensor-agnostic:** a new sensor adds
 *exactly one* raw topic and *one* inference worker. It never changes the
@@ -225,7 +226,7 @@ This stack is SP1 of a 7-part platform plan. Each is its own spec → plan → b
 | #   | Sub-project                      | Adds                                                          |
 |-----|----------------------------------|---------------------------------------------------------------|
 | SP1 | Persistent sensor-agnostic stack | This runbook — always-on stack, `--live`, bus contract        |
-| SP2 | Radar stream integration         | `radar.raw` + radar inference worker onto the same bus        |
+| SP2 | Radar stream integration         | **Shipped** — `radar.raw` + radar inference worker, board-day in `docs/RADAR_STARTUP.md` |
 | SP3 | Live alerting                    | Threshold + OOD/quality alerts → dashboard banner + push      |
 | SP4 | Session history + replay         | Persist + browse past sessions, replay into the live view     |
 | SP5 | Multi-room / multi-Pi            | Several Pis → one central bus; real room switching            |

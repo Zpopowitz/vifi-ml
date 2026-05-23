@@ -1,0 +1,22 @@
+[Unit]
+Description=ViFi radar frame collector (IWRL6432BOOST -> radar.raw.<pid>)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/RADAR_STARTUP.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+# --source usb is the production path. The collector NEVER runs --source synth
+# in a systemd unit -- synth is reserved for pytest + dev (see the
+# "no fake numbers" rule documented in feedback-no-synthetic-model).
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.radar_collector --source usb --bus --patient-id ${VIFI_PATIENT_ID} --duration 0
+Restart=always
+RestartSec=3
+MemoryMax=512M
+SyslogIdentifier=vifi-radar-collector
+
+[Install]
+WantedBy=multi-user.target

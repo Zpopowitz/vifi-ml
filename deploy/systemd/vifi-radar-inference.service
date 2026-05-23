@@ -1,0 +1,19 @@
+[Unit]
+Description=ViFi radar inference worker (radar.raw.<pid> -> hr/rr.predicted.<pid>)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/RADAR_STARTUP.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.radar_inference_worker --patient-id ${VIFI_PATIENT_ID} --window 10 --stride 2
+Restart=always
+RestartSec=3
+MemoryMax=1G
+SyslogIdentifier=vifi-radar-inference
+
+[Install]
+WantedBy=multi-user.target
