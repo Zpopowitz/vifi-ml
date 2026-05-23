@@ -25,23 +25,59 @@ Truth lives in `docs/STATUS.md` (current operator state),
 `docs/RADAR_STARTUP.md` (board-day runbook), and `RESULTS.md`. If those
 disagree with this file, those win.
 
+For task-oriented lookup ("I want to do X, where does that code / doc
+live?"), `docs/NAVIGATION.md` is the fast path. `tools/README.md`
+indexes every script in `tools/` by purpose.
+
 ## Where things live
-- DSP + features: `preprocess.py`
-- Synthetic generator (sanity-only): `data_gen.py`
-- Training: `train.py` (CI test-fixture model from synthetic data — not a serving model), `tools/retrain_on_real.py` (the real serving model, from real captures), `tools/train_quantile_models.py` (CIs). The API and inference worker serve the real model only; there is no synthetic fallback.
-- Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
-- Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+
+### Live monitoring platform (sensor-agnostic, SP1 + SP2)
+- **Live stack runbook:** `docs/LIVE_STACK.md` (SP1: 4 boot-persistent Pi services)
+- **Bus contract + topic helpers:** `modules/bus.py` (`csi_raw`, `radar_raw`, `hr_predicted`, `rr_predicted`, ...)
+- **Stack install / operate:** `tools/setup_live_stack.sh`, `tools/live_stack.sh`
+- **Systemd units:** `deploy/systemd/vifi-{dashboard,inference,audit,radar-collector,radar-inference}.service`
+- **Dashboard:** `dashboard/` (static SPA) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+
+### WiFi CSI sensor (v1, shipped baseline)
+- **DSP + features:** `preprocess.py`, `multipath.py`
+- **CSI capture (Pi USB serial):** `tools/csi_capture.py`, `tools/esp32_csi_collector.py`, `tools/parse_csi_capture.py`
+- **CSI inference worker (live):** `tools/inference_worker.py` (XGBoost on 9-dim features; lazy-loads from `models_real/`)
+- **Training:** `tools/retrain_on_real.py` (the real serving model, from real captures), `tools/train_quantile_models.py` (CIs), `train.py` (CI test-fixture model from synthetic data — not a serving model)
+- **ESP32-S3 firmware flashing:** `docs/ESP32_SETUP.md`
+- **Calibration + RF fingerprint + walk-in detector:** `calibration.py`, `tools/calibrate_subject.py`, `tools/identify_subject.py`, `tools/compute_room_baseline.py`
+- **OOD suppression:** `quality.py` (Mahalanobis)
+
+### 60 GHz radar sensor (v2, hardware-gated)
+- **DSP pipeline:** `radar/` (range FFT → MTI → DACM phase → harmonic notch → beat detection → motion gating → HR/HRV)
+- **Radar collector (USB → bus):** `tools/radar_collector.py`
+- **Radar inference worker (bus → vitals):** `tools/radar_inference_worker.py` (publishes to the SAME `hr.predicted` / `rr.predicted` topics the CSI worker uses)
+- **Board-day runbook:** `docs/RADAR_STARTUP.md`
+- **Radar research:** `docs/RADAR_PHASE0_NOTES.md`, `docs/RADAR_DEMAND_THESIS.md`
+
+### Ground-truth sensors + capture orchestration
+- **Capture orchestrator:** `tools/run_paired_session.py` (also `tools/capture.sh --live`, `tools/capture_hr_sweep.sh`)
+- **HR ground truth:** `hr_logger.py` (Polar H10 BLE)
+- **RR ground truth:** `rr_logger.py` (Vernier Go Direct belt), `rr_dsp.py`
+
+### Real-time API
+- **`api.py`** — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), `/health`, `/readyz`, plus 501 stubs for apnea/gait/falls/transients/multi_patient
+- **Single model bundle:** `api_internals/bundles.py` (`RealModelBundle`). The API serves the real model only; no synthetic fallback.
+
+### Cross-cutting infrastructure
+- **Audit log (FDA-grade JSONL):** `audit.py`, `audit_chain_state.py`, `tools/audit_subscriber.py`, `tools/audit_query.py`, `tools/audit_health.py`, `tools/audit_retention.py`, `tools/audit_verify.py`
+- **Auth + scopes:** `security.py`
+- **Pseudonymization:** `pseudonymize.py`
+- **Prometheus metrics:** `observability.py`
+- **Config validation:** `config.py`
+
+### Operator + developer docs
 - **Operator status + commands:** `docs/STATUS.md` ← read first
-- Daily reproduction: `docs/QUICKSTART.md`
-- Active forward-plan / audit: `docs/AUDIT_PLAN.md`
-- ESP32-S3 firmware flashing: `docs/ESP32_SETUP.md`
-- Calibration + RF fingerprint + walk-in detector: `calibration.py`
-- Mahalanobis OOD: `quality.py`
-- Audit log (FDA-grade JSONL): `audit.py`
-- Capture orchestrator: `tools/run_paired_session.py`
-- HR ground truth: `hr_logger.py` (Polar H10 BLE)
-- RR ground truth: `rr_logger.py` (Vernier Go Direct belt)
-- Tests: `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
+- **Daily reproduction:** `docs/QUICKSTART.md`
+- **Security hardening (SP7-partial):** `docs/SECURITY_HARDENING.md`, `tools/enable_security_mode.sh`
+- **Demand validation interview runbook:** `docs/DEMAND_VALIDATION_INTERVIEWS.md`
+- **Spec → plan → build artifacts:** `docs/superpowers/specs/`, `docs/superpowers/plans/` (each sub-project: SP1 live stack, SP2 radar, synthetic-model removal, radar v2 architecture, beat-detection HR)
+- **Historical audit + decision log:** `docs/AUDIT_PLAN.md` (PRs A–L complete; kept as reference for past architectural decisions)
+- **Tests:** `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
 
 ## Conventions
 - Never trade quality or accuracy for effort. Recommend and build the most correct, capable option; lower implementation effort is context worth noting, never the basis for a decision.

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-22
+
+Two merged sub-projects (SP1 + SP2) and one codebase-wide refactor that
+together turn ViFi from a single-sensor file-only system into a persistent,
+sensor-agnostic live monitoring platform with radar v2 integration shipped
+and hardware-ready. Per the bump rules in `__version__.py`, this is a MINOR
+bump in pre-1.0 versioning even though it carries breaking API changes (the
+synthetic-model removal removed `/predict/demo` and reshaped `HealthResponse`);
+0.x is explicitly the pre-stable-API window where minor bumps may break.
+
 ### Added — SP2 radar stream integration (board-day ready)
 
 The day the IWRL6432BOOST arrives, plug it into the Pi and run one
