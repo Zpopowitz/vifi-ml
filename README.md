@@ -163,9 +163,16 @@ VIFI_MODEL_DIR=models_holdout python tools/first_capture_report.py \
 ```bash
 docker build -t vifi .
 docker run -p 8000:8000 vifi
-curl -X POST http://localhost:8000/predict/demo \
+
+# The API serves the real model only -- no synthetic fallback. Without a
+# trained model the /predict-family endpoints return 503; /health still works:
+curl http://localhost:8000/health
+
+# With a real model artifact present, the canonical inference endpoint is
+# /predict/capture -- it takes a CSI capture text and returns the HR timeline:
+curl -X POST http://localhost:8000/predict/capture \
      -H 'content-type: application/json' \
-     -d '{"hr_bpm":75,"rr_bpm":18,"seed":0}'
+     -d '{"capture_text":"<contents of capture.txt>"}'
 ```
 
 ---

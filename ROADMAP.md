@@ -1,6 +1,21 @@
 # ViFi Roadmap
 
-Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital bed. HR is validated on real hardware today; everything else runs on the same CSI stream and the same pair of ESP32-S3 nodes.
+Contactless patient monitoring across two sensors that share a single
+platform.
+
+- **WiFi CSI (v1, shipped baseline):** ~$50 of commodity ESP32-S3
+  hardware per bed. HR validated on real hardware; all other
+  capabilities run on the same CSI stream.
+- **60 GHz FMCW radar (v2, current direction):** TI IWRL6432BOOST
+  ordered 2026-05-20. The `radar/` DSP and the radar inference worker
+  (SP2) are built; beat-by-beat HR + HRV unlocks once the board lands
+  (`docs/RADAR_STARTUP.md`).
+
+Both sensors publish to the same sensor-agnostic vitals topics
+(`hr.predicted.<pid>`, `rr.predicted.<pid>`) on the SP1 live bus, so
+the dashboard and every downstream consumer is unchanged on a sensor
+swap. Adding a third sensor follows the same one-raw-topic-plus-one-
+inference-worker contract.
 
 ---
 
@@ -8,8 +23,10 @@ Contactless patient monitoring on ~$50 of commodity WiFi hardware per hospital b
 
 | Capability | Status | Where |
 |---|---|---|
-| **Heart rate (HR)** | **Shipped — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([RESULTS.md](./RESULTS.md)) | `train.py`, `tools/retrain_on_real.py` |
-| Respiratory rate (RR) | Pipeline + synthetic regressor only; awaiting first Vernier paired captures | `rr_logger.py`, `train.py` (synthetic), `preprocess.py` |
+| **Heart rate (HR), WiFi CSI** | **Shipped — 4.15 bpm cross-session MAE on real ESP32-S3 hardware** ([RESULTS.md](./RESULTS.md)). Saturates ~88-90 bpm on elevated HR (data-bound). | `train.py`, `tools/retrain_on_real.py` |
+| **Heart rate + HRV, 60 GHz radar (v2)** | Code + tests shipped (SP2); hardware-gated on IWRL6432BOOST arrival. Geometric beat-by-beat, no training-data ceiling. | `radar/`, `tools/radar_collector.py`, `tools/radar_inference_worker.py`, `docs/RADAR_STARTUP.md` |
+| **Sensor-agnostic live stack** | Shipped (SP1) — Redis + dashboard + inference + audit as boot-persistent systemd services on the Pi | `docs/LIVE_STACK.md` |
+| Respiratory rate (RR) | Live serving via `rr_dsp` (PCA + continuity tracker). Trained RR regressor present only in CI fixture model. | `rr_logger.py`, `rr_dsp.py`, `preprocess.py` |
 | Per-subject calibration + RF fingerprinting | Shipped | `calibration.py`, `tools/calibrate_subject.py` |
 | Multi-subject "walks in the room" detection | Shipped — rolling fingerprint + hysteresis | `calibration.py :: RollingFingerprintTracker` |
 | Out-of-distribution suppression | Shipped — Mahalanobis distance, chi-square 99% threshold | `quality.py` |
