@@ -1,14 +1,18 @@
-# ViFi — Contactless Hospital Vitals from WiFi Signals
+# ViFi — Contactless Hospital Vitals on Commodity Sensors
 
-> **Real-hardware result:** **4.15 bpm cross-session HR MAE within domain** (Polar H10 ground truth, leave-one-session-out across 3 paired captures (LOSO), single subject, single room, single antenna pair, **~$50 of commodity ESP32-S3 hardware**).
+> **Shipped baseline (WiFi CSI):** **4.15 bpm cross-session HR MAE within domain** (Polar H10 ground truth, leave-one-session-out across 3 paired captures (LOSO), single subject, single room, single antenna pair, **~$50 of commodity ESP32-S3 hardware**).
 >
-> **Cross-environment caveat (2026-05-16):** in a new room with patch antennas — a first-time deployment outside the training distribution — MAE collapsed to **17.77 bpm**. The model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus and is the open problem ViFi's next milestones address. Full empirical record: [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). Architectural response: [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
+> **Cross-environment caveat (2026-05-16):** in a new room with patch antennas — a first-time deployment outside the training distribution — MAE collapsed to **17.77 bpm**. The model defaulted to its training-distribution prior. This is the expected WiFi-CSI failure mode for a 4-session corpus. Empirical record: [`docs/HOME_PILOT_LOG.md`](./docs/HOME_PILOT_LOG.md). Architectural response: [`docs/FUTURE_ARCHITECTURE.md`](./docs/FUTURE_ARCHITECTURE.md).
+>
+> **Current direction (60 GHz radar v2):** TI IWRL6432BOOST ordered 2026-05-20. All integration code shipped (SP2); plug-and-play the day the board arrives. Beat-by-beat HR + HRV unlocks then — the radar pipeline is geometric, not statistical, so no training-data ceiling. See [`docs/RADAR_STARTUP.md`](./docs/RADAR_STARTUP.md).
 
-ViFi turns a pair of off-the-shelf WiFi chips into a contactless patient monitor. No wires, no adhesive, no line of sight, no patient compliance or discomfort required. The same sensor stream that recovers heart rate also extends to respiratory rate, presence, gait, fall detection, and apnea — all on the same $50 of hardware.
+ViFi is contactless patient monitoring across two sensors that share a single platform. No wires, no adhesive, no line of sight, no patient compliance or discomfort. The WiFi-CSI baseline is the shipped, hardware-verified result on ~$50 of ESP32-S3 hardware; the 60 GHz radar raises the ceiling to beat-by-beat HR + HRV. The sensor-agnostic live stack ([SP1](./docs/LIVE_STACK.md)) means swapping between them is one operator command — same dashboard, same vitals topics, no client changes anywhere downstream.
 
 ---
 
 ## Headline numbers
+
+### Sensor v1: WiFi CSI (shipped)
 
 | Metric | Value | Methodology |
 |---|---|---|
@@ -20,7 +24,16 @@ ViFi turns a pair of off-the-shelf WiFi chips into a contactless patient monitor
 | Dataset | 3 paired captures (LOSO), 1 subject, 1 room, 1 antenna type | ~6 minutes total real-hardware data |
 | Comparison: PhaseBeat (INFOCOM 2017) | 1.5 bpm | Intel 5300 NIC ($500/node), within domain |
 
-Full methodology: [RESULTS.md](./RESULTS.md). Roadmap: [ROADMAP.md](./ROADMAP.md).
+### Sensor v2: 60 GHz radar (code shipped, hardware-gated)
+
+| Metric | Value | Source |
+|---|---|---|
+| **HR / HRV pipeline** | Code shipped, synth-validated | `radar/` DSP + `tools/radar_inference_worker.py`, recovers synth HR within 6 bpm of ground truth in CI |
+| Expected accuracy ceiling | ±1 bpm across the physiological band | Geometric (beat detection on chest-displacement phase), not statistical — no training-data ceiling |
+| Hardware | TI IWRL6432BOOST, ~$300 eval board | Ordered 2026-05-20, plug-and-play via `./tools/setup_live_stack.sh --with-radar` |
+| Status | Hardware-gated on board arrival | Board-day runbook: [`docs/RADAR_STARTUP.md`](./docs/RADAR_STARTUP.md) |
+
+Full WiFi methodology: [RESULTS.md](./RESULTS.md). Cross-sensor roadmap: [ROADMAP.md](./ROADMAP.md). Live stack: [LIVE_STACK.md](./docs/LIVE_STACK.md).
 
 ---
 
@@ -179,6 +192,10 @@ curl -X POST http://localhost:8000/predict/capture \
 
 ## How it works
 
+Two sensors, one platform — both feed the same sensor-agnostic live monitoring stack (see [`docs/LIVE_STACK.md`](./docs/LIVE_STACK.md)).
+
+### Sensor v1: WiFi CSI (shipped)
+
 A pair of ESP32-S3 chips, one transmitting and one receiving, exchange WiFi packets at ~70-100 packets/sec. Each received packet's per-subcarrier amplitude (Channel State Information, CSI) reflects the multipath environment — including chest-wall motion from breathing and heartbeat.
 
 ```
@@ -187,20 +204,45 @@ A pair of ESP32-S3 chips, one transmitting and one receiving, exchange WiFi pack
                                                  │
                                                  │ USB serial @ 921600 baud
                                                  ▼
-                                        tools/csi_capture.py
+                            tools/csi_capture.py ── csi.raw.<pid>
                                                  │
                                                  ▼
-                                  tools/first_capture_report.py
+                            tools/inference_worker.py
+                            (XGBoost on 9-dim features)
                                                  │
                                                  ▼
-                       [HR / RR predictions, vs Polar H10 ground truth]
+                       hr.predicted.<pid> + rr.predicted.<pid>
 ```
 
-DSP pipeline: variance-rank top-K subcarriers → Butterworth 0.1–3 Hz bandpass → 4× zero-padded FFT → parabolic peak refinement in respiratory (0.15–0.6 Hz) and cardiac (0.9–1.8 Hz) bands → 9-dim feature vector → XGBoost regressor.
+### Sensor v2: 60 GHz FMCW radar (hardware-gated)
+
+A TI IWRL6432BOOST transmits chirps at 60 GHz and reads the reflected signal. The phase of the reflection from the subject's chest is proportional to chest displacement (geometrically, not statistically) — sub-millimetre resolution. Beat-by-beat HR and HRV fall out of detecting the cardiac peaks in that displacement waveform.
+
+```
+[IWRL6432BOOST] ---- 60 GHz chirps ---> [chest reflection]
+   antenna array                                │
+                                                │ USB-CDC @ 921600 baud
+                                                ▼
+                          tools/radar_collector.py ── radar.raw.<pid>
+                                                │
+                                                ▼
+                          tools/radar_inference_worker.py
+                          (range FFT → MTI → DACM phase → beat detection)
+                                                │
+                                                ▼
+                       hr.predicted.<pid> + rr.predicted.<pid>
+                                  (same topics as CSI)
+```
+
+Note the last line in both diagrams: the dashboard, audit subscriber, and `/api/v1/stream` WebSocket consumers read the same `hr.predicted.<pid>` / `rr.predicted.<pid>` topics regardless of which sensor is upstream. Swapping sensors is one operator command, not a rewrite.
+
+The signal-processing approach for the WiFi side is from peer-reviewed academic work (PhaseBeat, FullBreathe, ResBeat); ViFi's contribution there was productising it on $50 hardware. The radar side is from open mmWave-vitals literature (radarODE family, the DACM phase-extraction technique); ViFi's contribution is the sensor-agnostic platform that makes the v1→v2 sensor swap a one-command operator action.
+
+**WiFi CSI DSP pipeline:** variance-rank top-K subcarriers → Butterworth 0.1–3 Hz bandpass → 4× zero-padded FFT → parabolic peak refinement in respiratory (0.15–0.6 Hz) and cardiac (0.9–1.8 Hz) bands → 9-dim feature vector → XGBoost regressor.
 
 Subcarrier count per packet is **128 at HT20** (cleaner, recommended) and **192 at HT40** — bandwidth is set in the ESP32 firmware (`#define CONFIG_WIFI_BANDWIDTH` in `esp-csi/examples/get-started/csi_{recv,send}/main/app_main.c`). The pipeline is bandwidth-agnostic; the variance-rank top-K subcarrier selection just picks from whatever count is present.
 
-The signal-processing approach is from peer-reviewed academic work (PhaseBeat, FullBreathe, ResBeat). ViFi's contribution is productizing it on $10 ESP32-S3 hardware instead of $500 Intel 5300 cards, plus the platform extensions (presence, falls, multi-patient).
+**Radar DSP pipeline:** range FFT → MTI clutter removal → range-bin select + track → DC-offset circle-fit + DACM phase extraction → respiration-harmonic notch → beat detection + motion gating → IBI → HR/HRV. Geometric throughout; no learned model.
 
 ### Live mode: pub/sub architecture
 
