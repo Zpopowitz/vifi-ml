@@ -404,7 +404,13 @@ def main() -> None:
     # The radar DSP is geometric, not learned -- the config is the only
     # adjustable surface, and the defaults match the IWRL6432BOOST profile
     # documented in docs/RADAR_PHASE0_NOTES.md.
-    config = RadarConfig()
+    #
+    # n_rx is informational here: the DSP detects 2-D vs 3-D ADC cubes
+    # at runtime, so the worker correctly handles whatever the collector
+    # publishes. Honoring VIFI_RADAR_N_RX keeps the worker's config object
+    # in sync with what the collector is emitting (useful for log lines
+    # and downstream metadata).
+    config = RadarConfig(n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")))
 
     metrics_enabled = os.environ.get("VIFI_METRICS_ENABLED", "").lower() in (
         "1",

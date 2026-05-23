@@ -213,3 +213,36 @@ def test_bus_from_env_in_memory_for_non_redis_url(monkeypatch):
     monkeypatch.setenv("VIFI_BUS_URL", "memory")
     bus = bus_from_env()
     assert isinstance(bus, InMemoryBus)
+
+
+def test_bus_from_env_redis_uses_default_maxlen_when_unset(monkeypatch):
+    """Unset VIFI_BUS_MAXLEN must NOT mean unbounded -- production OOM hazard."""
+    from modules.bus import DEFAULT_BUS_MAXLEN, RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.delenv("VIFI_BUS_MAXLEN", raising=False)
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen == DEFAULT_BUS_MAXLEN
+
+
+def test_bus_from_env_redis_honors_explicit_zero_as_unbounded(monkeypatch):
+    """An operator can opt into unbounded streams by setting VIFI_BUS_MAXLEN=0."""
+    from modules.bus import RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("VIFI_BUS_MAXLEN", "0")
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen is None
+
+
+def test_bus_from_env_redis_honors_explicit_value(monkeypatch):
+    """An explicit value overrides the default."""
+    from modules.bus import RedisStreamBus
+
+    monkeypatch.setenv("VIFI_BUS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("VIFI_BUS_MAXLEN", "5000")
+    bus = bus_from_env()
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._maxlen == 5000

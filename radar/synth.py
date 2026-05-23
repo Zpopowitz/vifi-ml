@@ -219,13 +219,29 @@ def synth_capture(
         adc += amp * np.exp(1j * cphase) * tone(cb)[None, :]
         clutter_bins.append(cb)
 
-    # --- additive complex white noise at the requested SNR ---
-    # SNR is referenced to the (unit-amplitude) chest return.
+    # --- multi-RX path: emit a (n_chirps, n_fast, n_rx) cube ---
+    # Co-located RX antennas all see the same chest target with the same
+    # signal phase (they are millimetres apart on the BOOST PCB; the
+    # boresight is normal to the board, so the path-length differences
+    # are far below a wavelength). What differs across RX is the
+    # thermal noise realisation. To exercise the MRC path correctly,
+    # broadcast the noise-free `adc` across the RX axis and add
+    # independent noise per RX.
+    n_rx = max(1, int(getattr(config, "n_rx", 1)))
     noise_sigma = 10.0 ** (-snr_db / 20.0) / np.sqrt(2.0)
-    noise = noise_sigma * (
-        rng.standard_normal(adc.shape) + 1j * rng.standard_normal(adc.shape)
-    )
-    adc = adc + noise
+    if n_rx == 1:
+        noise = noise_sigma * (
+            rng.standard_normal(adc.shape) + 1j * rng.standard_normal(adc.shape)
+        )
+        adc = adc + noise
+    else:
+        # Stack signal across RX axis, then add independent per-RX noise.
+        adc_cube = np.broadcast_to(adc[..., None], adc.shape + (n_rx,)).copy()
+        cube_shape = adc_cube.shape
+        adc_cube = adc_cube + noise_sigma * (
+            rng.standard_normal(cube_shape) + 1j * rng.standard_normal(cube_shape)
+        )
+        adc = adc_cube
 
     meta = SynthMeta(
         hr_bpm=hr_bpm,

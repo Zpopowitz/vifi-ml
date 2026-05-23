@@ -21,6 +21,7 @@ import os
 import sys
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
@@ -686,9 +687,32 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
                 "(not recommended)."
             )
 
+    # If model_dir uses the versioned layout (`<dir>/current` symlink →
+    # `<dir>/<sha>/`), resolve to the active version before constructing the
+    # bundle. Falls back to the dir itself for legacy in-place layouts.
+    from tools.model_swap import resolve_active_model_dir  # noqa: PLC0415
+
+    model_dir = resolve_active_model_dir(model_dir)
+    bundle = RealModelBundle(model_dir)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Warm-up: load the model on startup if available so the first user
+        # doesn't pay the cold-load latency (I175). Replaces the
+        # deprecated @app.on_event("startup") pattern.
+        if bundle.is_available():
+            try:
+                bundle.load()
+                log.info("warm: model loaded from %s", model_dir)
+            except Exception as exc:
+                log.info("warm: model load skipped: %s", exc)
+        yield
+        # Shutdown: nothing to do today.
+
     app = FastAPI(
         title="ViFi",
         version=VIFI_VERSION,
+        lifespan=lifespan,
         # Hide /openapi.json + /docs unless explicitly requested
         # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
         docs_url="/docs"
@@ -709,14 +733,6 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
     from api_internals.middleware import install_middleware  # noqa: PLC0415
 
     install_middleware(app)
-
-    # If model_dir uses the versioned layout (`<dir>/current` symlink →
-    # `<dir>/<sha>/`), resolve to the active version before constructing the
-    # bundle. Falls back to the dir itself for legacy in-place layouts.
-    from tools.model_swap import resolve_active_model_dir  # noqa: PLC0415
-
-    model_dir = resolve_active_model_dir(model_dir)
-    bundle = RealModelBundle(model_dir)
 
     @app.middleware("http")
     async def _timing(request: Request, call_next):
@@ -821,17 +837,6 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
     from api_internals.spa import mount_dashboard_spa  # noqa: PLC0415
 
     mount_dashboard_spa(app, dashboard_dir=ROOT / "dashboard")
-
-    # Warm-up: load the model on startup if available so the first user
-    # doesn't pay the cold-load latency (I175).
-    @app.on_event("startup")
-    async def _warmup():  # noqa: ANN202
-        if bundle.is_available():
-            try:
-                bundle.load()
-                log.info("warm: model loaded from %s", model_dir)
-            except Exception as exc:
-                log.info("warm: model load skipped: %s", exc)
 
     return app
 
