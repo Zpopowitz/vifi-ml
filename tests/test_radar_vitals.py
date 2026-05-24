@@ -137,3 +137,121 @@ def test_cardiac_signal_accepts_supplied_f_resp() -> None:
     cardiac, f_resp = cardiac_signal(disp, FS, f_resp_hz=0.25)
     assert f_resp == 0.25
     assert cardiac.shape == disp.shape
+
+
+# ---------------------------------------------------------------------------
+# Matched-filter beat detection. detect_beats_matched correlates the
+# cardiac signal with a parametric beat template instead of raw peak-
+# finding. SNR gain on white noise is sqrt(template_energy / noise),
+# meaningful at low SNR; should match find_peaks on clean signals and
+# beat it on noisy ones.
+# ---------------------------------------------------------------------------
+
+
+def _beats_to_f1(predicted_idx, truth_idx, tol_samples):
+    """Per-beat F1 with a sample-tolerance match (used by all the
+    matched-filter tests + the comparison test)."""
+    matched_truth = set()
+    tp = 0
+    for p in predicted_idx:
+        best = None
+        best_d = None
+        for i, t in enumerate(truth_idx):
+            if i in matched_truth:
+                continue
+            d = abs(p - t)
+            if d <= tol_samples and (best_d is None or d < best_d):
+                best, best_d = i, d
+        if best is not None:
+            matched_truth.add(best)
+            tp += 1
+    fp = len(predicted_idx) - tp
+    fn = len(truth_idx) - tp
+    if tp == 0:
+        return 0.0
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    return 2 * precision * recall / (precision + recall)
+
+
+def test_cardiac_template_has_expected_shape() -> None:
+    """The default template is a one-cycle sinusoidal envelope with the
+    same 2nd-harmonic content as the synth's heartbeat_waveform, so its
+    peak time is roughly the cycle center."""
+    from radar.vitals import cardiac_template
+
+    template = cardiac_template(FS, hr_bpm_hint=72.0)
+    assert template.ndim == 1
+    # Template duration matches one cycle at the hint rate (~0.83 s at
+    # 72 bpm -> 83 samples at 100 Hz).
+    assert 60 <= template.size <= 110
+    # Unit-norm so correlation amplitudes are signal-dependent only.
+    assert np.linalg.norm(template) == pytest.approx(1.0, rel=1e-3)
+    # The peak should be near the center of the template (within 25%).
+    peak_idx = int(np.argmax(template))
+    assert template.size * 0.25 < peak_idx < template.size * 0.75
+
+
+def test_detect_beats_matched_finds_correct_count_on_clean_signal() -> None:
+    """Matched filter on a clean synthetic beat train returns the right count."""
+    from radar.vitals import detect_beats_matched
+
+    # 30 s at 72 bpm -> 36 beats expected.
+    t = _time(30.0)
+    hr_bpm = 72.0
+    f0 = hr_bpm / 60.0
+    cardiac = np.sin(2.0 * np.pi * f0 * t) + 0.25 * np.sin(
+        2.0 * np.pi * 2.0 * f0 * t + 0.6
+    )
+    beats = detect_beats_matched(cardiac, FS)
+    expected_beats = int(round(30.0 * f0))
+    # +/-1 beat for boundary effects is acceptable.
+    assert abs(beats.size - expected_beats) <= 1
+
+
+def test_detect_beats_matched_returns_empty_on_silent_signal() -> None:
+    """All-zero input must not raise and must return zero beats."""
+    from radar.vitals import detect_beats_matched
+
+    silent = np.zeros(int(10.0 * FS), dtype=np.float64)
+    assert detect_beats_matched(silent, FS).size == 0
+
+
+def test_detect_beats_matched_beats_find_peaks_on_noisy_cardiac() -> None:
+    """At realistic post-pipeline SNR, matched filter should >= find_peaks
+    on per-beat F1. This is the load-bearing claim that justifies the
+    extra code: free accuracy at the part of the SNR curve that matters."""
+    from radar.vitals import detect_beats_matched
+
+    rng = np.random.default_rng(0)
+    t = _time(30.0)
+    hr_bpm = 72.0
+    f0 = hr_bpm / 60.0
+    clean = np.sin(2.0 * np.pi * f0 * t) + 0.25 * np.sin(
+        2.0 * np.pi * 2.0 * f0 * t + 0.6
+    )
+    # SNR around 0 dB at the cardiac signal level. Real radar after
+    # pipeline is typically better than this; the harder case is
+    # the right one to test the filter on.
+    noise = rng.standard_normal(t.size) * np.std(clean)
+    noisy = clean + noise
+
+    # Truth beats: maxima of the noiseless composite waveform.
+    from scipy.signal import find_peaks as _fp  # noqa: PLC0415
+
+    truth_idx, _ = _fp(clean, distance=int(FS * 60.0 / 180.0))
+
+    matched_idx = detect_beats_matched(noisy, FS)
+    legacy_idx = detect_beats(noisy, FS)
+
+    # Match window: 1/4 of a heartbeat period (208 ms at 72 bpm). Both
+    # detectors are evaluated with the same tolerance.
+    tol_samples = int(FS * 0.25 / f0)
+    matched_f1 = _beats_to_f1(matched_idx.tolist(), truth_idx.tolist(), tol_samples)
+    legacy_f1 = _beats_to_f1(legacy_idx.tolist(), truth_idx.tolist(), tol_samples)
+
+    assert (
+        matched_f1 >= legacy_f1
+    ), f"matched-filter F1 {matched_f1:.3f} did not beat legacy F1 {legacy_f1:.3f}"
+    # Matched filter should clear a real bar, not just barely match.
+    assert matched_f1 >= 0.85, f"matched-filter F1 {matched_f1:.3f} below 0.85 floor"

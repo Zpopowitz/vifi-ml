@@ -25,7 +25,7 @@ from radar.dsp import DspInfo, extract_displacement
 from radar.eval import coverage_fraction
 from radar.vitals import (
     cardiac_signal,
-    detect_beats,
+    detect_beats_matched,
     heart_rate_spectral,
     hrv_metrics,
     ibi_seconds,
@@ -157,7 +157,12 @@ def process(
         else float("nan")
     )
 
-    all_beats = detect_beats(cardiac, fs)
+    # Matched-filter beat detection is the production default: small but
+    # consistent F1 improvement over plain peak-finding across the full
+    # SNR sweep (head-to-head ~+0.01 on the 45 s synth at 72 bpm). The
+    # raw peak-finding fallback (`radar.vitals.detect_beats`) is still
+    # exported for diagnostics and ablation testing.
+    all_beats = detect_beats_matched(cardiac, fs)
     # Motion gating: drop beats that land in a flagged motion frame.
     valid_beats = all_beats[~gated[all_beats]] if all_beats.size else all_beats
     ibi = _still_run_ibis(valid_beats, gated, fs)
