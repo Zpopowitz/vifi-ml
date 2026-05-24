@@ -80,6 +80,26 @@ def rr_predicted(patient_id: str) -> str:
     return f"rr.predicted.{patient_id}"
 
 
+def presence_events(patient_id: str) -> str:
+    """Per-patient presence-state-machine event topic.
+
+    Sensor-agnostic. The worker drives a state machine off whichever
+    sensor produces a `present: bool` per window (radar today, CSI
+    when wired) and publishes transition events on this topic.
+
+    State machine states: OUT, IN_BED, BED_EXIT_ALERT.
+
+    Payload shape (one event per transition):
+        ts_unix         float    when the event was published
+        patient_id      str
+        state           str      new state
+        prev_state      str      state we left
+        since_unix      float    when the new state was entered
+        sensor          str      "csi" | "radar"
+    """
+    return f"presence.events.{patient_id}"
+
+
 def apnea_events(patient_id: str) -> str:
     """Per-patient apnea-event topic.
 
@@ -125,6 +145,7 @@ def all_topics(patient_id: str) -> list[str]:
         rr_reference(patient_id),
         rr_predicted(patient_id),
         apnea_events(patient_id),
+        presence_events(patient_id),
     ]
 
 

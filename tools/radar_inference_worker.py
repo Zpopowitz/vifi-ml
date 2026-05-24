@@ -67,9 +67,11 @@ from modules.bus import (  # noqa: E402
     apnea_events,
     bus_from_env,
     hr_predicted,
+    presence_events,
     radar_raw,
     rr_predicted,
 )
+from modules.presence_state import PresenceStateMachine  # noqa: E402
 from observability import install_worker_metrics  # noqa: E402
 from radar import RadarConfig, process  # noqa: E402
 from radar.dsp import extract_displacement  # noqa: E402
@@ -144,6 +146,7 @@ class _Vitals:
     hrv_rmssd_ms: Optional[float]
     pnn50_pct: Optional[float]
     f_resp_hz: float
+    present: bool = False
 
 
 MIN_CHIRPS_FOR_PROCESSING = 256
@@ -211,6 +214,7 @@ def run_once(
             else None
         ),
         f_resp_hz=float(result.f_resp_hz) if np.isfinite(result.f_resp_hz) else 0.0,
+        present=bool(result.present),
     )
 
 
@@ -335,6 +339,9 @@ def run_worker(
     apnea_window_s: float = 30.0,
     apnea_stride_s: float = 10.0,
     apnea_min_duration_s: float = 10.0,
+    publish_presence: bool = True,
+    presence_in_bed_stable_s: float = 30.0,
+    presence_bed_exit_after_s: float = 60.0,
     from_id: str = LATEST,
     consumer_name: Optional[str] = None,
     metrics: Optional[dict] = None,
@@ -350,6 +357,15 @@ def run_worker(
     hr_topic = hr_predicted(patient_id)
     rr_topic = rr_predicted(patient_id) if publish_rr else None
     apnea_topic = apnea_events(patient_id) if publish_apnea else None
+    presence_topic = presence_events(patient_id) if publish_presence else None
+    presence_sm = (
+        PresenceStateMachine(
+            in_bed_stable_s=presence_in_bed_stable_s,
+            bed_exit_after_s=presence_bed_exit_after_s,
+        )
+        if publish_presence
+        else None
+    )
     consumer = consumer_name or _consumer_name()
 
     # Idempotent group creation.
@@ -488,6 +504,31 @@ def run_worker(
             if metrics is not None:
                 metrics["predictions_total"].labels(patient_id, "rr").inc()
 
+        # Presence + bed-exit state machine. Every successful vitals
+        # window feeds `vitals.present` into the sensor-agnostic state
+        # machine. Transitions (OUT -> IN_BED, IN_BED -> BED_EXIT_ALERT,
+        # ...) publish to presence.events.<pid>. Brief gaps where
+        # run_once returns None (gross motion windows) don't step the
+        # machine, so the state stays put and the time-based thresholds
+        # absorb the gap rather than producing a false bed-exit.
+        if presence_sm is not None and presence_topic is not None:
+            ev = presence_sm.step(ts_unix=now, present=bool(vitals.present))
+            if ev is not None:
+                bus.publish(
+                    presence_topic,
+                    {
+                        "ts_unix": now,
+                        "patient_id": patient_id,
+                        "state": ev.state,
+                        "prev_state": ev.prev_state,
+                        "since_unix": ev.since_unix,
+                        "sensor": "radar",
+                    },
+                    ts_ms=int(now * 1000),
+                )
+                if metrics is not None:
+                    metrics["predictions_total"].labels(patient_id, "presence").inc()
+
         # Apnea side-channel: runs on its own (longer) stride so the
         # 10 s pause minimum is detectable. The apnea window is a
         # separate _Window with `apnea_window_s` of history, fed by the
@@ -580,6 +621,35 @@ def main() -> None:
         help="minimum pause length to count as apnea (clinical floor is 10 s).",
     )
     p.add_argument(
+        "--no-presence",
+        action="store_true",
+        help=(
+            "disable presence + bed-exit state machine. Default: enabled; "
+            "publishes state transitions on presence.events.<patient_id> "
+            "(OUT -> IN_BED after sustained presence, IN_BED -> "
+            "BED_EXIT_ALERT after sustained absence)."
+        ),
+    )
+    p.add_argument(
+        "--presence-in-bed-stable-s",
+        type=float,
+        default=30.0,
+        help=(
+            "contiguous presence (seconds) required before declaring "
+            "IN_BED. Brief presence (caregiver crossing the radar beam) "
+            "does not flip the state."
+        ),
+    )
+    p.add_argument(
+        "--presence-bed-exit-after-s",
+        type=float,
+        default=60.0,
+        help=(
+            "contiguous absence (seconds) from IN_BED before triggering "
+            "BED_EXIT_ALERT. Brief absence does not fire the alert."
+        ),
+    )
+    p.add_argument(
         "--from-start",
         action="store_true",
         help=(
@@ -634,6 +704,9 @@ def main() -> None:
         apnea_window_s=args.apnea_window_s,
         apnea_stride_s=args.apnea_stride_s,
         apnea_min_duration_s=args.apnea_min_duration_s,
+        publish_presence=not args.no_presence,
+        presence_in_bed_stable_s=args.presence_in_bed_stable_s,
+        presence_bed_exit_after_s=args.presence_bed_exit_after_s,
         from_id=EARLIEST if args.from_start else LATEST,
         metrics=metrics,
         stop=stop,

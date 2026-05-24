@@ -61,6 +61,16 @@ def test_apnea_events_topic_helper():
     assert apnea_events("alice") in all_topics("alice")
 
 
+def test_presence_events_topic_helper():
+    """presence.events.<pid> carries state-machine transitions (in_bed,
+    bed_exit_alert, ...). Same sensor-agnostic shape as apnea events."""
+    from modules.bus import presence_events
+
+    assert presence_events("alice") == "presence.events.alice"
+    assert presence_events("bob") != presence_events("alice")
+    assert presence_events("alice") in all_topics("alice")
+
+
 # ---------------------------------------------------------------------------
 # Message-id ordering
 # ---------------------------------------------------------------------------
