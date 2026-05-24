@@ -536,3 +536,111 @@ def test_worker_publishes_no_presence_events_when_disabled():
     )
 
     assert bus.history(presence_events(patient)) == []
+
+
+# ---------------------------------------------------------------------------
+# Spectral-fallback gate. When the matched-filter confidence on a window
+# is below the threshold, the worker publishes HR (which comes from the
+# spectral estimator independent of per-beat detection) but nulls HRV
+# fields in the message so consumers don't treat them as trustworthy.
+# ---------------------------------------------------------------------------
+
+
+def test_worker_publishes_beat_confidence_field():
+    """Every HR message carries the beat_confidence value so downstream
+    consumers can re-gate or display it."""
+    bus = InMemoryBus()
+    patient = "jack"
+    config = RadarConfig()
+    _publish_synth_frames(
+        bus, patient, config, duration_s=12.0, hr_bpm=72.0, rr_bpm=15.0
+    )
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=False,
+        from_id=EARLIEST,
+        consumer_name="test-worker-conf",
+        max_iterations=1,
+    )
+    history = bus.history(hr_predicted(patient))
+    assert len(history) >= 1
+    msg = history[-1].payload
+    assert "beat_confidence" in msg
+    # Clean synth should produce high confidence -- well above the
+    # default 0.7 gate, so HRV fields are populated.
+    assert msg["beat_confidence"] >= 0.85
+    assert msg["hrv_sdnn_ms"] is not None
+    assert msg["hrv_rmssd_ms"] is not None
+
+
+def test_worker_nulls_hrv_when_confidence_below_threshold():
+    """Spectral-fallback: setting a strict threshold above what the
+    clean signal can reach forces HRV nulling even though HR still
+    publishes."""
+    bus = InMemoryBus()
+    patient = "kate"
+    config = RadarConfig()
+    _publish_synth_frames(
+        bus, patient, config, duration_s=12.0, hr_bpm=72.0, rr_bpm=15.0
+    )
+    # Threshold > 1.0 means no window can ever pass -> HRV always nulled.
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=False,
+        hrv_confidence_threshold=1.5,
+        from_id=EARLIEST,
+        consumer_name="test-worker-fallback",
+        max_iterations=1,
+    )
+    history = bus.history(hr_predicted(patient))
+    assert len(history) >= 1
+    msg = history[-1].payload
+    # HR still publishes (independent of beat detection).
+    assert msg["hr_bpm"] is not None
+    assert abs(msg["hr_bpm"] - 72.0) <= 6.0
+    # HRV is nulled because beat_confidence < threshold.
+    assert msg["hrv_sdnn_ms"] is None
+    assert msg["hrv_rmssd_ms"] is None
+    assert msg["pnn50_pct"] is None
+
+
+# ---------------------------------------------------------------------------
+# HRV propagation check: the matched-filter wins from Session 3 should
+# yield a tight HRV against the synth-truth IBIs. This is the audit's
+# "verify the improvements propagate" item -- pure verification, not a
+# new code path.
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_hrv_tracks_synth_truth_at_normal_breathing():
+    """On a 60 s clean synth at 72 bpm, the pipeline's reported SDNN and
+    RMSSD should be within physiological tolerances of the truth IBIs
+    (the synth's beat_times_s)."""
+    from radar import RadarConfig, process, synth_capture
+
+    config = RadarConfig()
+    adc, meta = synth_capture(
+        config, duration_s=60.0, hr_bpm=72.0, rr_bpm=15.0, seed=200
+    )
+    res = process(adc, config)
+
+    true_ibi_ms = np.diff(meta.beat_times_s) * 1000.0
+    true_sdnn = float(np.std(true_ibi_ms))
+    true_rmssd = float(np.sqrt(np.mean(np.diff(true_ibi_ms) ** 2)))
+
+    # Pipeline HRV. The synth heartbeat is exactly periodic so the
+    # true SDNN/RMSSD are tiny (~ms); we just need the reported values
+    # to be small as well. Wide tolerance because filtering + matched-
+    # filter + finite FFT bin width introduces sub-bin jitter (~5-20 ms).
+    assert res.hrv["sdnn_ms"] == pytest.approx(true_sdnn, abs=30.0)
+    assert res.hrv["rmssd_ms"] == pytest.approx(true_rmssd, abs=30.0)

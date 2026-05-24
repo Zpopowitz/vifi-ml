@@ -29,6 +29,7 @@ from radar.vitals import (
     heart_rate_spectral,
     hrv_metrics,
     ibi_seconds,
+    match_filter_confidence,
     motion_mask,
     respiration_rate,
 )
@@ -77,6 +78,14 @@ class VitalsResult:
     the tracked chest bin vs `PRESENCE_SCR_THRESHOLD`; empty-room
     captures (or full-capture apnea injection) collapse the SCR to ~1
     and report present=False."""
+    beat_confidence: float = 0.0
+    """Spectral-peakiness proxy for beat-detection reliability, in
+    [0, 1]. A clean cardiac signal produces ~1.0; noisy / motion-
+    contaminated windows drop toward 0. The radar inference worker
+    keys the spectral-fallback gate off this: when confidence is low,
+    HRV fields in the published message are nulled out (HR can still
+    come from `heart_rate_spectral`, which doesn't depend on per-beat
+    detection)."""
 
 
 def _longest_still_run(gated: np.ndarray) -> tuple[int, int]:
@@ -178,6 +187,15 @@ def process(
         scr = 0.0
     present = bool(scr > PRESENCE_SCR_THRESHOLD)
 
+    # Beat-detection confidence proxy: spectral peakiness of the cardiac
+    # signal. The radar inference worker uses this for the spectral-
+    # fallback gate (low confidence -> HR still publishes, HRV is
+    # nulled because the per-beat detection isn't reliable enough).
+    if has_still:
+        beat_confidence = match_filter_confidence(cardiac[run_lo:run_hi], fs)
+    else:
+        beat_confidence = match_filter_confidence(cardiac, fs)
+
     return VitalsResult(
         hr_bpm=hr_bpm,
         rr_bpm=rr_bpm,
@@ -191,4 +209,5 @@ def process(
         cardiac=cardiac,
         dsp_info=dsp_info,
         present=present,
+        beat_confidence=beat_confidence,
     )
