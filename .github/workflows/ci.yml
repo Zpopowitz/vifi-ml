@@ -57,6 +57,47 @@ jobs:
       # them to the strict line above (currently 24 pre-existing errors
       # to clear; M2 work).
 
+  audit-chain:
+    name: Audit chain integrity (smoke verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade "pip>=26.1"
+          pip install -r requirements.txt
+      - name: Generate + verify a sample audit chain
+        # The hash-chained audit log is FDA-grade evidence. A bug in the
+        # writer that breaks the chain is a regression nobody would
+        # notice from pytest alone -- the unit tests cover the writer
+        # logic, but they don't exercise the CLI verifier end-to-end
+        # against a freshly-generated chain. This step does that:
+        # write 5 audit records via AuditLogWriter, then run
+        # `python -m tools.audit_verify --audit-dir <gen>` and assert
+        # exit 0.
+        env:
+          VIFI_AUDIT_CHAIN_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vifi-audit-smoke
+          python <<'PYEOF'
+          from pathlib import Path
+          from audit import AuditLogWriter
+          w = AuditLogWriter(audit_dir=Path("/tmp/vifi-audit-smoke"))
+          for i in range(5):
+              w.write({
+                  "event": "ci_smoke",
+                  "i": i,
+                  "patient_id": "ci-smoke",
+              })
+          w.close()
+          PYEOF
+          python -m tools.audit_verify --audit-dir /tmp/vifi-audit-smoke
+
   test:
     name: pytest
     runs-on: ubuntu-latest
