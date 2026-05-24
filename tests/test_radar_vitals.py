@@ -255,3 +255,123 @@ def test_detect_beats_matched_beats_find_peaks_on_noisy_cardiac() -> None:
     ), f"matched-filter F1 {matched_f1:.3f} did not beat legacy F1 {legacy_f1:.3f}"
     # Matched filter should clear a real bar, not just barely match.
     assert matched_f1 >= 0.85, f"matched-filter F1 {matched_f1:.3f} below 0.85 floor"
+
+
+# ---------------------------------------------------------------------------
+# Adaptive motion-gate threshold (radar audit's #3 top improvement).
+# The global 0.020 m/s threshold is one-size-fits-all and can over-gate
+# during deep breathing or postural shifts. An adaptive threshold reads
+# a per-subject baseline from a motion-free segment and gates at a
+# multiple of that, so subjects whose still-breathing RMS happens to
+# brush the global threshold do not get false-positive motion frames.
+# ---------------------------------------------------------------------------
+
+
+def test_motion_mask_adaptive_keeps_a_quiet_subject_clear() -> None:
+    """Adaptive threshold should not gate a quiet subject whose still
+    breathing is below the per-subject floor."""
+    from radar.vitals import motion_mask
+
+    # 30 s of pure ~5 mm breathing motion at 15 bpm. Velocity peaks are
+    # 2 * pi * f * amp = 2 * pi * 0.25 * 5e-3 ~ 0.008 m/s -- below the
+    # global 0.020 m/s threshold AND any reasonable adaptive multiple.
+    t = _time(30.0)
+    disp = 5e-3 * np.sin(2.0 * np.pi * 0.25 * t)
+    mask = motion_mask(disp, FS, adaptive=True)
+    # No frames should be flagged as motion -- this is the happy path.
+    assert mask.sum() == 0
+
+
+def test_motion_mask_adaptive_catches_a_gross_sway() -> None:
+    """A subject who shifts position (cm-scale sway over ~3 s) is real
+    motion, no matter how the adaptive baseline scales."""
+    from radar.vitals import motion_mask
+
+    t = _time(40.0)
+    disp = 5e-3 * np.sin(2.0 * np.pi * 0.25 * t)
+    # Inject a 3 s, 3 cm sway between t=20 and t=23. Velocity is
+    # ~2 * pi * 0.5 * 3e-2 = 0.094 m/s -- well above any reasonable
+    # adaptive threshold sourced from the first 8 s of breathing.
+    sway_lo, sway_hi = int(20 * FS), int(23 * FS)
+    sway_t = t[sway_lo:sway_hi] - 20.0
+    disp[sway_lo:sway_hi] += 3.0e-2 * np.sin(2.0 * np.pi * 0.5 * sway_t)
+    mask = motion_mask(disp, FS, adaptive=True)
+    # The sway region itself must be flagged. The default 1.5 s sliding
+    # window bleeds ~75 samples of high-RMS into the neighbouring
+    # breathing regions (the window straddles the sway edge), so the
+    # quiet-region assertions exclude one full window worth of edge.
+    edge = int(1.5 * FS)
+    assert mask[sway_lo:sway_hi].all()
+    assert not mask[: sway_lo - edge].any()
+    assert not mask[sway_hi + edge :].any()
+
+
+def test_motion_mask_adaptive_falls_back_to_global_on_too_little_data() -> None:
+    """If the input is shorter than the baseline window, the function
+    must not crash. It falls back to the global threshold."""
+    from radar.vitals import motion_mask
+
+    # 3 s of data, less than the default 8 s baseline. Should not raise.
+    t = _time(3.0)
+    disp = 5e-3 * np.sin(2.0 * np.pi * 0.25 * t)
+    mask = motion_mask(disp, FS, adaptive=True)
+    assert mask.shape == disp.shape
+
+
+# ---------------------------------------------------------------------------
+# Matched-filter confidence proxy (radar audit's spectral-fallback gate).
+# When beat detection is unreliable -- low SCR, motion artefacts, very
+# noisy cardiac signal -- the pipeline should still publish HR (from
+# the spectral estimator, which doesn't depend on per-beat detection)
+# but mark HRV fields as low-coverage so downstream consumers do not
+# treat the HRV numbers as trustworthy.
+# ---------------------------------------------------------------------------
+
+
+def test_match_filter_confidence_high_on_clean_signal() -> None:
+    """A clean synth cardiac signal should produce high (>=0.7) confidence."""
+    from radar.vitals import match_filter_confidence
+
+    t = _time(30.0)
+    f0 = 72.0 / 60.0
+    cardiac = np.sin(2.0 * np.pi * f0 * t)
+    conf = match_filter_confidence(cardiac, FS)
+    assert conf >= 0.7
+
+
+def test_match_filter_confidence_orders_clean_above_noise() -> None:
+    """A clean cardiac signal must produce strictly higher confidence
+    than white noise. Absolute thresholds for noise depend on FFT
+    statistics that vary by seed; the pipeline gate keys off the
+    ORDERING (clean > noise) and a clear margin between them. The
+    spectral-peakiness primitive of `match_filter_confidence` gives
+    clean ~ 1.0 and noise ~ 0.3-0.5; what matters is the gap."""
+    from radar.vitals import match_filter_confidence
+
+    t = _time(30.0)
+    f0 = 72.0 / 60.0
+    clean = np.sin(2.0 * np.pi * f0 * t)
+    clean_conf = match_filter_confidence(clean, FS)
+
+    rng = np.random.default_rng(0)
+    noise = rng.standard_normal(int(30.0 * FS))
+    noise_conf = match_filter_confidence(noise, FS)
+
+    assert clean_conf >= 0.85, f"clean confidence {clean_conf:.3f} too low"
+    # Gap of >= 0.3 means a pipeline gate at e.g. 0.7 catches clean and
+    # filters noise with margin.
+    assert clean_conf - noise_conf >= 0.3, (
+        f"confidence gap clean - noise = {clean_conf - noise_conf:.3f} "
+        "is too small for a reliable spectral-fallback gate"
+    )
+
+
+def test_match_filter_confidence_bounded():
+    """Confidence is bounded to [0, 1] for downstream gating."""
+    from radar.vitals import match_filter_confidence
+
+    t = _time(30.0)
+    f0 = 72.0 / 60.0
+    cardiac = np.sin(2.0 * np.pi * f0 * t)
+    assert 0.0 <= match_filter_confidence(cardiac, FS) <= 1.0
+    assert match_filter_confidence(np.zeros(int(10.0 * FS)), FS) == 0.0

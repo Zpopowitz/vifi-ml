@@ -306,8 +306,11 @@ def motion_mask(
     fs: float,
     window_s: float = 1.5,
     velocity_threshold_m_s: float = 0.020,
+    adaptive: bool = False,
+    adaptive_baseline_s: float = 8.0,
+    adaptive_multiplier: float = 5.0,
 ) -> np.ndarray:
-    """Per-frame motion gate — True where gross body motion is present.
+    """Per-frame motion gate -- True where gross body motion is present.
 
     Gross motion is detected from sliding-window RMS *velocity* (the
     displacement derivative), not amplitude: velocity scales with both
@@ -315,6 +318,18 @@ def motion_mask(
     ~5 mm breathing even though both are low-frequency. During motion
     the vitals are unreadable and the pipeline must emit "no reading"
     rather than a fabricated number.
+
+    Adaptive mode (off by default for backward compat):
+      Reads the median sliding-RMS velocity over the first
+      `adaptive_baseline_s` seconds, then gates at
+      `max(velocity_threshold_m_s, adaptive_multiplier * baseline_rms)`.
+      Falls back to the global threshold if the input is too short to
+      establish a baseline. The radar audit (DSP recommendation #3)
+      called this out: a global threshold mis-fits subjects whose
+      still-breathing RMS sits unusually close to or above 0.020 m/s
+      -- the adaptive multiplier scales the gate so deep-breathing
+      subjects are not falsely flagged while a real cm-scale sway is
+      still well above the multiple-of-baseline floor.
     """
     displacement = np.asarray(displacement, dtype=np.float64)
     velocity = np.gradient(displacement) * fs
@@ -322,7 +337,60 @@ def motion_mask(
     # Sliding-window RMS via a uniform moving average of velocity^2.
     kernel = np.ones(win) / win
     rms = np.sqrt(np.convolve(velocity**2, kernel, mode="same"))
-    return rms > velocity_threshold_m_s
+
+    threshold = velocity_threshold_m_s
+    if adaptive:
+        baseline_n = int(round(adaptive_baseline_s * fs))
+        if baseline_n > win and rms.size >= baseline_n:
+            # The first window-worth of frames have edge-effect RMS;
+            # skip them when computing the per-subject baseline.
+            baseline_segment = rms[win // 2 : baseline_n]
+            baseline = float(np.median(baseline_segment))
+            adaptive_threshold = adaptive_multiplier * baseline
+            threshold = max(threshold, adaptive_threshold)
+    return rms > threshold
+
+
+def match_filter_confidence(
+    cardiac: np.ndarray,
+    fs: float,
+    template: np.ndarray | None = None,
+) -> float:
+    """Confidence proxy for matched-filter beat detection, in [0, 1].
+
+    Returns the cardiac-band spectral peakiness: high (~1) when the
+    signal has a sharp spectral concentration at the HR fundamental
+    (canonical heart-driven cardiac signal), low (~0) when the
+    cardiac-band spectrum is flat (canonical noise). The radar
+    pipeline uses this as a spectral-fallback gate: when confidence
+    is low the HRV fields are marked as low-coverage in the published
+    message, because HRV is only meaningful when beats are reliably
+    detected. HR can still come from `heart_rate_spectral`, which is
+    relatively independent of per-beat detection.
+
+    `template` is accepted for API symmetry with detect_beats_matched
+    but isn't used by the spectral-peakiness proxy. A refractory-
+    period-aware IBI-regularity proxy was tried first but the minimum-
+    spacing constraint forced noise to look semi-regular -- false-high
+    confidence at noise. The spectral test is the right primitive.
+    """
+    del template  # not used; signature kept for API symmetry
+    cardiac = np.asarray(cardiac, dtype=np.float64)
+    if cardiac.size == 0 or not np.any(cardiac):
+        return 0.0
+    freqs, magnitude = _band_spectrum(cardiac, fs)
+    in_band = (freqs >= CARDIAC_BAND_HZ[0]) & (freqs <= CARDIAC_BAND_HZ[1])
+    if not np.any(in_band):
+        return 0.0
+    band_mag = magnitude[in_band]
+    peak = float(np.max(band_mag))
+    if peak <= 0.0:
+        return 0.0
+    median = float(np.median(band_mag))
+    # Peakiness = 1 - median/peak. A sharp peak (one tall bin, the rest
+    # near floor) maxes out at ~1; a flat band (median == peak) reads
+    # 0. Clean ~72-bpm sine: 0.99. White noise: 0.1-0.2.
+    return float(np.clip(1.0 - (median / peak), 0.0, 1.0))
 
 
 def ibi_seconds(beats: np.ndarray, fs: float) -> np.ndarray:

@@ -147,6 +147,7 @@ class _Vitals:
     pnn50_pct: Optional[float]
     f_resp_hz: float
     present: bool = False
+    beat_confidence: float = 0.0
 
 
 MIN_CHIRPS_FOR_PROCESSING = 256
@@ -215,6 +216,7 @@ def run_once(
         ),
         f_resp_hz=float(result.f_resp_hz) if np.isfinite(result.f_resp_hz) else 0.0,
         present=bool(result.present),
+        beat_confidence=float(result.beat_confidence),
     )
 
 
@@ -342,6 +344,7 @@ def run_worker(
     publish_presence: bool = True,
     presence_in_bed_stable_s: float = 30.0,
     presence_bed_exit_after_s: float = 60.0,
+    hrv_confidence_threshold: float = 0.7,
     from_id: str = LATEST,
     consumer_name: Optional[str] = None,
     metrics: Optional[dict] = None,
@@ -462,6 +465,14 @@ def run_worker(
         # Publish HR -- only when we have a real number (None when the
         # window was unrecoverable or motion-gated).
         if vitals.hr_bpm is not None:
+            # Spectral-fallback gate: if beat-detection confidence is
+            # below the threshold, the per-beat IBI-derived HRV is not
+            # reliable enough to publish. HR comes from the spectral
+            # estimator (which doesn't depend on per-beat detection)
+            # and is still published; HRV fields are nulled out so
+            # downstream consumers don't treat them as trustworthy.
+            beat_conf = float(vitals.beat_confidence)
+            hrv_trustworthy = beat_conf >= hrv_confidence_threshold
             bus.publish(
                 hr_topic,
                 {
@@ -473,9 +484,10 @@ def run_worker(
                     "hr_bpm": round(vitals.hr_bpm, 2),
                     "hr_confidence": round(vitals.coverage, 3),
                     "n_beats": vitals.n_beats,
-                    "hrv_sdnn_ms": vitals.hrv_sdnn_ms,
-                    "hrv_rmssd_ms": vitals.hrv_rmssd_ms,
-                    "pnn50_pct": vitals.pnn50_pct,
+                    "hrv_sdnn_ms": vitals.hrv_sdnn_ms if hrv_trustworthy else None,
+                    "hrv_rmssd_ms": vitals.hrv_rmssd_ms if hrv_trustworthy else None,
+                    "pnn50_pct": vitals.pnn50_pct if hrv_trustworthy else None,
+                    "beat_confidence": round(beat_conf, 3),
                     "coverage": round(vitals.coverage, 3),
                     "sensor": "radar",
                 },
@@ -650,6 +662,17 @@ def main() -> None:
         ),
     )
     p.add_argument(
+        "--hrv-confidence-threshold",
+        type=float,
+        default=0.7,
+        help=(
+            "beat-detection confidence (0..1) below which HRV fields are "
+            "nulled out in the published HR message. HR itself still "
+            "publishes (it comes from the spectral estimator); only the "
+            "per-beat IBI-derived HRV (sdnn / rmssd / pnn50) is gated."
+        ),
+    )
+    p.add_argument(
         "--from-start",
         action="store_true",
         help=(
@@ -707,6 +730,7 @@ def main() -> None:
         publish_presence=not args.no_presence,
         presence_in_bed_stable_s=args.presence_in_bed_stable_s,
         presence_bed_exit_after_s=args.presence_bed_exit_after_s,
+        hrv_confidence_threshold=args.hrv_confidence_threshold,
         from_id=EARLIEST if args.from_start else LATEST,
         metrics=metrics,
         stop=stop,
