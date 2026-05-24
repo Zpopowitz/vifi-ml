@@ -436,3 +436,103 @@ def test_worker_publishes_no_apnea_for_normal_breathing():
     assert (
         apnea_history == []
     ), f"normal breathing should produce 0 apnea events, got {len(apnea_history)}"
+
+
+# ---------------------------------------------------------------------------
+# Presence + bed-exit state machine wiring (sensor-agnostic; same code
+# path will work for the CSI worker when wired).
+# ---------------------------------------------------------------------------
+
+
+def test_worker_publishes_in_bed_event_for_breathing_subject():
+    """A capture long enough for the state machine to declare IN_BED
+    must emit one transition event on presence.events.<pid>."""
+    from modules.bus import presence_events
+    from radar.synth import synth_capture
+    from tools.radar_collector import SynthFrameSource, _BusPublisher, run_collector
+
+    bus = InMemoryBus()
+    patient = "henry"
+    config = RadarConfig()
+
+    publisher = _BusPublisher(patient_id=patient, bus=bus)
+    src = SynthFrameSource(
+        config=config,
+        duration_s=40.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        seed=44,
+        realtime=False,
+    )
+    # Patch the synth source with a normal-breathing capture (no apnea).
+    adc, meta = synth_capture(
+        config,
+        duration_s=40.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        seed=44,
+    )
+    src.adc = adc
+    src.meta = meta
+    run_collector(src, publisher, duration_s=0.0, quiet=True)
+
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=True,
+        # Bare-minimum thresholds so the test doesn't have to publish
+        # 30 s of frames just to flip the state.
+        presence_in_bed_stable_s=0.0,
+        presence_bed_exit_after_s=10.0,
+        from_id=EARLIEST,
+        consumer_name="test-worker-presence",
+        max_iterations=1,
+    )
+
+    presence_history = bus.history(presence_events(patient))
+    assert len(presence_history) >= 1, "worker should have emitted an IN_BED transition"
+    ev = presence_history[-1].payload
+    assert ev["patient_id"] == patient
+    assert ev["sensor"] == "radar"
+    assert ev["state"] == "in_bed"
+    assert ev["prev_state"] == "out"
+
+
+def test_worker_publishes_no_presence_events_when_disabled():
+    """publish_presence=False must NOT emit anything on presence.events."""
+    from modules.bus import presence_events
+    from tools.radar_collector import SynthFrameSource, _BusPublisher, run_collector
+
+    bus = InMemoryBus()
+    patient = "ida"
+    config = RadarConfig()
+
+    publisher = _BusPublisher(patient_id=patient, bus=bus)
+    src = SynthFrameSource(
+        config=config,
+        duration_s=15.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        seed=55,
+        realtime=False,
+    )
+    run_collector(src, publisher, duration_s=0.0, quiet=True)
+
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=False,
+        from_id=EARLIEST,
+        consumer_name="test-worker-presence-off",
+        max_iterations=1,
+    )
+
+    assert bus.history(presence_events(patient)) == []

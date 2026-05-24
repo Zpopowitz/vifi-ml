@@ -33,6 +33,17 @@ from radar.vitals import (
     respiration_rate,
 )
 
+PRESENCE_SCR_THRESHOLD = 10.0
+"""Signal-to-clutter ratio above which a body is considered present in
+the tracked chest range bin. Computed in extract_displacement as
+`chest_energy / median_other_energy` post-MTI. Synth empirics: a
+breathing subject yields SCR ~ 10000, an empty room yields SCR ~ 1.
+A threshold of 10 sits orders of magnitude above the empty-room
+baseline and well below the present-subject reading, so the threshold
+is robust across the synth's range of conditions. Calibrate per-room
+once real captures land; the default is a safe synth-derived starting
+point."""
+
 
 @dataclass
 class VitalsResult:
@@ -60,6 +71,12 @@ class VitalsResult:
     """The isolated cardiac signal beats were detected on."""
     dsp_info: DspInfo = field(repr=False)
     """DSP-stage diagnostics (bin track, circle fit)."""
+    present: bool = False
+    """Whether the pipeline detected a body in the chest range bin during
+    this capture. Derived from the post-MTI signal-to-clutter ratio at
+    the tracked chest bin vs `PRESENCE_SCR_THRESHOLD`; empty-room
+    captures (or full-capture apnea injection) collapse the SCR to ~1
+    and report present=False."""
 
 
 def _longest_still_run(gated: np.ndarray) -> tuple[int, int]:
@@ -145,6 +162,17 @@ def process(
     valid_beats = all_beats[~gated[all_beats]] if all_beats.size else all_beats
     ibi = _still_run_ibis(valid_beats, gated, fs)
 
+    # Presence: post-MTI signal-to-clutter ratio at the chest bin. A
+    # real body produces orders-of-magnitude more residual energy than
+    # any other bin after clutter removal (the body's motion survives
+    # MTI; static clutter doesn't). The ratio test is robust to absolute
+    # signal levels (subject distance, radar gain). See dsp_info docs.
+    if dsp_info.median_other_energy > 0.0:
+        scr = dsp_info.chest_energy / dsp_info.median_other_energy
+    else:
+        scr = 0.0
+    present = bool(scr > PRESENCE_SCR_THRESHOLD)
+
     return VitalsResult(
         hr_bpm=hr_bpm,
         rr_bpm=rr_bpm,
@@ -157,4 +185,5 @@ def process(
         displacement_m=displacement,
         cardiac=cardiac,
         dsp_info=dsp_info,
+        present=present,
     )

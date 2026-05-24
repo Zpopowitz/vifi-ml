@@ -51,6 +51,14 @@ class DspInfo:
     circle_radius: float
     """Fitted radius of the chest IQ arc."""
     clutter_method: str
+    chest_energy: float = 0.0
+    """Post-MTI energy at the tracked chest bin. Compared against
+    `median_other_energy` to detect presence -- a real body in the
+    chest range bin produces orders-of-magnitude more residual energy
+    than an empty bin."""
+    median_other_energy: float = 0.0
+    """Median post-MTI energy across all non-chest bins. Approximates
+    the noise + residual-clutter floor for the presence comparison."""
 
 
 def range_fft(adc: np.ndarray, window: str = "hann") -> np.ndarray:
@@ -321,10 +329,28 @@ def extract_displacement(
     bin_track = track_range_bin(clean, config, gate_m=gate_m)
     iq = chest_iq(clean, bin_track)
     disp, center, radius = displacement_from_iq(iq, config)
+
+    # Presence-detection inputs: post-MTI energy at the tracked chest bin
+    # vs the median energy across all OTHER bins. A real body produces
+    # huge residual energy in its bin after clutter is removed (motion
+    # passes MTI); an empty room has all bins near the noise floor, so
+    # the chest-vs-others ratio collapses to ~1. Pipeline-level presence
+    # logic compares chest_energy / median_other_energy to a threshold.
+    energies = bin_energy(clean)
+    chest_bin = int(round(float(np.median(bin_track))))
+    chest_bin = max(0, min(chest_bin, energies.shape[0] - 1))
+    chest_e = float(energies[chest_bin])
+    if energies.shape[0] > 1:
+        other_e = float(np.median(np.delete(energies, chest_bin)))
+    else:
+        other_e = 0.0
+
     info = DspInfo(
         bin_track=bin_track,
         circle_center=center,
         circle_radius=radius,
         clutter_method=clutter_method,
+        chest_energy=chest_e,
+        median_other_energy=other_e,
     )
     return disp, info

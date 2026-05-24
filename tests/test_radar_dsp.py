@@ -205,6 +205,39 @@ def test_mrc_combine_gives_snr_gain_on_independent_noise() -> None:
     ), f"MRC gain {actual_gain:.2f} below expected {expected_gain:.2f}"
 
 
+def test_pipeline_reports_present_on_breathing_subject() -> None:
+    """A subject with normal breathing -> VitalsResult.present == True."""
+    from radar.pipeline import process  # noqa: PLC0415
+
+    cfg = RadarConfig()
+    adc, _ = synth_capture(cfg, duration_s=12.0, hr_bpm=72.0, rr_bpm=15.0, seed=8)
+    result = process(adc, cfg)
+    assert hasattr(result, "present"), "VitalsResult must expose a `present` field"
+    assert result.present is True
+
+
+def test_pipeline_reports_not_present_on_flat_displacement() -> None:
+    """An ADC cube that yields a flat (sub-floor) displacement -> not present.
+
+    The pipeline's `present` is derived from displacement amplitude. A
+    capture with zero motion (we zero the displacement injection via
+    apnea_window_s spanning the whole capture) should report present=False.
+    """
+    from radar.pipeline import process  # noqa: PLC0415
+
+    cfg = RadarConfig()
+    adc, _ = synth_capture(
+        cfg,
+        duration_s=12.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        apnea_window_s=(0.0, 12.0),
+        seed=9,
+    )
+    result = process(adc, cfg)
+    assert result.present is False
+
+
 def test_extract_displacement_handles_3d_input() -> None:
     """The full pipeline must accept (n_chirps, n_fast, n_rx) ADC cubes."""
     cfg = RadarConfig(n_rx=3)
