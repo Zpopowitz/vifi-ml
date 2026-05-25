@@ -22,7 +22,7 @@ cryptography==48.0.0
 prometheus-client==0.25.0
 # Live message bus (Redis Streams). Optional: in-memory backend works
 # without it, but production deployments and the Live dashboard need Redis.
-redis==5.0.8        ; extra == "bus"
+redis==7.4.0        ; extra == "bus"
 # Hardware loggers (optional; only needed when capturing real data).
 bleak==0.22.3       ; extra == "capture"
 godirect==1.2.1     ; extra == "capture"
