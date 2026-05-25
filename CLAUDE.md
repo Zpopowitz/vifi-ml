@@ -127,3 +127,15 @@ Key tokens at a glance:
 
 In QA mode, flag code that uses `--signal` for non-data UI, uses hex literals
 instead of tokens, or introduces typefaces outside the 4 declared families.
+
+## Health Stack
+
+Used by `/health`. Matches the CI gauntlet in `feedback_ci_gauntlet`.
+
+- typecheck: `mypy pseudonymize.py config.py __version__.py`
+- lint: `ruff check . && ruff format --check .`
+- test: `pytest -m "not e2e"`
+- deadcode: `vulture . --min-confidence 80 --exclude .venv,data,models,models_real,build,hr_net`
+- shell: `shellcheck *.sh tools/*.sh`
+
+`hr_net/` is excluded from deadcode because that pipeline is shelved pending diverse HR data (see `project_hr_data_bottleneck`).
