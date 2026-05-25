@@ -11,7 +11,7 @@ httpx==0.28.1
 # pandas remains for some tools (eval_harness etc.); streamlit was
 # removed when the dashboard moved from Streamlit to a static SPA
 # (served by FastAPI). One fewer dep, no streamlit XSS advisory.
-pandas==2.2.3
+pandas==3.0.3
 joblib==1.5.3
 # Audit log encryption (HIPAA: PHI at rest must be protected). Required
 # in production; optional in dev (audit log falls back to plaintext
