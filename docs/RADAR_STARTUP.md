@@ -9,6 +9,27 @@ runbook (except one parser function in Phase 7).
 > to brick the BOOST involve doing things in the wrong order. The order
 > below is the safe one.
 
+> **Errata (2026-05-26, post-board-day reality check)** — pre-board this
+> runbook was written from third-party references (loeens repo, TI E2E
+> threads, the SDK README). Running it against a real REV A1 / Silicon
+> ES2.0 BOOST surfaced these corrections, which are now inline below:
+>
+> 1. **SOP0/SOP1 are on S1, not on separate jumpers.** S1.1 = SOP0, S1.2 = SOP1
+>    on REV A1. The "SOP jumper header" wording from the loeens repo refers
+>    to an older revision.
+> 2. **S1.5 must be ON, not OFF.** S1.5 routes the application UART to
+>    XDS110 (`XDS_UARTA`). With S1.5 OFF, the demo can't talk to the host.
+> 3. **The data UART is `if00`, not `if03`** for the motion_and_presence
+>    demo. The XDS110 exposes two CDC interfaces; the demo's CLI + TLV
+>    output both go on `if00` (UARTB → XDS110 application channel).
+> 4. **The range-profile TLV is type 302, not type 2.** The demo uses the
+>    extended-MSG numbering (`MMWDEMO_OUTPUT_EXT_MSG_*`, 300+), not the
+>    standard SDK numbering. Payload is uint32 magnitudes (not uint16);
+>    256-sample chirps → 128 range bins → 512-byte TLV payloads.
+> 5. **Uniflash connects via "Serial Connection", not "XDS110 USB Debug
+>    Probe".** The xWRL6432 boots into a UART-SBL bootloader; XDS110 is
+>    just the USB-to-UART bridge in this flow.
+
 **Audience:** future-you on board-day, possibly tired, possibly excited,
 definitely should not be improvising voltages. Every command shown is
 copy-pasteable. Every "expected output" is what you should actually see;
@@ -219,17 +240,19 @@ Phone camera is fine; just want it readable.
 
 Locate (don't touch yet) each of the following:
 
-- **S1:** a 6-position DIP switch block. Usually near one corner of the
-  board. The individual rockers are labeled 1 through 6.
-- **SOP0 / SOP1:** two jumper headers, usually near the reset button.
-  Some BOOST revisions put these as 3-pin headers (jumper between center
-  and GND for "0", center and 3V3 for "1"); others as solder bridges
-  or DIP switches. **Confirm the mechanism on your specific board.**
-- **J2:** the SPI header. The `loeens` repo says this is the designator;
-  if you see a different label on your board's silkscreen, follow what's
-  on the board.
-- **Reset button (NRESET):** small tactile button; you'll press this
-  between SOP mode changes.
+- **S1:** a 6-position DIP switch block. On REV A1, located near the
+  USB connector edge. Rockers labeled 1-6.
+- **SOP0 / SOP1:** on REV A1 these are integrated into **S1.1 and S1.2**
+  respectively. Older revisions used separate 3-pin jumper headers; this
+  one does not. If you don't see a separate `SOP0` / `SOP1` silkscreen,
+  that's expected — they're on S1.
+- **S4:** a second smaller DIP switch block on REV A1 (multiple rockers,
+  controls JTAG/DCA1000 routing). **Leave all S4 rockers OFF** unless
+  you're using a DCA1000 (we're not).
+- **J2:** the 7-pin SPI breakout header. Pin 1 is VCC (do not connect);
+  the remaining 6 pins carry the SPI signals — see Phase 5 for the map.
+- **NRST (silkscreen designator `S2`):** small tactile button. Press
+  it between SOP mode changes and on initial power-on.
 
 ---
 
@@ -239,34 +262,39 @@ Locate (don't touch yet) each of the following:
 DIP switches on a powered board is not great for the silicon and is
 guaranteed to confuse the boot.
 
-### 2.1 Set S1 for SPI raw-ADC streaming mode
+### 2.1 Set S1 for flashing mode
 
-| S1 rocker | Position | Why |
+On REV A1 / Silicon ES2.0, S1 is the complete control surface — SOPs are
+integrated into S1.1 (SOP0) and S1.2 (SOP1). Authoritative source: TI
+user guide SWRU596 Figure 6-7 (`SOP Switches` table).
+
+| S1 rocker | Position | Function |
 |---|---|---|
-| S1.1 | **ON** | Debug mode; Uniflash and the XDS110 probe need this to flash the board |
-| S1.2 | OFF | (not used in this mode) |
-| S1.3 | OFF | (not used in this mode) |
-| S1.4 | OFF | (not used in this mode) |
-| S1.5 | OFF | (not used in this mode) |
-| S1.6 | **ON** | Routes the muxed pin to SPI and enables the SPI_BUSY GPIO that the FTDI cable uses to handshake |
+| **S1.1** (SOP0) | **OFF** | Flashing mode (SOP0=0); flip to ON for Functional after Phase 4 |
+| **S1.2** (SOP1) | **OFF** | Stays OFF for both flashing and functional modes |
+| S1.3 | OFF | LVDS routing (default) |
+| S1.4 | OFF | XDS RS232 routing (default) |
+| **S1.5** | **ON** | Routes the application UART to XDS_UARTA. **Must be ON** or Uniflash can't talk to the SBL |
+| **S1.6** | **ON** | Routes the muxed pin to SPI (enables the SPI peripheral and the SPI_BUSY GPIO the FTDI cable uses) |
 
-Confirmed against the `loeens/ti_iwrl6432_spi_data_stream` README:
-*"Turn on switch 1.1 and 1.6"*, others off.
+Note: the loeens repo's "S1.1 ON, S1.6 ON, others OFF" instruction refers
+to the *functional* state for SPI streaming, not the flashing state. We
+need to flash first (S1.1=OFF), then switch to functional (S1.1=ON) after
+Uniflash succeeds. See Phase 4.5.
 
-### 2.2 Set SOP to flashing mode (for now)
+### 2.2 Boot modes via S1 (SOPs are on S1.1/S1.2)
 
-You will flash in Phase 4 with SOP set to flashing. After flashing, you'll
-switch SOP to functional and power-cycle.
+| Mode | S1.1 (SOP0) | S1.2 (SOP1) | S1.5 | S1.6 |
+|---|---|---|---|---|
+| **Flashing** (set this now) | **OFF** | OFF | ON | ON |
+| Functional (set this in Phase 4.5) | **ON** | OFF | ON | ON |
+| Debug mode w/ DCA1000 (we don't use) | ON | ON | ON | ON |
 
-| Mode | SOP0 | SOP1 |
-|---|---|---|
-| **Flashing** (set this now) | 0 (GND) | 0 (GND) |
-| Functional (set this in Phase 4.5) | 1 (3V3) | 0 (GND) |
+`OFF` for S1.1/S1.2 = SOP=0 (rocker pushed away from the "ON" label).
+`ON` = SOP=1.
 
-On a 3-pin jumper header, "0" means the jumper bridges the center pin
-to the GND pin; "1" means it bridges the center pin to the 3V3 pin. If
-your board uses solder bridges instead, you'll need a soldering iron;
-this is rarer on the BOOST.
+After every SOP change, press **NRST** (the S2 button) to re-register
+the boot mode without a full power cycle.
 
 ---
 
@@ -294,9 +322,11 @@ usb-Texas_Instruments_XDS110__08.02.04.00__M0_S0_<serial>-if00
 usb-Texas_Instruments_XDS110__08.02.04.00__M0_S0_<serial>-if03
 ```
 
-You'll see two `if00` and `if03` paths. The data UART is typically `if03`
-(the higher numbered one). **Copy the full `if03` path to a note; you'll
-paste it into `/etc/vifi/live.env` in Phase 9.**
+You'll see two paths, `if00` and `if03`. On the motion_and_presence demo
+**the data + CLI UART is `if00`** (the demo routes UARTB → XDS110's
+application channel = `if00`). `if03` is the auxiliary debug interface
+and stays silent. **Copy the full `if00` path to a note; you'll paste
+it into `/etc/vifi/live.env` in Phase 9.**
 
 If nothing appears: see Troubleshooting `Board does not enumerate`.
 
@@ -334,33 +364,59 @@ Confirm it enumerates as XDS110 in Device Manager.
 - Launch Uniflash.
 - Detect device by clicking "Detect My Device", or search for
   `IWRL6432BOOST` and select it.
-- Connection: `Texas Instruments XDS110 USB Debug Probe`.
+- Connection: **`Serial Connection`** (not "XDS110 USB Debug Probe").
+  The xWRL6432 boots into a UART-SBL bootloader on power-on with SOP=0,0;
+  XDS110 is just the USB-to-UART bridge in this flow.
+- **COM Port**: the higher of the two XDS110 virtual COM ports
+  (typically COM8 if COM7+COM8 enumerated; verify in Device Manager by
+  checking which one's description includes "Application/User UART").
+- **Baud rate**: `115200` (the SBL default; do not change).
 
 ### 4.3 Build the SPI-streaming firmware image
 
-Two options, in order of preference:
+The shipped prebuilt has SPI streaming OFF — there is no prebuilt with
+`ADC_STREAMING` in the filename. You need to rebuild from source. The
+build chain is `make`, no GUI required:
 
-**Option A: use a prebuilt SDK demo binary.** In `~/ti/MMWAVE_L_SDK_05_05_04_02`,
-look for `examples/.../motion_and_presence_detection/` and find a prebuilt
-`.appimage` with `ADC_STREAMING` or `SPI_ADC` in the filename. If one
-exists, skip to 4.4.
+1. **Edit the demo's syscfg** to enable SPI ADC streaming. The change is
+   one line:
 
-**Option B: build from source (more reliable for this exact config).**
-Open SysConfig (it's bundled with CCS at
-`~/ti/ccs2051/ccs/utils/sysconfig_1.27.1/sysconfig_gui.sh`), open the
-`motion_and_presence_detection_demo` `.syscfg` file, and:
+   ```bash
+   nano ~/ti/MMWAVE_L_SDK_05_05_04_02/examples/mmw_demo/motion_and_presence_detection/xwrL64xx-evm/m4fss0-0_freertos/example.syscfg
+   ```
 
-- Enable `RAW_DATA_STREAMING` (or equivalent toggle named "ADC Streaming
-  via SPI").
-- Set `adcLogging` to `2`.
-- Set `lowPowerCfg` to `0` (low-power mode OFF; raw streaming is
-  incompatible with low-power).
-- Confirm chirp profile matches `radar.config.RadarConfig` defaults:
-  60 GHz carrier, 3.75 GHz sweep BW, 256 samples per chirp, 100 Hz frame
-  rate.
-- Save, then build with `make` from the demo directory.
+   Find the line `mpd_demo1.$name = "CONFIG_MPD_DEMO0";` and add one line
+   right after it:
 
-You should end up with a single `.appimage` file to flash.
+   ```javascript
+   mpd_demo1.$name                  = "CONFIG_MPD_DEMO0";
+   mpd_demo1.SPI_ADC_DATA_STREAMING = "1";
+   ```
+
+   Save and exit. Do NOT remove the I2C module or the INA instances —
+   they share pads with MCSPI, but the source code (`mmw_cli.c`) does
+   the runtime pin remux. Removing I2C from syscfg breaks the build with
+   `gI2cConfig` undefined.
+
+2. **Build**:
+
+   ```bash
+   cd ~/ti/MMWAVE_L_SDK_05_05_04_02/examples/mmw_demo/motion_and_presence_detection/xwrL64xx-evm/m4fss0-0_freertos/ti-arm-clang
+   make clean && make
+   ```
+
+   Expected: ~30 seconds, ends with `Boot image: ... Done !!!`. Output:
+   `motion_and_presence_detection_demo.release.appimage` (~277 KB; the
+   prebuilt is ~260 KB, the extra ~18 KB is the MCSPI driver code).
+
+3. **Source-level patch (one-time)**: `motion_detect.c` references
+   `i2cHandle` in the `#else` branch of the INA228 power-measurement
+   block. With INA228 undefined (we don't define it) and I2C left as-is
+   in syscfg, the code compiles. If you ever remove I2C from syscfg, you
+   need to wrap the `motion_detect.c:957` line in `#ifdef INA228`. See
+   `tools/radar_collector.py` UsbFrameSource docstring for context.
+
+The `.appimage` is what Uniflash flashes in Phase 4.4.
 
 ### 4.4 Flash the image
 
@@ -376,14 +432,14 @@ forgot to set SOP to flashing mode.
 ### 4.5 Power cycle and switch SOP to functional mode
 
 - Unplug the board from USB.
-- Move the SOP jumpers: **SOP0=1 (to 3V3), SOP1=0 (to GND).**
-- Plug USB back in. The board boots into functional mode and starts
-  running the demo, which on power-on listens for SPI commands from the
-  host.
+- **Flip S1.1 from OFF to ON** (SOP0 = 1). Leave S1.2 OFF.
+- Plug USB back in. The board boots into functional mode running the
+  demo, which sits idle at a `mmwDemo:/>` CLI prompt waiting for a
+  config + sensorStart over UART (Phase 6/9).
 
 The board's status LEDs should match the SDK's expected pattern for
-"configured and idle" (usually a steady green + occasional orange blink;
-exact pattern depends on the demo, see SDK README).
+"configured and idle" (D6 power solid, D3 power-good solid; D5 may
+flicker on reset). Exact LED behavior is in the SDK README.
 
 ### 4.6 Move the board back to the Pi
 
@@ -394,7 +450,8 @@ enumeration:
 ssh pi 'ls /dev/serial/by-id/ | grep -i texas'
 ```
 
-Same `if03` path should reappear. **Do not** wire the FTDI cable yet.
+Same `if00` and `if03` paths should reappear. **Do not** wire the FTDI
+cable yet.
 
 ---
 
@@ -482,25 +539,55 @@ Phase 7.
 > for ViFi's own DSP. For first-light vitals, the UART/TLV path is what
 > you want.
 
-### 6.1 SSH to the Pi and capture 200 KB
+### 6.1 SSH to the Pi, send a config + sensorStart, then capture 200 KB
+
+The demo boots into an idle CLI prompt — TLVs only flow after a config
+file + `sensorStart`. Use the shipped MotionDetect profile.
 
 ```bash
+# Copy the shipped config to the Pi first
+scp ~/ti/MMWAVE_L_SDK_05_05_04_02/examples/mmw_demo/motion_and_presence_detection/profiles/xwrL64xx-evm/MotionDetect.cfg \
+    pi:/tmp/MotionDetect.cfg
+
 ssh pi
 cd ~/vifi-ml
-PORT=$(ls /dev/serial/by-id/ | grep -i texas | grep if03)
-echo "Capturing from: /dev/serial/by-id/$PORT"
+PORT=$(ls /dev/serial/by-id/ | grep -i texas | grep if00)
+echo "Using: /dev/serial/by-id/$PORT"
 mkdir -p tests/fixtures/radar
-.venv/bin/python -c "
-import serial
-s = serial.Serial('/dev/serial/by-id/$PORT', 921600, timeout=2.0)
-raw = s.read(200_000)
-open('tests/fixtures/radar/usb_frames_v1.bin', 'wb').write(raw)
-print(f'Captured {len(raw)} bytes')
-"
+
+.venv/bin/python <<'PYEOF'
+import serial, glob, time
+port = glob.glob("/dev/serial/by-id/usb-Texas_Instruments_XDS110*-if00")[0]
+s = serial.Serial(port, 115200, timeout=2.0)
+s.reset_input_buffer()
+# Stop in case the sensor is mid-run from a previous session
+s.write(b"sensorStop 0\r\n"); s.flush(); time.sleep(0.5); s.read_all()
+
+# Send the cfg, skipping the baudRate line (keeps us at 115200)
+with open("/tmp/MotionDetect.cfg") as f:
+    lines = [l.strip() for l in f
+             if l.strip()
+             and not l.startswith("%")
+             and not l.startswith("baudRate ")]
+for line in lines:
+    s.write((line + "\r\n").encode()); s.flush(); time.sleep(0.05)
+    s.read_all()  # drain "Done" responses
+time.sleep(2.0)
+
+# Now capture the steady-state TLV stream
+buf = bytearray()
+deadline = time.time() + 120
+while len(buf) < 200_000 and time.time() < deadline:
+    chunk = s.read(4096)
+    if chunk: buf.extend(chunk)
+open("tests/fixtures/radar/usb_frames_v1.bin", "wb").write(bytes(buf))
+print(f"Captured {len(buf)} bytes")
+s.close()
+PYEOF
 ```
 
-**Expected:** `Captured 200000 bytes` (or close to it; you may see slightly
-less if the demo isn't streaming continuously).
+**Expected:** `Captured 200704 bytes` (slight overshoot from the 4 KB
+read-chunk granularity is fine).
 
 ### 6.2 Sanity-check the bytes
 
@@ -567,11 +654,24 @@ then, for each TLV:
     TLV payload (length bytes)
 ```
 
-The TLV types relevant to vital-signs capture:
+The TLV types relevant to vital-signs capture (motion_and_presence demo
+uses the extended-MSG numbering, 300+, per
+`source/motion_detect.h` line 1275):
 
-- `MMWDEMO_OUTPUT_MSG_RANGE_PROFILE` (type 2): per-range-bin magnitude.
-  This is what the live-stack collector reads as a proxy for chirp data
-  in TLV mode.
+- **`MMWDEMO_OUTPUT_EXT_MSG_RANGE_PROFILE_MAJOR` (type 302)**: per-range-bin
+  magnitude. **uint32 LE**, one value per bin. For `samples_per_chirp=256`,
+  range FFT outputs N/2 = 128 unique bins → 512-byte TLV payload. This
+  is what the live-stack collector reads as a proxy for chirp data in
+  TLV mode.
+- `MMWDEMO_OUTPUT_EXT_MSG_RANGE_PROFILE_MINOR` (type 303): minor-motion
+  range profile (not used by ViFi today).
+- `MMWDEMO_OUTPUT_EXT_MSG_STATS` (type 306): timing/temp/power telemetry
+  (24-byte payload; informational only).
+
+> Older runbook drafts (pre-board) referred to `MMWDEMO_OUTPUT_MSG_RANGE_PROFILE`
+> as type 2 with uint16 payload. That's the standard MMWDEMO numbering used
+> by the IWR1xxx mmwave_demo, NOT the motion_and_presence demo we ship
+> on the xWRL6432.
 
 For the SPI path (raw ADC, future), the bytes will be laid out as
 contiguous `int16` IQ samples per chirp, shape `(samples_per_chirp, n_rx)`,
@@ -660,11 +760,13 @@ sudo nano /etc/vifi/live.env
 Add (or update, if it already exists) the line:
 
 ```
-VIFI_RADAR_PORT=/dev/serial/by-id/usb-Texas_Instruments_XDS110__08.02.04.00__M0_S0_<your_serial>-if03
+VIFI_RADAR_PORT=/dev/serial/by-id/usb-Texas_Instruments_XDS110__<fw_version>__Embed_with_CMSIS-DAP_<your_serial>-if00
 ```
 
-(Paste the exact path you recorded in Phase 3.2. The `if03` suffix matters;
-`if00` is the debug-probe interface, not the data UART.)
+(Paste the exact path you recorded in Phase 3.2. The `if00` suffix matters
+for the motion_and_presence demo — `if03` is the auxiliary debug interface
+and stays silent on this demo. See the 2026-05-26 errata at the top of
+this runbook.)
 
 Save and exit (Ctrl-O Enter Ctrl-X in nano).
 
@@ -804,10 +906,10 @@ Print this and tape it next to the bench:
 |   Black   -> GND                                               |
 |   Red     -> DISCONNECTED                                      |
 |                                                                |
-| Switches:  S1.1 ON, S1.6 ON, all others OFF.                   |
-| SOP for flashing:    SOP0=0, SOP1=0.                           |
-| SOP for functional:  SOP0=1, SOP1=0.                           |
-| Power-cycle after changing SOP.                                |
+| S1 for flashing:     1=OFF 2=OFF 3=OFF 4=OFF 5=ON 6=ON         |
+| S1 for functional:   1=ON  2=OFF 3=OFF 4=OFF 5=ON 6=ON         |
+| (S1.1 = SOP0, S1.2 = SOP1; S4 all OFF, ignore S4.)             |
+| Press NRST (S2) after every S1 change to re-register boot mode.|
 +----------------------------------------------------------------+
 ```
 

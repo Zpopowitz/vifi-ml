@@ -151,54 +151,154 @@ class SynthFrameSource:
 
 
 class UsbFrameSource:
-    """Reads chirps from the IWRL6432BOOST data UART.
+    """Reads frames from the IWRL6432BOOST data UART (XDS110 `if00`).
 
-    The TI mmWave SDK emits a documented frame format on the data UART:
-    a magic-word header, then TLV (type-length-value) records. One frame
-    typically holds the chirps from one burst. The exact byte layout
-    depends on the chirp config flashed to the board; we keep the parser
-    pluggable so a config change does not require touching the bus glue.
+    The flashed motion_and_presence demo emits the TI MMWDEMO TLV protocol
+    on the application UART: 8-byte magic word, 32-byte frame header, then
+    a sequence of TLVs (type, length, payload). For ViFi we extract the
+    range-profile-major TLV (type 302 in the demo's extended-MSG numbering)
+    -- the per-range-bin uint32 magnitude vector from the rangeproc HWA.
+    Each range profile becomes one ``Chirp`` carrying real magnitudes
+    packed into the real part of a complex array.
 
-    Board-day work (per docs/RADAR_STARTUP.md): connect the board, flash
-    the chirp config via TI Sensing Hub, capture a few hundred KB of raw
-    frames into ``tests/fixtures/radar/usb_frames_v1.bin`` for a
-    regression test, then implement ``_parse_chunk`` against that fixture.
-    Until then this class raises NotImplementedError at iteration so
-    accidentally enabling the USB source without a real board fails loudly
-    rather than silently.
+    The Chirp abstraction is the bus contract symmetric with the SP1 CSI
+    path; using it for processed range profiles (rather than raw ADC) is
+    intentional for the UART/TLV phase. The raw-ADC-over-SPI path arrives
+    on a separate FTDI file descriptor and is parsed elsewhere -- not in
+    this class.
+
+    Pinned against `tests/fixtures/radar/usb_frames_v1.bin` captured
+    2026-05-26 from a custom firmware build. See `tests/test_radar_usb_parser.py`.
     """
+
+    MAGIC_WORD = bytes([0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07])
+    # MMWDEMO TLV type IDs we care about. The motion_and_presence demo emits
+    # the extended-message numbering (300+), per
+    # examples/mmw_demo/motion_and_presence_detection/source/motion_detect.h:
+    #   300 = EXT_MSG_START (sentinel, not sent)
+    #   301 = EXT_MSG_DETECTED_POINTS
+    #   302 = EXT_MSG_RANGE_PROFILE_MAJOR  <-- our chest-distance proxy
+    #   303 = EXT_MSG_RANGE_PROFILE_MINOR
+    #   306 = EXT_MSG_STATS (timing/temp/power)
+    TLV_TYPE_RANGE_PROFILE_MAJOR = 302
+    # Frame header layout after the magic word: 8 uint32 fields = 32 bytes
+    HEADER_LEN = len(MAGIC_WORD) + 8 * 4  # 40
+    # Sanity bound for a TLV packet: nothing valid is bigger than this
+    MAX_PACKET_LEN = 65536
 
     def __init__(
         self,
         port: str,
-        baud: int = 921600,
+        baud: int = 115200,
         config: Optional[RadarConfig] = None,
         timeout_s: float = 1.0,
+        n_rx: int = 1,
     ) -> None:
         self.config = config or RadarConfig()
         self.port = port
         self.baud = baud
         self.timeout_s = timeout_s
+        self.n_rx = n_rx
         self._serial = None  # lazy
+        self._buf = bytearray()
+        self._chirp_idx = 0
 
     def _open(self):
         import serial  # noqa: PLC0415
 
         self._serial = serial.Serial(self.port, self.baud, timeout=self.timeout_s)
 
+    def _parse_chunk(self, chunk: bytes) -> Iterator[Chirp]:
+        """Parse a chunk of UART bytes, yielding one Chirp per range-profile TLV.
+
+        Stateful: appends to an internal buffer so frames straddling chunk
+        boundaries are recovered on the next call. Discards bytes before
+        the first magic word (the capture often starts mid-frame).
+        """
+        import struct  # noqa: PLC0415
+
+        self._buf.extend(chunk)
+        magic_len = len(self.MAGIC_WORD)
+
+        while True:
+            idx = self._buf.find(self.MAGIC_WORD)
+            if idx < 0:
+                # Keep only the last (magic_len - 1) bytes; magic could span the
+                # next chunk's leading bytes.
+                if len(self._buf) > magic_len - 1:
+                    del self._buf[: -(magic_len - 1)]
+                return
+
+            if idx > 0:
+                del self._buf[:idx]
+
+            if len(self._buf) < self.HEADER_LEN:
+                return  # wait for more bytes
+
+            # 8 uint32 LE fields after the magic
+            (
+                _version,
+                total_pkt_len,
+                _platform,
+                _frame_num,
+                _time_cpu,
+                _num_obj,
+                num_tlvs,
+                _subframe,
+            ) = struct.unpack_from("<8I", self._buf, magic_len)
+
+            if total_pkt_len < self.HEADER_LEN or total_pkt_len > self.MAX_PACKET_LEN:
+                # Bogus length -- skip past this magic and resync on the next one
+                del self._buf[:magic_len]
+                continue
+
+            if len(self._buf) < total_pkt_len:
+                return  # wait for full packet
+
+            pkt = bytes(self._buf[:total_pkt_len])
+            offset = self.HEADER_LEN
+            for _ in range(num_tlvs):
+                if offset + 8 > total_pkt_len:
+                    break
+                tlv_type, tlv_len = struct.unpack_from("<II", pkt, offset)
+                payload_start = offset + 8
+                payload_end = payload_start + tlv_len
+                if payload_end > total_pkt_len:
+                    break
+
+                if (
+                    tlv_type == self.TLV_TYPE_RANGE_PROFILE_MAJOR
+                    and tlv_len > 0
+                    and tlv_len % 4 == 0  # uint32 magnitudes (N/2 range bins from FFT)
+                ):
+                    mags = np.frombuffer(
+                        pkt[payload_start:payload_end], dtype=np.uint32
+                    ).astype(np.float32)
+                    samples = mags.astype(np.complex64)
+                    yield Chirp(
+                        ts_unix=time.time(),
+                        chirp_idx=self._chirp_idx,
+                        samples=samples,
+                    )
+                    self._chirp_idx += 1
+
+                offset = payload_end
+
+            del self._buf[:total_pkt_len]
+
     def __iter__(self) -> Iterator[Chirp]:
         if self._serial is None:
             self._open()
-        # TODO(board-day): implement TI mmWave frame parser. The intended
-        # contract is exactly: yield one Chirp per slow-time sample at
-        # config.frame_rate_hz. Until then, surface this loudly so an
-        # accidental --source usb without the board doesn't silently hang.
-        raise NotImplementedError(
-            "UsbFrameSource is a skeleton until the IWRL6432BOOST arrives "
-            "and we pin the TLV parser against real-board fixtures. See "
-            "docs/RADAR_STARTUP.md for the board-day runbook. Use "
-            "--source synth for integration testing in the meantime."
-        )
+        # Stream-read in 4 KB chunks and parse incrementally. Stops when the
+        # caller closes the iterator (collector loop) or the serial port
+        # raises an error.
+        chunk_size = 4096
+        while True:
+            chunk = self._serial.read(chunk_size)
+            if not chunk:
+                # timeout, no bytes; keep polling
+                continue
+            yield from self._parse_chunk(chunk)
 
     def close(self) -> None:
         if self._serial is not None:
