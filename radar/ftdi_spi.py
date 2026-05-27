@@ -184,12 +184,24 @@ class SpiFtdiReader:
         [chirp0 rx0 sample0..255][chirp0 rx1 ...][chirp0 rx2 ...][chirp1 ...]...
         i.e., n_chirps outer loop, n_rx middle, n_adc_samples inner.
 
-        For first cut, we yield ONE Chirp per (chirp, rx0) pair -- the
-        first RX only. Multi-RX MRC handling is a follow-up once we
-        verify the byte layout is what we expect.
+        Pipeline per chirp:
+        1. Reshape int16 LE bytes into (chirps, rx, samples) real cube
+        2. Apply Hilbert transform across samples axis -> analytic signal
+           (complex IQ with reconstructed phase). This is the single most
+           important step: the IWRL6432 ADC is real-valued, and without
+           IQ phase reconstruction, downstream DSP (DACM, circle-fit,
+           cardiac extraction) can't see the chest displacement signal.
+        3. Coherent-average across RX antennas. RX0/1/2 on this BOOST are
+           ~lambda/2 apart, so they all see roughly the same chest signal
+           with slightly different phases. Equal-weight coherent sum
+           gives ~sqrt(n_rx) SNR gain in practice; cardiac-specific MRC
+           would do better but requires per-bin phase alignment (future).
+        4. Yield one Chirp per (chirp_idx, combined samples) pair.
         """
         # Late-import the Chirp dataclass to avoid a circular import; the
         # collector module imports this file.
+        from scipy.signal import hilbert  # noqa: PLC0415
+
         from tools.radar_collector import Chirp  # noqa: PLC0415
 
         c = self._ftdi
@@ -203,21 +215,25 @@ class SpiFtdiReader:
                 expected_samples,
             )
             return
-        # Reshape to (chirps, rx, samples)
-        cube = samples.reshape(c.chirps_per_frame, c.n_rx, c.n_adc_samples)
+        # Reshape to (chirps, rx, samples). int16 -> float32 for FFT precision.
+        cube = samples.reshape(c.chirps_per_frame, c.n_rx, c.n_adc_samples).astype(
+            np.float32
+        )
+        # Hilbert across samples axis -> analytic signal (complex64). For each
+        # chirp/rx, scipy.signal.hilbert(x) returns x + j*H(x), where H is the
+        # discrete Hilbert transform along the last axis.
+        analytic = hilbert(cube, axis=-1).astype(np.complex64)
+        # Coherent-average across RX (equal weights) -> (chirps, samples).
+        # This is a quick MRC approximation. For full MRC we'd weight by
+        # per-RX SNR after range-FFT; that's a follow-up once we have a
+        # clean baseline to compare against.
+        combined = analytic.mean(axis=1)
         ts = time.time()
         for k in range(c.chirps_per_frame):
-            # Take RX 0 only for first cut. Promote int16 real to complex64
-            # (radar.process expects complex; imaginary component is zero
-            # because the IWRL6432 ADC is real-valued; Hilbert / quadrature
-            # mixing would normally reconstruct phase, but radar.process
-            # handles real-input chirps by doing the range FFT directly).
-            rx0_real = cube[k, 0, :].astype(np.float32)
-            chirp_samples = rx0_real.astype(np.complex64)
             yield Chirp(
                 ts_unix=ts,
                 chirp_idx=self._chirp_idx,
-                samples=chirp_samples,
+                samples=combined[k],
             )
             self._chirp_idx += 1
 
