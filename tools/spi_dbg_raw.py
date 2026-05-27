@@ -32,7 +32,10 @@ def send_kickstart():
     s.write(b"sensorStop 0\r\n")
     s.flush()
     time.sleep(0.5)
-    with open("/tmp/MotionDetect.cfg") as f:
+    # Hardcoded path is the operator-provisioned cfg the kickstart already
+    # uses on the Pi during board-day debugging. Diagnostic-only script;
+    # not a serving-path tool. (nosec B108)
+    with open("/tmp/MotionDetect.cfg") as f:  # nosec B108
         lines = [
             l.strip()
             for l in f
