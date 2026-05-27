@@ -427,10 +427,13 @@ def main() -> None:
     )
     p.add_argument(
         "--source",
-        choices=["usb", "synth"],
+        choices=["usb", "ftdi", "synth"],
         default="usb",
-        help="frame source: 'usb' for real IWRL6432BOOST (default), "
-        "'synth' for radar.synth_capture (test-only; never in production)",
+        help="frame source: 'usb' for real IWRL6432BOOST TLV stream over "
+        "XDS110 UART (default), 'ftdi' for raw ADC over a C232HM-DDHSL-0 "
+        "USB-SPI cable to J2 (requires SPI_ADC_DATA_STREAMING=1 firmware "
+        "+ `adcLogging 2` sent over the UART first), or 'synth' for "
+        "radar.synth_capture (test-only; never in production)",
     )
     p.add_argument(
         "--port",
@@ -438,7 +441,7 @@ def main() -> None:
         help="data UART path; defaults to VIFI_RADAR_PORT env or a "
         "by-id stub. Used only when --source=usb.",
     )
-    p.add_argument("--baud", type=int, default=921600)
+    p.add_argument("--baud", type=int, default=115200)
     p.add_argument(
         "--duration",
         type=float,
@@ -497,6 +500,21 @@ def main() -> None:
             seed=args.synth_seed,
             realtime=not args.synth_no_realtime,
         )
+    elif args.source == "ftdi":
+        import os  # noqa: PLC0415
+
+        from radar.ftdi_spi import FtdiSpiConfig, SpiFtdiReader  # noqa: PLC0415
+
+        # FTDI URL: pick the first FT232H by default, or honor an env override.
+        ftdi_url = os.environ.get("VIFI_RADAR_FTDI_URL", "ftdi://ftdi:232h/1")
+        ftdi_cfg = FtdiSpiConfig(ftdi_url=ftdi_url)
+        log.info(
+            "ftdi source: url=%s adc_bytes/frame=%d chirps/frame=%d",
+            ftdi_url,
+            ftdi_cfg.adc_bytes_per_frame,
+            ftdi_cfg.chirps_per_frame,
+        )
+        source = SpiFtdiReader(config=ftdi_cfg)
     else:
         import os  # noqa: PLC0415
 
