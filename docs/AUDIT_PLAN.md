@@ -1,5 +1,15 @@
 # ViFi codebase audit — keep / remove / add
 
+> **Status (2026-05-22): execution complete.** PRs A through L (and several
+> inline CI fixes) have landed. Five audit findings turned out to be
+> already-implemented or inaccurate-when-ground-truthed and are recorded as
+> retractions within. This document is now a **historical reference for
+> past architectural decisions**, not an active backlog. The current
+> forward-plan pattern is per-sub-project spec + plan under
+> `docs/superpowers/specs/` and `docs/superpowers/plans/` (SP1 live stack
+> done, SP2 radar integration done, SP3 alerting pending). For day-to-day
+> operator state, see `docs/STATUS.md`.
+
 ## Context
 
 This audit takes stock of the framework + infrastructure with a

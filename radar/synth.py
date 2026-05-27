@@ -76,6 +76,8 @@ class SynthMeta:
     """True heartbeat peak times (s) — reference for beat-detection F1."""
     motion_window_s: tuple[float, float] | None = None
     """If set, the (start, end) of an injected gross-motion segment."""
+    apnea_window_s: tuple[float, float] | None = None
+    """If set, the (start, end) of an injected respiratory pause."""
     clutter_bins: tuple[float, ...] = field(default_factory=tuple)
     """Range bins occupied by static clutter targets."""
 
@@ -153,6 +155,7 @@ def synth_capture(
     n_clutter: int = 4,
     motion_window_s: tuple[float, float] | None = None,
     motion_amplitude_m: float = 0.02,
+    apnea_window_s: tuple[float, float] | None = None,
     seed: int = 0,
 ) -> tuple[np.ndarray, SynthMeta]:
     """Generate one synthetic FMCW capture.
@@ -190,6 +193,18 @@ def synth_capture(
         sway = motion_amplitude_m * np.sin(2.0 * np.pi * 0.4 * (t - lo))
         displacement = displacement + np.where(mask, sway, 0.0)
 
+    if apnea_window_s is not None:
+        # Zero displacement during the apnea window. Clinically an apnea
+        # is cessation of airflow; the chest stops moving entirely, so
+        # both breathing and the small heartbeat component disappear from
+        # the radar's perspective (the heartbeat amplitude is sub-mm and
+        # the chest-wall noise floor swamps it without breathing motion
+        # to entrain on). This is the synthetic "ground truth" for testing
+        # apnea detection downstream.
+        lo, hi = apnea_window_s
+        apnea_mask = (t >= lo) & (t < hi)
+        displacement = np.where(apnea_mask, 0.0, displacement)
+
     # --- fast-time tone basis: column m, normalised range-bin freq ---
     m = np.arange(n_fast)
     subject_bin = config.range_to_bin(subject_range_m)
@@ -219,13 +234,29 @@ def synth_capture(
         adc += amp * np.exp(1j * cphase) * tone(cb)[None, :]
         clutter_bins.append(cb)
 
-    # --- additive complex white noise at the requested SNR ---
-    # SNR is referenced to the (unit-amplitude) chest return.
+    # --- multi-RX path: emit a (n_chirps, n_fast, n_rx) cube ---
+    # Co-located RX antennas all see the same chest target with the same
+    # signal phase (they are millimetres apart on the BOOST PCB; the
+    # boresight is normal to the board, so the path-length differences
+    # are far below a wavelength). What differs across RX is the
+    # thermal noise realisation. To exercise the MRC path correctly,
+    # broadcast the noise-free `adc` across the RX axis and add
+    # independent noise per RX.
+    n_rx = max(1, int(getattr(config, "n_rx", 1)))
     noise_sigma = 10.0 ** (-snr_db / 20.0) / np.sqrt(2.0)
-    noise = noise_sigma * (
-        rng.standard_normal(adc.shape) + 1j * rng.standard_normal(adc.shape)
-    )
-    adc = adc + noise
+    if n_rx == 1:
+        noise = noise_sigma * (
+            rng.standard_normal(adc.shape) + 1j * rng.standard_normal(adc.shape)
+        )
+        adc = adc + noise
+    else:
+        # Stack signal across RX axis, then add independent per-RX noise.
+        adc_cube = np.broadcast_to(adc[..., None], adc.shape + (n_rx,)).copy()
+        cube_shape = adc_cube.shape
+        adc_cube = adc_cube + noise_sigma * (
+            rng.standard_normal(cube_shape) + 1j * rng.standard_normal(cube_shape)
+        )
+        adc = adc_cube
 
     meta = SynthMeta(
         hr_bpm=hr_bpm,
@@ -241,6 +272,7 @@ def synth_capture(
         heartbeat_m=heartbeat,
         beat_times_s=beat_times,
         motion_window_s=motion_window_s,
+        apnea_window_s=apnea_window_s,
         clutter_bins=tuple(clutter_bins),
     )
     return adc.astype(np.complex128), meta

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -60,13 +61,21 @@ class Chirp:
     """One slow-time sample: a single chirp's complex ADC samples.
 
     The IWRL6432BOOST emits these at config.frame_rate_hz. A 10 s window of
-    100 Hz chirps is 1000 of these; the worker stacks them into a
-    ``(n_chirps, samples_per_chirp)`` complex array for ``radar.process``.
+    100 Hz chirps is 1000 of these; the worker stacks them into a complex
+    ADC cube for ``radar.process``.
+
+    ``samples`` shape:
+      - ``(samples_per_chirp,)`` for single-RX (legacy, default)
+      - ``(samples_per_chirp, n_rx)`` for multi-RX (BOOST has 3 RX); the
+        downstream DSP detects the multi-RX case from the input shape and
+        runs coherent maximal-ratio combining across the RX axis.
     """
 
     ts_unix: float
     chirp_idx: int
-    samples: np.ndarray  # complex, shape (samples_per_chirp,)
+    samples: (
+        np.ndarray
+    )  # complex, shape (samples_per_chirp,) or (samples_per_chirp, n_rx)
 
 
 class FrameSource(Protocol):
@@ -466,6 +475,17 @@ def main() -> None:
         action="store_true",
         help="synth source: emit chirps as fast as possible (for tests)",
     )
+    p.add_argument(
+        "--n-rx",
+        type=int,
+        default=int(os.environ.get("VIFI_RADAR_N_RX", "1")),
+        help=(
+            "Number of receive antennas to combine via MRC in the DSP. "
+            "Default 1 (legacy single-RX). The IWRL6432BOOST has 3 RX; "
+            "set to 3 on board-day to activate the MRC path (~4.8 dB SNR "
+            "gain). Synth source honors this to exercise the same code path."
+        ),
+    )
 
     p.add_argument("--quiet", action="store_true")
     p.add_argument("--log-level", default="INFO")
@@ -480,7 +500,7 @@ def main() -> None:
     if args.bus and not args.patient_id:
         raise SystemExit("--bus requires --patient-id")
 
-    config = RadarConfig()
+    config = RadarConfig(n_rx=args.n_rx)
 
     source: FrameSource
     if args.source == "synth":
@@ -501,8 +521,6 @@ def main() -> None:
             realtime=not args.synth_no_realtime,
         )
     elif args.source == "ftdi":
-        import os  # noqa: PLC0415
-
         from radar.ftdi_spi import FtdiSpiConfig, SpiFtdiReader  # noqa: PLC0415
 
         # FTDI URL: pick the first FT232H by default, or honor an env override.
@@ -516,8 +534,6 @@ def main() -> None:
         )
         source = SpiFtdiReader(config=ftdi_cfg)
     else:
-        import os  # noqa: PLC0415
-
         port = args.port or os.environ.get("VIFI_RADAR_PORT")
         if not port:
             raise SystemExit(

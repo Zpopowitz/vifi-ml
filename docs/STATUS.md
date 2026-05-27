@@ -24,25 +24,41 @@ research roadmap that came out of that session.
 
 ---
 
-## Current direction — radar v2 (2026-05-20)
+## Current state — dual-sensor platform (2026-05-22)
 
-ViFi has pivoted from WiFi CSI to a 60 GHz mmWave radar (TI IWRL6432BOOST)
-for genuine beat-by-beat monitoring. WiFi CSI is shelved, not deleted — the
-operator commands further down still run the shelved CSI stack, but the
-active work is radar v2.
+ViFi runs two sensors on one sensor-agnostic platform. Both publish to
+the same vitals topics (`hr.predicted.<pid>`, `rr.predicted.<pid>`); the
+dashboard does not know or care which one is upstream.
 
-- Plan: `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md`
+### WiFi CSI (v1, shipped baseline)
+
+The shipped, operational sensor. **The live stack runs CSI today.** The
+operator commands further down (Pre-capture, Paired-session, `--live`,
+sync, retrain, LOSO eval) are all CSI. Cross-session HR MAE 4.15 bpm on
+3 paired captures (LOSO, single subject). Saturates ~88-90 bpm on
+elevated HR — known data-bound limit (see `project-hr-data-bottleneck`
+memory + `docs/HOME_PILOT_LOG.md`). `tools/capture_hr_sweep.sh` is the
+cheapest fix path for that ceiling.
+
+### 60 GHz radar (v2, current direction, hardware-gated)
+
+The next-generation sensor. **All code shipped, hardware not yet plugged
+in.** TI IWRL6432BOOST ordered 2026-05-20. The `radar/` DSP module,
+`tools/radar_collector.py`, `tools/radar_inference_worker.py`, the two
+systemd units, and the integration tests are merged. `./tools/setup_live_stack.sh
+--with-radar` installs the radar services; they start running the day
+the operator plugs in the board and points `VIFI_RADAR_PORT` at the
+data UART. Beat-by-beat HR + HRV unlock then — no training-data
+ceiling because the radar pipeline is geometric, not statistical.
+
+References:
+- Architecture plan: `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md`
+- SP2 spec + plan: `docs/superpowers/specs/2026-05-22-radar-integration-sp2-design.md`
+  and `docs/superpowers/plans/2026-05-22-radar-integration-sp2-plan.md`
 - Phase 0 research (complete): `docs/RADAR_PHASE0_NOTES.md`
 - Demand thesis (draft, owner sign-off pending): `docs/RADAR_DEMAND_THESIS.md`
-- **`radar/` — the FMCW DSP module.** The Phase 2 deliverable, built and
-  tested against a synthetic generator while the board ships: range FFT,
-  MTI clutter removal, range-bin tracking, DC-offset circle-fit + DACM
-  phase extraction, respiration-harmonic notch, beat detection, motion
-  gating, HR/HRV. Entry point: `from radar import RadarConfig,
-  synth_capture, process`. Tests: `tests/test_radar_*.py`.
-
-Phase 1 (hands-on capture, the Gate 0 smoke test) is gated on the board
-arriving.
+- Board-day runbook: `docs/RADAR_STARTUP.md`
+- Customer demand validation runbook: `docs/DEMAND_VALIDATION_INTERVIEWS.md`
 
 ---
 

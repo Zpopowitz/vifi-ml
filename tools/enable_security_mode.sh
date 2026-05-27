@@ -25,7 +25,6 @@ set -euo pipefail
 
 PI_HOSTNAME="vifi-pi-room1.local"
 PI_SSH_HOST="pi"
-PI_REPO="/home/zpopowitz/vifi-ml"
 ENV_FILE=".env"
 ROTATE=0
 DRY_RUN=0

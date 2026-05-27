@@ -2,19 +2,23 @@
 
 **Two sensors, one platform.**
 
-- **Shipped baseline (WiFi CSI):** 4.15 bpm cross-session HR MAE on ~$50 of
-  ESP32-S3 hardware vs Polar H10 ground truth, LOSO across 3 paired captures,
-  single subject. Pipeline: variance-rank top-K subcarriers → Butterworth
-  0.1-3 Hz → 4x zero-padded FFT → parabolic peak refinement → 9-dim feature
-  vector → XGBoost. Saturates around 88-90 bpm on elevated HR (data-bound,
-  not algorithm-bound, per `project-hr-data-bottleneck`). The live stack
-  currently runs this.
+- **Shipped baseline (WiFi CSI):** 13.90 bpm cross-session HR MAE on
+  ESP32-S3 hardware vs Polar H10 ground truth, LOSO across the 3 HR-labeled
+  paired captures in `data/captures/founder/`, single subject (see
+  `docs/eval/2026-05-23-loso.json`). Per-fold: 13.94 / 7.96 / 19.78 bpm
+  (worst fold is the elevated-HR post-cardio session, where the model
+  saturates around 88-90 bpm; data-bound per `project-hr-data-bottleneck`).
+  Pipeline: variance-rank top-K subcarriers → Butterworth 0.1-3 Hz → 4x
+  zero-padded FFT → parabolic peak refinement → 9-dim feature vector →
+  XGBoost. The live stack currently runs this.
 - **Current direction (60 GHz FMCW radar, v2):** TI IWRL6432BOOST (ordered
-  2026-05-20). The `radar/` DSP module is built and tested; SP2 (merged)
-  wired the radar inference worker into the same sensor-agnostic bus the
-  CSI worker uses, so swapping sensors is a one-command operator action
-  (`./tools/setup_live_stack.sh --with-radar`). Beat-by-beat HR/HRV
-  becomes tractable once the board arrives — see `docs/RADAR_STARTUP.md`.
+  2026-05-20). The `radar/` DSP module is built and tested against synth;
+  SP2 (merged) wired the radar inference worker into the same sensor-agnostic
+  bus the CSI worker uses, so swapping sensors is a one-command operator
+  action (`./tools/setup_live_stack.sh --with-radar`). Board-day work is
+  pinning `UsbFrameSource._parse_chunk`; runbook in `docs/RADAR_STARTUP.md`.
+  Known gap: the DSP pipeline is single-RX end-to-end; the board has 3 RX
+  antennas. Adding MRC combining is on the pre-board work list.
 
 Both sensors publish to the same vitals topics (`hr.predicted.<pid>`,
 `rr.predicted.<pid>`). The dashboard does not know or care which one is
@@ -22,26 +26,63 @@ upstream; a `sensor:` field on each message is the only marker.
 
 Truth lives in `docs/STATUS.md` (current operator state),
 `docs/LIVE_STACK.md` (the live monitoring runbook),
-`docs/RADAR_STARTUP.md` (board-day runbook), and `RESULTS.md`. If those
-disagree with this file, those win.
+`docs/RADAR_STARTUP.md` (board-day runbook), and
+`docs/eval/2026-05-23-loso.json` (current authoritative LOSO eval).
+If those disagree with this file, those win.
+
+For task-oriented lookup ("I want to do X, where does that code / doc
+live?"), `docs/NAVIGATION.md` is the fast path. `tools/README.md`
+indexes every script in `tools/` by purpose.
 
 ## Where things live
-- DSP + features: `preprocess.py`
-- Synthetic generator (sanity-only): `data_gen.py`
-- Training: `train.py` (CI test-fixture model from synthetic data — not a serving model), `tools/retrain_on_real.py` (the real serving model, from real captures), `tools/train_quantile_models.py` (CIs). The API and inference worker serve the real model only; there is no synthetic fallback.
-- Real-time API: `api.py` — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), plus 501 stubs for apnea/gait/falls/transients/multi_patient
-- Dashboard: `dashboard/` (static SPA — HTML/CSS/vanilla JS) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+
+### Live monitoring platform (sensor-agnostic, SP1 + SP2)
+- **Live stack runbook:** `docs/LIVE_STACK.md` (SP1: 4 boot-persistent Pi services)
+- **Bus contract + topic helpers:** `modules/bus.py` (`csi_raw`, `radar_raw`, `hr_predicted`, `rr_predicted`, ...)
+- **Stack install / operate:** `tools/setup_live_stack.sh`, `tools/live_stack.sh`
+- **Systemd units:** `deploy/systemd/vifi-{dashboard,inference,audit,radar-collector,radar-inference}.service`
+- **Dashboard:** `dashboard/` (static SPA) served by `api.py` via `StaticFiles`. Login overlay + room dropdown; talks to `/api/v1/stream` WebSocket.
+
+### WiFi CSI sensor (v1, shipped baseline)
+- **DSP + features:** `preprocess.py`, `multipath.py`
+- **CSI capture (Pi USB serial):** `tools/csi_capture.py`, `tools/esp32_csi_collector.py`, `tools/parse_csi_capture.py`
+- **CSI inference worker (live):** `tools/inference_worker.py` (XGBoost on 9-dim features; lazy-loads from `models_real/`)
+- **Training:** `tools/retrain_on_real.py` (the real serving model, from real captures), `tools/train_quantile_models.py` (CIs), `train.py` (CI test-fixture model from synthetic data — not a serving model)
+- **ESP32-S3 firmware flashing:** `docs/ESP32_SETUP.md`
+- **Calibration + RF fingerprint + walk-in detector:** `calibration.py`, `tools/calibrate_subject.py`, `tools/identify_subject.py`, `tools/compute_room_baseline.py`
+- **OOD suppression:** `quality.py` (Mahalanobis)
+
+### 60 GHz radar sensor (v2, hardware-gated)
+- **DSP pipeline:** `radar/` (range FFT → MTI → DACM phase → harmonic notch → beat detection → motion gating → HR/HRV)
+- **Radar collector (USB → bus):** `tools/radar_collector.py`
+- **Radar inference worker (bus → vitals):** `tools/radar_inference_worker.py` (publishes to the SAME `hr.predicted` / `rr.predicted` topics the CSI worker uses)
+- **Board-day runbook:** `docs/RADAR_STARTUP.md`
+- **Radar research:** `docs/RADAR_PHASE0_NOTES.md`, `docs/RADAR_DEMAND_THESIS.md`
+
+### Ground-truth sensors + capture orchestration
+- **Capture orchestrator:** `tools/run_paired_session.py` (also `tools/capture.sh --live`, `tools/capture_hr_sweep.sh`)
+- **HR ground truth:** `hr_logger.py` (Polar H10 BLE)
+- **RR ground truth:** `rr_logger.py` (Vernier Go Direct belt), `rr_dsp.py`
+
+### Real-time API
+- **`api.py`** — `/predict`, `/predict/csi`, `/predict/capture`, `/identify`, `/predict/presence`, `/roadmap`, `/api/v1/rooms`, `/api/v1/stream` (WebSocket), `/health`, `/readyz`, plus 501 stubs for apnea/gait/falls/transients/multi_patient
+- **Single model bundle:** `api_internals/bundles.py` (`RealModelBundle`). The API serves the real model only; no synthetic fallback.
+
+### Cross-cutting infrastructure
+- **Audit log (FDA-grade JSONL):** `audit.py`, `audit_chain_state.py`, `tools/audit_subscriber.py`, `tools/audit_query.py`, `tools/audit_health.py`, `tools/audit_retention.py`, `tools/audit_verify.py`
+- **Auth + scopes:** `security.py`
+- **Pseudonymization:** `pseudonymize.py`
+- **Prometheus metrics:** `observability.py`
+- **Config validation:** `config.py`
+
+### Operator + developer docs
 - **Operator status + commands:** `docs/STATUS.md` ← read first
-- Daily reproduction: `docs/QUICKSTART.md`
-- Active forward-plan / audit: `docs/AUDIT_PLAN.md`
-- ESP32-S3 firmware flashing: `docs/ESP32_SETUP.md`
-- Calibration + RF fingerprint + walk-in detector: `calibration.py`
-- Mahalanobis OOD: `quality.py`
-- Audit log (FDA-grade JSONL): `audit.py`
-- Capture orchestrator: `tools/run_paired_session.py`
-- HR ground truth: `hr_logger.py` (Polar H10 BLE)
-- RR ground truth: `rr_logger.py` (Vernier Go Direct belt)
-- Tests: `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
+- **Daily reproduction:** `docs/QUICKSTART.md`
+- **Security hardening (SP7-partial):** `docs/SECURITY_HARDENING.md`, `tools/enable_security_mode.sh`
+- **Demand validation interview runbook:** `docs/DEMAND_VALIDATION_INTERVIEWS.md`
+- **Spec → plan → build artifacts:** `docs/superpowers/specs/`, `docs/superpowers/plans/` (each sub-project: SP1 live stack, SP2 radar, synthetic-model removal, radar v2 architecture, beat-detection HR)
+- **Historical audit + decision log:** `docs/AUDIT_PLAN.md` (PRs A–L complete; kept as reference for past architectural decisions)
+- **Tests:** `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
 
 ## Conventions
 - Never trade quality or accuracy for effort. Recommend and build the most correct, capable option; lower implementation effort is context worth noting, never the basis for a decision.
@@ -86,3 +127,15 @@ Key tokens at a glance:
 
 In QA mode, flag code that uses `--signal` for non-data UI, uses hex literals
 instead of tokens, or introduces typefaces outside the 4 declared families.
+
+## Health Stack
+
+Used by `/health`. Matches the CI gauntlet in `feedback_ci_gauntlet`.
+
+- typecheck: `mypy pseudonymize.py config.py __version__.py`
+- lint: `ruff check . && ruff format --check .`
+- test: `pytest -m "not e2e"`
+- deadcode: `vulture . --min-confidence 80 --exclude .venv,data,models,models_real,build,hr_net`
+- shell: `shellcheck *.sh tools/*.sh`
+
+`hr_net/` is excluded from deadcode because that pipeline is shelved pending diverse HR data (see `project_hr_data_bottleneck`).

@@ -47,6 +47,19 @@ class RadarConfig:
     frame_rate_hz: float = 100.0
     """Slow-time frame rate = the displacement-waveform sample rate."""
 
+    n_rx: int = 1
+    """Number of receive antennas combined coherently by the DSP.
+
+    The IWRL6432BOOST has 3 RX antennas on the PCB; combining all three
+    via equal-weight coherent summation (a simple form of maximal-ratio
+    combining for co-located antennas seeing the same chest target)
+    gains ~10*log10(n_rx) dB SNR on white noise. Default 1 preserves
+    the legacy single-RX behaviour; tests that exercise MRC set this to
+    3 explicitly. The collector parser is responsible for shaping board
+    ADC into a `(n_chirps, samples_per_chirp, n_rx)` cube before the
+    pipeline runs.
+    """
+
     def __post_init__(self) -> None:
         if self.carrier_hz <= 0:
             raise ValueError("carrier_hz must be positive")
@@ -56,6 +69,8 @@ class RadarConfig:
             raise ValueError("samples_per_chirp must be >= 8")
         if self.frame_rate_hz <= 0:
             raise ValueError("frame_rate_hz must be positive")
+        if self.n_rx < 1:
+            raise ValueError("n_rx must be >= 1")
 
     @property
     def wavelength_m(self) -> float:

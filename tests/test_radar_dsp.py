@@ -10,6 +10,7 @@ from radar.dsp import (
     dacm_phase,
     extract_displacement,
     kasa_circle_fit,
+    mrc_combine,
     range_fft,
     remove_clutter,
     select_range_bin,
@@ -130,3 +131,124 @@ def test_extract_displacement_recovers_the_waveform() -> None:
     amp_ratio = np.std(rec) / np.std(true)
     assert 0.8 < amp_ratio < 1.2
     assert info.circle_radius > 0
+
+
+def test_range_fft_handles_3d_multi_rx_input() -> None:
+    """3-D (n_chirps, n_fast, n_rx) input must FFT each RX independently."""
+    n_chirps, n_fast, n_rx, k = 64, 256, 3, 40
+    m = np.arange(n_fast)
+    tone = np.exp(2j * np.pi * k * m / n_fast)
+    # Broadcast the same tone across all chirps and all RX channels.
+    adc = np.broadcast_to(tone[None, :, None], (n_chirps, n_fast, n_rx)).copy()
+    profile = range_fft(adc)
+    assert profile.shape == (n_chirps, n_fast, n_rx)
+    # Each RX channel should peak at bin k independently.
+    for rx in range(n_rx):
+        peak = int(np.argmax(np.abs(profile[0, :, rx])))
+        assert peak == k
+
+
+def test_remove_clutter_preserves_rx_axis_in_3d() -> None:
+    """MTI must operate along slow-time only, leaving RX axis untouched."""
+    n_chirps, n_bins, n_rx = 32, 16, 3
+    # Static target across all chirps -> mean-MTI should null it.
+    rp = np.ones((n_chirps, n_bins, n_rx), dtype=np.complex128)
+    cleaned = remove_clutter(rp, method="mean")
+    assert cleaned.shape == (n_chirps, n_bins, n_rx)
+    assert np.allclose(cleaned, 0.0)
+
+
+def test_mrc_combine_collapses_rx_axis() -> None:
+    """3-D in -> 2-D out, shape (n_chirps, n_bins). 2-D in is a no-op."""
+    n_chirps, n_bins, n_rx = 8, 4, 3
+    p3 = np.ones((n_chirps, n_bins, n_rx), dtype=np.complex128)
+    combined = mrc_combine(p3)
+    assert combined.shape == (n_chirps, n_bins)
+    # All-ones * n_rx / sqrt(n_rx) = sqrt(n_rx).
+    assert np.allclose(combined, np.sqrt(n_rx))
+
+    # 2-D input is returned unchanged.
+    p2 = np.ones((n_chirps, n_bins), dtype=np.complex128)
+    assert np.allclose(mrc_combine(p2), p2)
+
+
+def test_mrc_combine_gives_snr_gain_on_independent_noise() -> None:
+    """Coherent signal + independent per-RX noise -> SNR improves with n_rx."""
+    rng = np.random.default_rng(0)
+    n_chirps, n_bins, n_rx = 200, 4, 3
+    signal_amp = 1.0
+    noise_sigma = 0.5
+
+    # Same signal on every RX, independent noise per RX.
+    signal = signal_amp * np.ones((n_chirps, n_bins, n_rx), dtype=np.complex128)
+    noise = noise_sigma * (
+        rng.standard_normal((n_chirps, n_bins, n_rx))
+        + 1j * rng.standard_normal((n_chirps, n_bins, n_rx))
+    )
+    p3 = signal + noise
+
+    # Single-RX reference: just use RX 0.
+    single = p3[..., 0]
+    combined = mrc_combine(p3)
+
+    # SNR measured as |mean signal| / std(noise component).
+    # Signal is constant; signal estimate is mean of the array.
+    snr_single = np.abs(single.mean()) / single.std()
+    snr_combined = np.abs(combined.mean()) / combined.std()
+
+    # Theory: 10*log10(n_rx) dB gain = factor sqrt(n_rx) on amplitude SNR.
+    # Allow some slack for finite-sample noise.
+    expected_gain = np.sqrt(n_rx)
+    actual_gain = snr_combined / snr_single
+    assert (
+        actual_gain > 0.7 * expected_gain
+    ), f"MRC gain {actual_gain:.2f} below expected {expected_gain:.2f}"
+
+
+def test_pipeline_reports_present_on_breathing_subject() -> None:
+    """A subject with normal breathing -> VitalsResult.present == True."""
+    from radar.pipeline import process  # noqa: PLC0415
+
+    cfg = RadarConfig()
+    adc, _ = synth_capture(cfg, duration_s=12.0, hr_bpm=72.0, rr_bpm=15.0, seed=8)
+    result = process(adc, cfg)
+    assert hasattr(result, "present"), "VitalsResult must expose a `present` field"
+    assert result.present is True
+
+
+def test_pipeline_reports_not_present_on_flat_displacement() -> None:
+    """An ADC cube that yields a flat (sub-floor) displacement -> not present.
+
+    The pipeline's `present` is derived from displacement amplitude. A
+    capture with zero motion (we zero the displacement injection via
+    apnea_window_s spanning the whole capture) should report present=False.
+    """
+    from radar.pipeline import process  # noqa: PLC0415
+
+    cfg = RadarConfig()
+    adc, _ = synth_capture(
+        cfg,
+        duration_s=12.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        apnea_window_s=(0.0, 12.0),
+        seed=9,
+    )
+    result = process(adc, cfg)
+    assert result.present is False
+
+
+def test_extract_displacement_handles_3d_input() -> None:
+    """The full pipeline must accept (n_chirps, n_fast, n_rx) ADC cubes."""
+    cfg = RadarConfig(n_rx=3)
+    adc, meta = synth_capture(cfg, duration_s=40.0, hr_bpm=72, rr_bpm=15, seed=7)
+    assert adc.ndim == 3
+    assert adc.shape[2] == 3
+    disp, info = extract_displacement(adc, cfg)
+    assert disp.shape == (meta.n_chirps,)
+    true = meta.displacement_m - meta.displacement_m.mean()
+    rec = disp - disp.mean()
+    corr = np.corrcoef(true, rec)[0, 1]
+    # Should track at least as well as the single-RX baseline, and
+    # benefit from the MRC SNR gain.
+    assert corr > 0.97

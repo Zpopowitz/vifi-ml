@@ -59,17 +59,22 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from modules.apnea import ApneaEvent, detect_apnea  # noqa: E402
 from modules.bus import (  # noqa: E402
     EARLIEST,
     LATEST,
     MessageBus,
+    apnea_events,
     bus_from_env,
     hr_predicted,
+    presence_events,
     radar_raw,
     rr_predicted,
 )
+from modules.presence_state import PresenceStateMachine  # noqa: E402
 from observability import install_worker_metrics  # noqa: E402
 from radar import RadarConfig, process  # noqa: E402
+from radar.dsp import extract_displacement  # noqa: E402
 
 log = logging.getLogger("vifi.radar_inference_worker")
 
@@ -141,11 +146,21 @@ class _Vitals:
     hrv_rmssd_ms: Optional[float]
     pnn50_pct: Optional[float]
     f_resp_hz: float
+    present: bool = False
+    beat_confidence: float = 0.0
 
 
 MIN_CHIRPS_FOR_PROCESSING = 256
 """Below this number of chirps the window is too short for the DSP chain
 to produce stable rates. At 100 Hz frame rate this is ~2.6 s of data."""
+
+MIN_APNEA_WINDOW_S = 15.0
+"""Minimum apnea-window length in seconds. The detector needs roughly
+the target min_duration plus 5 s of non-apnea data on either side so the
+median sliding-RMS (the floor the apnea region must drop below) is set
+from real breathing, not the pause itself. 15 s floors detection at the
+clinical 10 s minimum across both 100 Hz (default radar) and 200 Hz
+(post-board MRC profile) frame rates."""
 
 
 def run_once(
@@ -200,7 +215,114 @@ def run_once(
             else None
         ),
         f_resp_hz=float(result.f_resp_hz) if np.isfinite(result.f_resp_hz) else 0.0,
+        present=bool(result.present),
+        beat_confidence=float(result.beat_confidence),
     )
+
+
+# ---------------------------------------------------------------------------
+# Apnea side-channel (sensor-agnostic: same shape will work for the CSI
+# worker when we wire it). The radar pipeline already extracts a
+# displacement waveform; bandpassing it to the respiratory band and
+# running modules.apnea.detect_apnea gives respiratory pause events.
+# Runs on a SEPARATE rolling window from HR/RR because apnea wants more
+# history (>= 15 s) to find a 10 s pause with edge tolerance.
+# ---------------------------------------------------------------------------
+
+
+def _rolling_detrend(
+    signal: np.ndarray, fs: float, window_s: float = 4.0
+) -> np.ndarray:
+    """Subtract a rolling mean to remove slow baseline drift while preserving
+    respiration. Window matches one breath period (~4 s for 15 bpm), so the
+    respiratory oscillation survives but the post-`extract_displacement`
+    global-mean-subtract artefact (a constant offset in a quiet region)
+    becomes zero. This is the right primitive for apnea detection: during
+    a pause the detrended signal is flat, during breathing it carries the
+    full oscillation amplitude. Bandpass-to-respiratory-band suffers from
+    edge ringing (~10 s decay at the 0.10 Hz lower bound) that masks pause
+    boundaries; rolling detrend has no such ringing.
+    """
+    win_n = max(1, int(round(window_s * fs)))
+    if win_n >= signal.shape[0]:
+        return signal - float(np.mean(signal))
+    kernel = np.ones(win_n) / win_n
+    rolling_mean = np.convolve(signal, kernel, mode="same")
+    return signal - rolling_mean
+
+
+def apnea_run_once(
+    window: _Window,
+    config: RadarConfig,
+    expected_samples_per_chirp: int,
+    min_duration_s: float = 10.0,
+) -> list[ApneaEvent]:
+    """Snapshot the apnea window, extract displacement, rolling-detrend to a
+    respiration-preserving envelope, and run apnea detection.
+
+    Returns events with `start_s` relative to the first chirp in the
+    snapshot. Returns `[]` when the window is too short or contains no
+    qualifying pause. Pure with respect to the bus (the publish wrapper
+    is `_publish_apnea_events`).
+    """
+    frames = window.snapshot()
+    min_chirps = int(MIN_APNEA_WINDOW_S * float(config.frame_rate_hz))
+    if len(frames) < min_chirps:
+        return []
+    valid = [f for f in frames if f.samples.shape[0] == expected_samples_per_chirp]
+    if len(valid) < min_chirps:
+        return []
+    adc = np.stack([f.samples for f in valid], axis=0)
+    try:
+        displacement, _info = extract_displacement(adc, config)
+    except ValueError:
+        # Same defensive posture as run_once: short / degenerate windows
+        # surface as ValueError; treat as no-apnea rather than crashing.
+        return []
+    fs = float(config.frame_rate_hz)
+    envelope = _rolling_detrend(displacement, fs=fs, window_s=4.0)
+    return detect_apnea(envelope, fs=fs, min_duration_s=min_duration_s)
+
+
+def _publish_apnea_events(
+    events: list[ApneaEvent],
+    bus: MessageBus,
+    topic: str,
+    patient_id: str,
+    window_start_unix: float,
+    last_event_end_unix: float,
+    sensor: str = "radar",
+) -> float:
+    """Publish each event whose absolute start is past the high-water mark.
+
+    Returns the updated high-water mark (the end-unix of the latest
+    published event, or `last_event_end_unix` if nothing was published).
+    Events are sorted by start_s before publish so the dedup invariant
+    (`start_unix > last_event_end_unix`) is monotonic.
+    """
+    new_end = last_event_end_unix
+    for ev in sorted(events, key=lambda e: e.start_s):
+        start_unix = window_start_unix + ev.start_s
+        end_unix = start_unix + ev.duration_s
+        if start_unix <= new_end:
+            # Overlaps a previously published event; drop.
+            continue
+        now = time.time()
+        bus.publish(
+            topic,
+            {
+                "ts_unix": now,
+                "patient_id": patient_id,
+                "start_s_unix": start_unix,
+                "duration_s": float(ev.duration_s),
+                "type": ev.type,
+                "confidence": float(ev.confidence),
+                "sensor": sensor,
+            },
+            ts_ms=int(now * 1000),
+        )
+        new_end = end_unix
+    return new_end
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +337,14 @@ def run_worker(
     stride_s: float,
     config: RadarConfig,
     publish_rr: bool = True,
+    publish_apnea: bool = True,
+    apnea_window_s: float = 30.0,
+    apnea_stride_s: float = 10.0,
+    apnea_min_duration_s: float = 10.0,
+    publish_presence: bool = True,
+    presence_in_bed_stable_s: float = 30.0,
+    presence_bed_exit_after_s: float = 60.0,
+    hrv_confidence_threshold: float = 0.7,
     from_id: str = LATEST,
     consumer_name: Optional[str] = None,
     metrics: Optional[dict] = None,
@@ -229,24 +359,41 @@ def run_worker(
     in_topic = radar_raw(patient_id)
     hr_topic = hr_predicted(patient_id)
     rr_topic = rr_predicted(patient_id) if publish_rr else None
+    apnea_topic = apnea_events(patient_id) if publish_apnea else None
+    presence_topic = presence_events(patient_id) if publish_presence else None
+    presence_sm = (
+        PresenceStateMachine(
+            in_bed_stable_s=presence_in_bed_stable_s,
+            bed_exit_after_s=presence_bed_exit_after_s,
+        )
+        if publish_presence
+        else None
+    )
     consumer = consumer_name or _consumer_name()
 
     # Idempotent group creation.
     bus.create_group(in_topic, CONSUMER_GROUP, start_id=from_id)
 
     window = _Window(duration_s=window_s * 1.5)
+    # Separate, longer rolling buffer for apnea detection: a 10 s pause
+    # cannot be detected reliably from a 10 s HR/RR window because the
+    # detector needs surrounding non-apnea data to set its RMS floor.
+    apnea_window = _Window(duration_s=apnea_window_s) if publish_apnea else None
     last_predict = 0.0
+    last_apnea_check = 0.0
+    last_apnea_event_end_unix = 0.0
     iterations = 0
 
     log.info(
         "worker for patient_id=%r (group=%r consumer=%r): "
-        "subscribing to %s, publishing to %s%s",
+        "subscribing to %s, publishing to %s%s%s",
         patient_id,
         CONSUMER_GROUP,
         consumer,
         in_topic,
         hr_topic,
         f" + {rr_topic}" if rr_topic else " (RR disabled)",
+        f" + {apnea_topic}" if apnea_topic else " (apnea disabled)",
     )
 
     expected_samples_per_chirp = int(config.samples_per_chirp)
@@ -271,9 +418,10 @@ def run_worker(
                         f"adc_real / adc_imag shape mismatch: {real.shape} vs {imag.shape}"
                     )
                 samples = real + 1j * imag
-                window.push(
-                    _Frame(ts_unix=float(m.payload["ts_unix"]), samples=samples)
-                )
+                frame = _Frame(ts_unix=float(m.payload["ts_unix"]), samples=samples)
+                window.push(frame)
+                if apnea_window is not None:
+                    apnea_window.push(frame)
                 if metrics is not None:
                     metrics["packets_total"].labels(patient_id).inc()
                 bus.ack(CONSUMER_GROUP, m.topic, m.msg_id)
@@ -317,6 +465,14 @@ def run_worker(
         # Publish HR -- only when we have a real number (None when the
         # window was unrecoverable or motion-gated).
         if vitals.hr_bpm is not None:
+            # Spectral-fallback gate: if beat-detection confidence is
+            # below the threshold, the per-beat IBI-derived HRV is not
+            # reliable enough to publish. HR comes from the spectral
+            # estimator (which doesn't depend on per-beat detection)
+            # and is still published; HRV fields are nulled out so
+            # downstream consumers don't treat them as trustworthy.
+            beat_conf = float(vitals.beat_confidence)
+            hrv_trustworthy = beat_conf >= hrv_confidence_threshold
             bus.publish(
                 hr_topic,
                 {
@@ -328,9 +484,10 @@ def run_worker(
                     "hr_bpm": round(vitals.hr_bpm, 2),
                     "hr_confidence": round(vitals.coverage, 3),
                     "n_beats": vitals.n_beats,
-                    "hrv_sdnn_ms": vitals.hrv_sdnn_ms,
-                    "hrv_rmssd_ms": vitals.hrv_rmssd_ms,
-                    "pnn50_pct": vitals.pnn50_pct,
+                    "hrv_sdnn_ms": vitals.hrv_sdnn_ms if hrv_trustworthy else None,
+                    "hrv_rmssd_ms": vitals.hrv_rmssd_ms if hrv_trustworthy else None,
+                    "pnn50_pct": vitals.pnn50_pct if hrv_trustworthy else None,
+                    "beat_confidence": round(beat_conf, 3),
                     "coverage": round(vitals.coverage, 3),
                     "sensor": "radar",
                 },
@@ -359,6 +516,65 @@ def run_worker(
             if metrics is not None:
                 metrics["predictions_total"].labels(patient_id, "rr").inc()
 
+        # Presence + bed-exit state machine. Every successful vitals
+        # window feeds `vitals.present` into the sensor-agnostic state
+        # machine. Transitions (OUT -> IN_BED, IN_BED -> BED_EXIT_ALERT,
+        # ...) publish to presence.events.<pid>. Brief gaps where
+        # run_once returns None (gross motion windows) don't step the
+        # machine, so the state stays put and the time-based thresholds
+        # absorb the gap rather than producing a false bed-exit.
+        if presence_sm is not None and presence_topic is not None:
+            ev = presence_sm.step(ts_unix=now, present=bool(vitals.present))
+            if ev is not None:
+                bus.publish(
+                    presence_topic,
+                    {
+                        "ts_unix": now,
+                        "patient_id": patient_id,
+                        "state": ev.state,
+                        "prev_state": ev.prev_state,
+                        "since_unix": ev.since_unix,
+                        "sensor": "radar",
+                    },
+                    ts_ms=int(now * 1000),
+                )
+                if metrics is not None:
+                    metrics["predictions_total"].labels(patient_id, "presence").inc()
+
+        # Apnea side-channel: runs on its own (longer) stride so the
+        # 10 s pause minimum is detectable. The apnea window is a
+        # separate _Window with `apnea_window_s` of history, fed by the
+        # same per-chirp push above. Events with absolute timestamps are
+        # deduped against last_apnea_event_end_unix so consecutive
+        # snapshots that re-observe the same pause don't double-publish.
+        if (
+            apnea_window is not None
+            and apnea_topic is not None
+            and (now - last_apnea_check) >= apnea_stride_s
+        ):
+            last_apnea_check = now
+            apnea_snapshot_frames = apnea_window.snapshot()
+            if apnea_snapshot_frames:
+                window_start_unix = apnea_snapshot_frames[0].ts_unix
+                events = apnea_run_once(
+                    apnea_window,
+                    config,
+                    expected_samples_per_chirp,
+                    min_duration_s=apnea_min_duration_s,
+                )
+                if events:
+                    last_apnea_event_end_unix = _publish_apnea_events(
+                        events=events,
+                        bus=bus,
+                        topic=apnea_topic,
+                        patient_id=patient_id,
+                        window_start_unix=window_start_unix,
+                        last_event_end_unix=last_apnea_event_end_unix,
+                        sensor="radar",
+                    )
+                    if metrics is not None:
+                        metrics["predictions_total"].labels(patient_id, "apnea").inc()
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -385,6 +601,78 @@ def main() -> None:
     )
     p.add_argument("--no-rr", action="store_true", help="disable RR estimation")
     p.add_argument(
+        "--no-apnea",
+        action="store_true",
+        help=(
+            "disable apnea detection. Default: enabled; publishes events on "
+            "apnea.events.<patient_id> when a respiratory pause >= "
+            "--apnea-min-duration is detected."
+        ),
+    )
+    p.add_argument(
+        "--apnea-window-s",
+        type=float,
+        default=30.0,
+        help=(
+            "apnea rolling-buffer length in seconds. Must be > "
+            "--apnea-min-duration so the detector has surrounding non-apnea "
+            "data to set its RMS floor against."
+        ),
+    )
+    p.add_argument(
+        "--apnea-stride-s",
+        type=float,
+        default=10.0,
+        help="run apnea check every N seconds (less often than HR/RR "
+        "because pauses are by nature multi-second).",
+    )
+    p.add_argument(
+        "--apnea-min-duration-s",
+        type=float,
+        default=10.0,
+        help="minimum pause length to count as apnea (clinical floor is 10 s).",
+    )
+    p.add_argument(
+        "--no-presence",
+        action="store_true",
+        help=(
+            "disable presence + bed-exit state machine. Default: enabled; "
+            "publishes state transitions on presence.events.<patient_id> "
+            "(OUT -> IN_BED after sustained presence, IN_BED -> "
+            "BED_EXIT_ALERT after sustained absence)."
+        ),
+    )
+    p.add_argument(
+        "--presence-in-bed-stable-s",
+        type=float,
+        default=30.0,
+        help=(
+            "contiguous presence (seconds) required before declaring "
+            "IN_BED. Brief presence (caregiver crossing the radar beam) "
+            "does not flip the state."
+        ),
+    )
+    p.add_argument(
+        "--presence-bed-exit-after-s",
+        type=float,
+        default=60.0,
+        help=(
+            "contiguous absence (seconds) from IN_BED before triggering "
+            "BED_EXIT_ALERT. Brief absence does not fire the alert."
+        ),
+    )
+    p.add_argument(
+        "--hrv-confidence-threshold",
+        type=float,
+        default=0.7,
+        help=(
+            "beat-detection confidence (0..1) below which HRV fields are "
+            "nulled out in the published HR message. HR itself still "
+            "publishes (it comes from the spectral estimator); only the "
+            "per-beat IBI-derived HRV (sdnn / rmssd / pnn50) is gated."
+        ),
+    )
+    p.add_argument(
         "--from-start",
         action="store_true",
         help=(
@@ -404,7 +692,13 @@ def main() -> None:
     # The radar DSP is geometric, not learned -- the config is the only
     # adjustable surface, and the defaults match the IWRL6432BOOST profile
     # documented in docs/RADAR_PHASE0_NOTES.md.
-    config = RadarConfig()
+    #
+    # n_rx is informational here: the DSP detects 2-D vs 3-D ADC cubes
+    # at runtime, so the worker correctly handles whatever the collector
+    # publishes. Honoring VIFI_RADAR_N_RX keeps the worker's config object
+    # in sync with what the collector is emitting (useful for log lines
+    # and downstream metadata).
+    config = RadarConfig(n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")))
 
     metrics_enabled = os.environ.get("VIFI_METRICS_ENABLED", "").lower() in (
         "1",
@@ -429,6 +723,14 @@ def main() -> None:
         stride_s=args.stride,
         config=config,
         publish_rr=not args.no_rr,
+        publish_apnea=not args.no_apnea,
+        apnea_window_s=args.apnea_window_s,
+        apnea_stride_s=args.apnea_stride_s,
+        apnea_min_duration_s=args.apnea_min_duration_s,
+        publish_presence=not args.no_presence,
+        presence_in_bed_stable_s=args.presence_in_bed_stable_s,
+        presence_bed_exit_after_s=args.presence_bed_exit_after_s,
+        hrv_confidence_threshold=args.hrv_confidence_threshold,
         from_id=EARLIEST if args.from_start else LATEST,
         metrics=metrics,
         stop=stop,

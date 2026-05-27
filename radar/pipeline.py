@@ -25,13 +25,25 @@ from radar.dsp import DspInfo, extract_displacement
 from radar.eval import coverage_fraction
 from radar.vitals import (
     cardiac_signal,
-    detect_beats,
+    detect_beats_matched,
     heart_rate_spectral,
     hrv_metrics,
     ibi_seconds,
+    match_filter_confidence,
     motion_mask,
     respiration_rate,
 )
+
+PRESENCE_SCR_THRESHOLD = 10.0
+"""Signal-to-clutter ratio above which a body is considered present in
+the tracked chest range bin. Computed in extract_displacement as
+`chest_energy / median_other_energy` post-MTI. Synth empirics: a
+breathing subject yields SCR ~ 10000, an empty room yields SCR ~ 1.
+A threshold of 10 sits orders of magnitude above the empty-room
+baseline and well below the present-subject reading, so the threshold
+is robust across the synth's range of conditions. Calibrate per-room
+once real captures land; the default is a safe synth-derived starting
+point."""
 
 
 @dataclass
@@ -60,6 +72,20 @@ class VitalsResult:
     """The isolated cardiac signal beats were detected on."""
     dsp_info: DspInfo = field(repr=False)
     """DSP-stage diagnostics (bin track, circle fit)."""
+    present: bool = False
+    """Whether the pipeline detected a body in the chest range bin during
+    this capture. Derived from the post-MTI signal-to-clutter ratio at
+    the tracked chest bin vs `PRESENCE_SCR_THRESHOLD`; empty-room
+    captures (or full-capture apnea injection) collapse the SCR to ~1
+    and report present=False."""
+    beat_confidence: float = 0.0
+    """Spectral-peakiness proxy for beat-detection reliability, in
+    [0, 1]. A clean cardiac signal produces ~1.0; noisy / motion-
+    contaminated windows drop toward 0. The radar inference worker
+    keys the spectral-fallback gate off this: when confidence is low,
+    HRV fields in the published message are nulled out (HR can still
+    come from `heart_rate_spectral`, which doesn't depend on per-beat
+    detection)."""
 
 
 def _longest_still_run(gated: np.ndarray) -> tuple[int, int]:
@@ -140,10 +166,35 @@ def process(
         else float("nan")
     )
 
-    all_beats = detect_beats(cardiac, fs)
+    # Matched-filter beat detection is the production default: small but
+    # consistent F1 improvement over plain peak-finding across the full
+    # SNR sweep (head-to-head ~+0.01 on the 45 s synth at 72 bpm). The
+    # raw peak-finding fallback (`radar.vitals.detect_beats`) is still
+    # exported for diagnostics and ablation testing.
+    all_beats = detect_beats_matched(cardiac, fs)
     # Motion gating: drop beats that land in a flagged motion frame.
     valid_beats = all_beats[~gated[all_beats]] if all_beats.size else all_beats
     ibi = _still_run_ibis(valid_beats, gated, fs)
+
+    # Presence: post-MTI signal-to-clutter ratio at the chest bin. A
+    # real body produces orders-of-magnitude more residual energy than
+    # any other bin after clutter removal (the body's motion survives
+    # MTI; static clutter doesn't). The ratio test is robust to absolute
+    # signal levels (subject distance, radar gain). See dsp_info docs.
+    if dsp_info.median_other_energy > 0.0:
+        scr = dsp_info.chest_energy / dsp_info.median_other_energy
+    else:
+        scr = 0.0
+    present = bool(scr > PRESENCE_SCR_THRESHOLD)
+
+    # Beat-detection confidence proxy: spectral peakiness of the cardiac
+    # signal. The radar inference worker uses this for the spectral-
+    # fallback gate (low confidence -> HR still publishes, HRV is
+    # nulled because the per-beat detection isn't reliable enough).
+    if has_still:
+        beat_confidence = match_filter_confidence(cardiac[run_lo:run_hi], fs)
+    else:
+        beat_confidence = match_filter_confidence(cardiac, fs)
 
     return VitalsResult(
         hr_bpm=hr_bpm,
@@ -157,4 +208,6 @@ def process(
         displacement_m=displacement,
         cardiac=cardiac,
         dsp_info=dsp_info,
+        present=present,
+        beat_confidence=beat_confidence,
     )

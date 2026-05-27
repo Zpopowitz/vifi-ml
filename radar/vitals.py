@@ -17,7 +17,11 @@ Public API:
     respiration_rate(displacement, fs) -> rr_bpm
     harmonic_comb_notch(x, fs, f_resp_hz) -> notched
     cardiac_signal(displacement, fs) -> (cardiac, f_resp_hz)
-    detect_beats(cardiac, fs) -> beat sample indices
+    cardiac_template(fs, hr_bpm_hint) -> unit-norm beat template
+    detect_beats(cardiac, fs) -> beat sample indices (peak finding)
+    detect_beats_matched(cardiac, fs, template=None) -> beat sample
+        indices (matched filter; pipeline default, higher F1 in the SNR
+        regime real radar lands in)
     motion_mask(displacement, fs) -> per-frame bool (True = motion)
     heart_rate_bpm(beats, fs) -> bpm
     hrv_metrics(ibi_s) -> dict(sdnn_ms, rmssd_ms, pnn50_pct)
@@ -26,7 +30,14 @@ Public API:
 from __future__ import annotations
 
 import numpy as np
-from scipy.signal import butter, filtfilt, find_peaks, iirnotch, sosfiltfilt
+from scipy.signal import (
+    butter,
+    correlate,
+    filtfilt,
+    find_peaks,
+    iirnotch,
+    sosfiltfilt,
+)
 
 from radar.config import (
     CARDIAC_BAND_HZ,
@@ -191,13 +202,115 @@ def detect_beats(cardiac: np.ndarray, fs: float) -> np.ndarray:
     return beats
 
 
+# Default HR hint for the matched-filter template. The template spans
+# one full cycle at this rate; the matched filter is robust to subjects
+# whose actual HR is +/- ~30% of this without re-tuning, because the
+# correlation peak still picks out the beat even when the template is
+# slightly off-frequency. Calibrate per-subject once real captures land.
+DEFAULT_TEMPLATE_HR_BPM = 72.0
+
+
+def cardiac_template(
+    fs: float,
+    hr_bpm_hint: float = DEFAULT_TEMPLATE_HR_BPM,
+) -> np.ndarray:
+    """A unit-norm, peak-centered beat template, shape (cycle_samples,).
+
+    Models the shape of a single heartbeat in the post-pipeline cardiac
+    signal: an upward bell whose peak sits at the array's midpoint and
+    decays smoothly toward both ends. Symmetry around the midpoint is
+    load-bearing -- `scipy.signal.correlate(x, template, mode="same")`
+    aligns the template's CENTER with each output index, so a peak in
+    the correlation lands at the cardiac signal's beat sample only when
+    the template's peak coincides with its center. An asymmetric
+    template (e.g., a sinusoid with a phase-offset 2nd harmonic) shifts
+    the correlation peak away from the beat by the template-peak vs
+    center offset.
+
+    `hr_bpm_hint` only sets the template's cycle length. Real subjects
+    whose HR differs from the hint still light up the matched filter --
+    a one-cycle sinusoidal-bell template is broadband enough in the
+    cardiac band to tolerate ~30 percent HR mismatch.
+    """
+    f0 = hr_bpm_hint / 60.0
+    cycle_s = 1.0 / f0
+    n = max(8, int(round(cycle_s * fs)))
+    # t spans [-cycle_s/2, +cycle_s/2). A cosine over this range peaks
+    # exactly at t=0 (index n//2) and is symmetric. The cos(pi * f0 * t)
+    # is half a full cycle: 1 at center, 0 at the ends. Squaring tightens
+    # the peak toward something pulse-like without losing symmetry; the
+    # matched-filter response stays broadband enough to catch beats
+    # whose actual shape may have small asymmetries.
+    t = (np.arange(n) - n / 2) / fs
+    bell = np.cos(np.pi * f0 * t) ** 2
+    # Subtract the mean so the template integrates to zero -- correlating
+    # against a non-zero-mean template would amplify DC drift instead of
+    # beats. (`detrend` on the cardiac signal already removes DC, but
+    # the template's own mean must also be zero for the matched filter
+    # to be optimal.)
+    wave = bell - float(np.mean(bell))
+    # Unit-norm so correlation output amplitude tracks signal energy
+    # rather than template scale.
+    norm = float(np.linalg.norm(wave))
+    if norm <= 0.0:
+        return wave
+    return wave / norm
+
+
+def detect_beats_matched(
+    cardiac: np.ndarray,
+    fs: float,
+    template: np.ndarray | None = None,
+) -> np.ndarray:
+    """Matched-filter beat detection: cross-correlate the cardiac signal
+    with a parametric beat template, then peak-find on the correlation.
+
+    The matched filter is optimal for detecting a known shape in white
+    noise; its SNR gain over raw peak detection on the same signal is
+    sqrt(template_energy / noise_variance), which matters at the lower
+    SNR levels we expect on real radar captures. On clean synth it
+    returns the same beat count as `detect_beats` (the peak-finding
+    fallback also works when noise is negligible). On noisy signals it
+    finds beats `detect_beats` misses and rejects spurious peaks
+    `detect_beats` would accept.
+
+    Returns beat sample indices, same shape contract as `detect_beats`.
+    """
+    cardiac = np.asarray(cardiac, dtype=np.float64)
+    if cardiac.size == 0:
+        return np.asarray([], dtype=np.int64)
+    if template is None:
+        template = cardiac_template(fs)
+    template = np.asarray(template, dtype=np.float64)
+
+    # True cross-correlation (not np.convolve, which would lag by ~half
+    # the template length when the template is centered). With the
+    # template's peak at its midpoint and mode='same', the correlation
+    # peaks at the beat sample in `cardiac`.
+    correlation = correlate(cardiac, template, mode="same")
+
+    # Refractory period + prominence floor mirror `detect_beats`: the
+    # matched-filter pre-pass replaces "raw signal" with "correlation
+    # output," but the same physiological gating applies on top.
+    min_distance = max(1, int(round(fs * 60.0 / HR_MAX_BPM)))
+    prominence = 0.3 * np.std(correlation)
+    if prominence <= 0.0:
+        return np.asarray([], dtype=np.int64)
+    peaks, _ = find_peaks(correlation, distance=min_distance, prominence=prominence)
+    beats: np.ndarray = peaks
+    return beats
+
+
 def motion_mask(
     displacement: np.ndarray,
     fs: float,
     window_s: float = 1.5,
     velocity_threshold_m_s: float = 0.020,
+    adaptive: bool = False,
+    adaptive_baseline_s: float = 8.0,
+    adaptive_multiplier: float = 5.0,
 ) -> np.ndarray:
-    """Per-frame motion gate — True where gross body motion is present.
+    """Per-frame motion gate -- True where gross body motion is present.
 
     Gross motion is detected from sliding-window RMS *velocity* (the
     displacement derivative), not amplitude: velocity scales with both
@@ -205,6 +318,18 @@ def motion_mask(
     ~5 mm breathing even though both are low-frequency. During motion
     the vitals are unreadable and the pipeline must emit "no reading"
     rather than a fabricated number.
+
+    Adaptive mode (off by default for backward compat):
+      Reads the median sliding-RMS velocity over the first
+      `adaptive_baseline_s` seconds, then gates at
+      `max(velocity_threshold_m_s, adaptive_multiplier * baseline_rms)`.
+      Falls back to the global threshold if the input is too short to
+      establish a baseline. The radar audit (DSP recommendation #3)
+      called this out: a global threshold mis-fits subjects whose
+      still-breathing RMS sits unusually close to or above 0.020 m/s
+      -- the adaptive multiplier scales the gate so deep-breathing
+      subjects are not falsely flagged while a real cm-scale sway is
+      still well above the multiple-of-baseline floor.
     """
     displacement = np.asarray(displacement, dtype=np.float64)
     velocity = np.gradient(displacement) * fs
@@ -212,7 +337,60 @@ def motion_mask(
     # Sliding-window RMS via a uniform moving average of velocity^2.
     kernel = np.ones(win) / win
     rms = np.sqrt(np.convolve(velocity**2, kernel, mode="same"))
-    return rms > velocity_threshold_m_s
+
+    threshold = velocity_threshold_m_s
+    if adaptive:
+        baseline_n = int(round(adaptive_baseline_s * fs))
+        if baseline_n > win and rms.size >= baseline_n:
+            # The first window-worth of frames have edge-effect RMS;
+            # skip them when computing the per-subject baseline.
+            baseline_segment = rms[win // 2 : baseline_n]
+            baseline = float(np.median(baseline_segment))
+            adaptive_threshold = adaptive_multiplier * baseline
+            threshold = max(threshold, adaptive_threshold)
+    return rms > threshold
+
+
+def match_filter_confidence(
+    cardiac: np.ndarray,
+    fs: float,
+    template: np.ndarray | None = None,
+) -> float:
+    """Confidence proxy for matched-filter beat detection, in [0, 1].
+
+    Returns the cardiac-band spectral peakiness: high (~1) when the
+    signal has a sharp spectral concentration at the HR fundamental
+    (canonical heart-driven cardiac signal), low (~0) when the
+    cardiac-band spectrum is flat (canonical noise). The radar
+    pipeline uses this as a spectral-fallback gate: when confidence
+    is low the HRV fields are marked as low-coverage in the published
+    message, because HRV is only meaningful when beats are reliably
+    detected. HR can still come from `heart_rate_spectral`, which is
+    relatively independent of per-beat detection.
+
+    `template` is accepted for API symmetry with detect_beats_matched
+    but isn't used by the spectral-peakiness proxy. A refractory-
+    period-aware IBI-regularity proxy was tried first but the minimum-
+    spacing constraint forced noise to look semi-regular -- false-high
+    confidence at noise. The spectral test is the right primitive.
+    """
+    del template  # not used; signature kept for API symmetry
+    cardiac = np.asarray(cardiac, dtype=np.float64)
+    if cardiac.size == 0 or not np.any(cardiac):
+        return 0.0
+    freqs, magnitude = _band_spectrum(cardiac, fs)
+    in_band = (freqs >= CARDIAC_BAND_HZ[0]) & (freqs <= CARDIAC_BAND_HZ[1])
+    if not np.any(in_band):
+        return 0.0
+    band_mag = magnitude[in_band]
+    peak = float(np.max(band_mag))
+    if peak <= 0.0:
+        return 0.0
+    median = float(np.median(band_mag))
+    # Peakiness = 1 - median/peak. A sharp peak (one tall bin, the rest
+    # near floor) maxes out at ~1; a flat band (median == peak) reads
+    # 0. Clean ~72-bpm sine: 0.99. White noise: 0.1-0.2.
+    return float(np.clip(1.0 - (median / peak), 0.0, 1.0))
 
 
 def ibi_seconds(beats: np.ndarray, fs: float) -> np.ndarray:
