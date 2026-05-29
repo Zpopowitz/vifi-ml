@@ -1,7 +1,8 @@
 """FTDI/SPI consumer for raw ADC streaming from the IWRL6432BOOST.
 
 Wraps a C232HM-DDHSL-0 USB-to-SPI cable (FT232H) via ``pyftdi``, configured
-as SPI master at 30 MHz. The TI motion_and_presence demo (built with
+as SPI master at 15 MHz (matching TI's reference reader). The TI
+motion_and_presence demo (built with
 ``SPI_ADC_DATA_STREAMING=1``) acts as the SPI peripheral: after each
 radar frame, the M4F core drops the SPI_BUSY GPIO low, then transmits
 ``adcDataPerFrame`` bytes (raw ADC samples) via MCSPI, then raises
@@ -9,7 +10,7 @@ SPI_BUSY high.
 
 This module:
 1. Opens the FT232H via pyftdi (needs udev rules for non-root access)
-2. Configures SPI master at 30 MHz, mode 0 (CPOL=0, CPHA=0)
+2. Configures SPI master at 15 MHz, mode 0 (CPOL=0, CPHA=0)
 3. Polls the SPI_BUSY pin (cable pin Grey = FT232H AD4)
 4. On falling edge, reads ``adc_bytes_per_frame`` bytes
 5. Parses bytes as int16 real-valued ADC samples
@@ -28,10 +29,10 @@ Cable color -> FT232H pin (C232HM-DDHSL-0 datasheet):
   Red     -    DO NOT CONNECT (3.3 V output)
   Black   -    GND
 
-Bandwidth check (board-day cfg, 2026-05-26):
+Bandwidth check (MotionDetect.cfg, 2026-05-29):
   per-frame ADC bytes = nChirpsInBurst * nBurstsInFrame * nAdcSamples * nRx * 2
-                      = 2 * 8 * 256 * 3 * 2  =  24,576 bytes (24 KB)
-  At measured 4.7 frames/sec: 0.92 Mbit/s on a 30 Mbit/s link -> 32.5x headroom.
+                      = 2 * 16 * 256 * 3 * 2  =  49,152 bytes (48 KB)
+  At ~5 frames/sec: 1.97 Mbit/s on a 15 Mbit/s link -> ~7.6x headroom.
 """
 
 from __future__ import annotations
@@ -53,6 +54,27 @@ log = logging.getLogger("vifi.radar.ftdi_spi")
 SPI_BUSY_BIT = 4
 SPI_BUSY_MASK = 1 << SPI_BUSY_BIT
 
+
+def deframe_adc_int16(raw: bytes) -> np.ndarray:
+    """De-frame raw SPI bytes into signed int16 ADC samples, matching TI.
+
+    The IWRL6432 MCSPI slave streams the ADC buffer as 32-bit words, MSB
+    first. TI's reference reader (``tools/spi_adc_streaming/source/spi_fccsp.py``)
+    de-frames those bytes as: group every 4 bytes into a big-endian uint32
+    word, then split each word into two signed int16s emitting the LOW half
+    first, then the HIGH half (``parser()`` + ``printfile_format()``).
+
+    Equivalently: read big-endian int16 pairs and swap the two halves within
+    each 32-bit word. A naive ``np.frombuffer(raw, np.int16)`` (native
+    little-endian, no word split) produces a different, scrambled stream --
+    this function is pinned to TI's logic by ``tests/test_ftdi_spi_deframe.py``.
+    Trailing bytes that don't fill a 32-bit word are dropped (TI does the same).
+    """
+    n4 = (len(raw) // 4) * 4
+    words = np.frombuffer(raw[:n4], dtype=">i2").reshape(-1, 2)
+    return words[:, ::-1].reshape(-1).astype(np.int16)
+
+
 # FT232H VID:PID
 FTDI_VID = 0x0403
 FT232H_PID = 0x6014
@@ -62,12 +84,14 @@ FT232H_PID = 0x6014
 class FtdiSpiConfig:
     """Configuration for the FTDI/SPI consumer."""
 
-    # SPI clock (firmware drives at 30 MHz per loeens spi_transmit.c)
-    spi_freq_hz: int = 30_000_000
+    # SPI clock. TI's reference reader (spi_fccsp.py set_device) runs the
+    # FT232H master at 15 MHz; match it.
+    spi_freq_hz: int = 15_000_000
     # Chirp + frame structure (must match the flashed firmware's cfg).
-    # Defaults match MotionDetect.cfg with 3 RX enabled.
+    # Defaults match MotionDetect.cfg: frameCfg NumOfChirpsInBurst=2,
+    # NumOfBurstsInFrame=16 (arg4; NOT NumOfChirpsAccum=8), 3 RX enabled.
     n_chirps_in_burst: int = 2
-    n_bursts_in_frame: int = 8
+    n_bursts_in_frame: int = 16
     n_adc_samples: int = 256
     n_rx: int = 3
     # Bytes per ADC sample. int16 real-valued = 2.
@@ -205,8 +229,9 @@ class SpiFtdiReader:
         from tools.radar_collector import Chirp  # noqa: PLC0415
 
         c = self._ftdi
-        # int16 LE, total samples = n_chirps * n_rx * n_adc_samples
-        samples = np.frombuffer(data, dtype=np.int16)
+        # De-frame to int16 using TI's byte order (big-endian 32-bit words,
+        # low16/high16 split). total samples = n_chirps * n_rx * n_adc_samples
+        samples = deframe_adc_int16(data)
         expected_samples = c.chirps_per_frame * c.n_rx * c.n_adc_samples
         if samples.size != expected_samples:
             log.warning(

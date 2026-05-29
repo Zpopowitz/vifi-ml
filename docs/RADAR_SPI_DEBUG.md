@@ -308,3 +308,87 @@ The board hangs in `MCSPI_transfer` whenever SPI streaming is active; it was
 left frozen (0 UART bytes). **Reset the board** to recover normal TLV. The
 radar services were left stopped:
 `ssh -t pi 'sudo systemctl start vifi-radar-collector vifi-radar-inference'`.
+
+## Update 2026-05-29 (PM): reproduced with TI's OWN reader -> firmware confirmed
+
+Drove a full capture live from the dev machine (board direct-attached to
+Windows; control UART = XDS110 App UART on **COM8**, C232HM = "USB Serial
+Converter" / **COM9**), using **TI's own reference reader**
+`tools/spi_adc_streaming/adcDataSPIFTDI.exe` (PE32+ Windows x86-64, the same
+tool `spi_fccsp.py` builds). Procedure exactly per TI's demo guide:
+S1.1+S1.6 ON, `lowPowerCfg 0`, full cfg minus `sensorStart`, `adcLogging 2`
+BEFORE `sensorStart`.
+
+What we observed:
+* `adcLogging 2` sets up cleanly every time: `spiADCStream set to 1`,
+  Pinmux/clock/MCSPI init done, `Drivers_mcspiOpen` OK,
+  **`adcDataPerFrame=49152`** (chirpsInBurst=2 burstsInFrame=16 adcSamples=256
+  nRx=3). The CLI confirms `adcLogging: <0-disable,1-enableDCA,2-enableSPI>...`
+  exists, and probing it with no args returns "Invalid usage" WITHOUT
+  triggering the EDMA alloc (safe to probe).
+* `sensorStart` -> `Done`, then the board **hangs (CLI goes silent) every
+  single time** SPI streaming is active. TI's reader spins forever waiting for
+  `SPI_BUSY` to go low; it never does.
+* **Recovery: NRST (the reset button) is required. A USB power-cycle alone is
+  NOT sufficient** -- the board stays silent until NRST. (New ops fact; the
+  earlier notes' "reset the board" means NRST, not just re-plug.)
+* Factory calibration is intermittently flaky (`Factory Calibration failure`
+  on one `sensorStart`); cleared by power-cycle + NRST.
+
+**This conclusively rules out the entire host surface.** TI's matched
+firmware+reader pair fails identically to our pyftdi reader, so it is NOT the
+host read protocol, the switches, the wiring colors, the cfg, the command
+ordering, or config size. **The bug is in the firmware's per-frame SPI
+transmit path.**
+
+### Root cause (high confidence) -- the busy handshake + blocking transfer
+
+Source read of `source/dpc/dpc.c:2582-2642` (the `#if SPI_ADC_DATA_STREAMING`
+block) shows the per-frame loop:
+1. `GPIO_pinWriteLow(gpioBaseAddrLed, pinNumLed)` -- drive "busy" LOW
+   (data-ready) -- then
+2. `MCSPI_transfer(...)` -- **blocking, no timeout** -- then
+3. `GPIO_pinWriteHigh(...)` -- raise "busy" HIGH.
+
+Two firmware defects:
+* **Wrong busy GPIO (leading hypothesis).** `gpioBaseAddrLed`/`pinNumLed`
+  resolve (motion_detect.c:1662) to `GPIO_LED_BASE_ADDR`/`GPIO_LED_PIN`, which
+  the generated `ti_drivers_config.h` maps to GPIO_U pin 5 = **`PAD_AV`**.
+  `PAD_AV` is the **on-board LED pad** (confirmed: TI's `gpio_led_blink`
+  example uses `PAD_AV`). But the FTDI grey/SPI_BUSY wire is on net
+  **`DCA_LP_HOST_INTR_1`** (per the bench wiring cheat sheet). If those are
+  different pads, the firmware is "signaling ready" on the LED while the FTDI
+  master watches a pin nothing drives -> master never clocks -> the blocking
+  transfer never completes -> DPC + board hang. Matches every symptom.
+  (NOTE: not independently proven at the pad level -- the bench logic-analyzer
+  attempt was inconclusive due to flaky claw contact and inconsistent
+  red/green readings. It is the strongest hypothesis from code + syscfg +
+  wiring sheet, to be confirmed/closed by the clean rebuild.)
+* **Blocking `MCSPI_transfer` with no timeout.** Independent of the pin
+  question, this turns any missed handshake into a hard hang of the whole
+  system instead of a recoverable error.
+
+Note: `example.syscfg` assigns **no MCSPI peripheral** (only GPIO_LED->PAD_AV,
+UART->PAD_AO/AP, I2C->PAD_AG/AH, QSPI flash AA-AF); the SPI pads are muxed at
+the board level by **S1.6**. The running image is our **custom VIFI-DBG
+build**, not stock TI -- so the busy-GPIO choice and missing timeout are very
+likely OUR edits, not TI's intended implementation.
+
+### Fix = clean rebuild, not a re-flash of stock
+
+See **`docs/RADAR_SPI_FIRMWARE_FIX.md`** for the full plan. Short version:
+stock TI prebuilt has "ADC STREAMING via SPI" OFF by default (TI doc), so
+flashing a prebuilt loses the feature. The fix is to **rebuild TI's source
+with the Sysconfig toggle ON, the custom VIFI-DBG edits reverted, the busy
+GPIO pointed at the pad the grey wire is on, and a timeout added to
+`MCSPI_transfer`** -- which requires the ARM-clang toolchain (NOT yet
+installed; only `~/ti/sysconfig_1.27.1` is present).
+
+### Host-side prep done this session
+
+`radar/ftdi_spi.py` de-framing was aligned to TI's reference parser
+(big-endian 32-bit words, low16/high16 split -- not naive LE int16), pinned by
+`tests/test_ftdi_spi_deframe.py`; and the config defaults corrected to the
+real profile (15 MHz to match `spi_fccsp.py`; 16 bursts -> 49152 B/frame, the
+old `8` was a misread of `NumOfChirpsAccum`). So the Pi production reader is
+correct and ready for when the firmware works.
