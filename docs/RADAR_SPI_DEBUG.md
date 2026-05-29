@@ -1,7 +1,12 @@
 # Radar B2 (raw ADC over SPI) — debug state 2026-05-26
 
-> To actually run a capture, start with **`docs/RADAR_SPI_RESTART.md`** (clean
-> baseline runbook). This file is the full evidence trail / what's been ruled out.
+> **SOLVED 2026-05-29.** Raw ADC over SPI captures real data end to end (50 frames
+> / 6.24 MB, range -889..677, no hang). Root cause: a per-frame EDMA overrun-write
+> (`ADC_DATA_BUFF_MAX_SIZE` was 8192, config needs 49152) corrupted RAM and hung the
+> M4. Fixed by resizing the buffer + relocating it to `M4F_RAM3`. The reproducible
+> fix (build + flash + capture recipe, the exact edits, working linker.cmd) is in
+> **`docs/radar_spi_firmware/APPLIED_EDITS.md`**. This file below is the historical
+> evidence trail / what was ruled out along the way.
 
 End-of-day notes from board day. Bench-validated through Phase 9 with the
 TLV path, then hit a wall on the FTDI/SPI raw-ADC path. The bug is

@@ -1,6 +1,13 @@
 # Radar SPI raw-ADC: firmware fix plan (clean rebuild)
 
-Status as of 2026-05-29: the raw-ADC-over-SPI path is **firmware-blocked**.
+> **SOLVED 2026-05-29 — see `docs/radar_spi_firmware/APPLIED_EDITS.md` for the
+> reproducible fix that worked.** The actual root cause turned out to be simpler
+> than the busy-pin theory below: a per-frame EDMA overrun-write
+> (`ADC_DATA_BUFF_MAX_SIZE`=8192 vs needed 49152) corrupted RAM and hung the M4.
+> Resizing + relocating the buffer fixed it; the busy/MCSPI handshake was fine.
+> The analysis below is kept as the investigation record.
+
+Status as of 2026-05-29 (superseded): the raw-ADC-over-SPI path was **firmware-blocked**.
 The full evidence trail and root cause are in `docs/RADAR_SPI_DEBUG.md`
 ("Update 2026-05-29 (PM)"). Short version: with TI's own reference reader and
 the correct switches/cfg/ordering, `sensorStart` hangs the board every time
