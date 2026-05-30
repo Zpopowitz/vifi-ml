@@ -136,6 +136,49 @@ class FtdiSpiConfig:
         return self.n_adc_samples * self.n_rx
 
 
+def parse_frame_samples(data: bytes, config: FtdiSpiConfig) -> list[np.ndarray]:
+    """De-frame one SPI frame into per-slow-time-sample complex arrays.
+
+    Each returned array is shaped ``(n_adc_samples, n_rx)`` -- the RX axis is
+    PRESERVED so the DSP can combine the three channels *after* the range FFT
+    (``radar.dsp.mrc_combine``), where coherent combining actually adds. An
+    unaligned complex average across RX on the raw ADC (the old behaviour)
+    mixes whole range profiles at mismatched phases and partially cancels the
+    chest signal, so the combine must not happen here.
+
+    With ``average_chirps_per_frame`` the burst chirps -- which see the same
+    chest position and carry no slow-time/vitals signal -- are averaged into
+    ONE slow-time sample (SNR); otherwise one sample per chirp is returned.
+
+    Byte layout is ``[chirp][rx][sample]`` (chirps outer, rx middle, samples
+    inner), matching the TI MCSPI stream. Raises ``ValueError`` if the byte
+    count doesn't match the configured frame geometry.
+    """
+    from scipy.signal import hilbert  # noqa: PLC0415
+
+    samples = deframe_adc_int16(data)
+    expected = config.chirps_per_frame * config.n_rx * config.n_adc_samples
+    if samples.size != expected:
+        raise ValueError(
+            f"frame size mismatch: got {samples.size} int16 samples, "
+            f"expected {expected}"
+        )
+    # (chirps, rx, samples) real cube; int16 -> float32 for FFT precision.
+    cube = samples.reshape(
+        config.chirps_per_frame, config.n_rx, config.n_adc_samples
+    ).astype(np.float32)
+    # Hilbert across the fast-time (sample) axis -> analytic IQ. The IWRL6432
+    # ADC is real-valued; without IQ phase reconstruction the downstream DACM /
+    # circle-fit can't see the chest displacement.
+    analytic = hilbert(cube, axis=-1).astype(np.complex64)  # (chirps, rx, samples)
+    # Reorder to (chirps, samples, rx): samples is the range-FFT axis and rx is
+    # last, matching radar.dsp's (n_chirps, n_fast, n_rx) multi-RX contract.
+    analytic = np.moveaxis(analytic, 1, 2)
+    if config.average_chirps_per_frame:
+        return [analytic.mean(axis=0)]  # (samples, rx)
+    return [analytic[k] for k in range(config.chirps_per_frame)]  # each (samples, rx)
+
+
 class SpiFtdiReader:
     """Reads raw ADC frames from the IWRL6432BOOST via FTDI/SPI.
 
@@ -216,81 +259,27 @@ class SpiFtdiReader:
         return data
 
     def _parse_frame_to_chirps(self, data: bytes) -> Iterator["Chirp"]:
-        """Split a frame's bytes into per-chirp Chirp objects.
+        """Split a frame's bytes into Chirp objects, RX axis preserved.
 
-        Byte layout (assumed; verify against first real frame):
-        [chirp0 rx0 sample0..255][chirp0 rx1 ...][chirp0 rx2 ...][chirp1 ...]...
-        i.e., n_chirps outer loop, n_rx middle, n_adc_samples inner.
-
-        Pipeline per chirp:
-        1. Reshape int16 LE bytes into (chirps, rx, samples) real cube
-        2. Apply Hilbert transform across samples axis -> analytic signal
-           (complex IQ with reconstructed phase). This is the single most
-           important step: the IWRL6432 ADC is real-valued, and without
-           IQ phase reconstruction, downstream DSP (DACM, circle-fit,
-           cardiac extraction) can't see the chest displacement signal.
-        3. Coherent-average across RX antennas. RX0/1/2 on this BOOST are
-           ~lambda/2 apart, so they all see roughly the same chest signal
-           with slightly different phases. Equal-weight coherent sum
-           gives ~sqrt(n_rx) SNR gain in practice; cardiac-specific MRC
-           would do better but requires per-bin phase alignment (future).
-        4. Yield one Chirp per (chirp_idx, combined samples) pair.
+        Delegates the de-framing + IQ reconstruction to ``parse_frame_samples``
+        (each sample is ``(n_adc_samples, n_rx)``) and wraps the result in the
+        collector's ``Chirp`` dataclass with a monotonically increasing index.
+        The RX channels are NOT combined here -- the DSP front-end combines them
+        after the range FFT (``radar.dsp.mrc_combine``).
         """
         # Late-import the Chirp dataclass to avoid a circular import; the
         # collector module imports this file.
-        from scipy.signal import hilbert  # noqa: PLC0415
-
         from tools.radar_collector import Chirp  # noqa: PLC0415
 
-        c = self._ftdi
-        # De-frame to int16 using TI's byte order (big-endian 32-bit words,
-        # low16/high16 split). total samples = n_chirps * n_rx * n_adc_samples
-        samples = deframe_adc_int16(data)
-        expected_samples = c.chirps_per_frame * c.n_rx * c.n_adc_samples
-        if samples.size != expected_samples:
-            log.warning(
-                "frame size mismatch: got %d int16 samples, expected %d -- skipping",
-                samples.size,
-                expected_samples,
-            )
+        try:
+            samples_list = parse_frame_samples(data, self._ftdi)
+        except ValueError as e:
+            log.warning("%s -- skipping frame", e)
             return
-        # Reshape to (chirps, rx, samples). int16 -> float32 for FFT precision.
-        cube = samples.reshape(c.chirps_per_frame, c.n_rx, c.n_adc_samples).astype(
-            np.float32
-        )
-        # Hilbert across samples axis -> analytic signal (complex64). For each
-        # chirp/rx, scipy.signal.hilbert(x) returns x + j*H(x), where H is the
-        # discrete Hilbert transform along the last axis.
-        analytic = hilbert(cube, axis=-1).astype(np.complex64)
-        # Coherent-average across RX (equal weights) -> (chirps, samples).
-        # This is a quick MRC approximation. For full MRC we'd weight by
-        # per-RX SNR after range-FFT; that's a follow-up once we have a
-        # clean baseline to compare against.
-        combined = analytic.mean(axis=1)  # (chirps, samples), RX-averaged
         ts = time.time()
-        if c.average_chirps_per_frame:
-            # The chirps within a frame are a burst (~ms apart): they see the
-            # same chest position, so they carry NO slow-time (vitals) signal --
-            # they're for SNR. Coherently average them into ONE complex sample
-            # per frame. The slow-time series is then sampled at the FRAME rate,
-            # which is the physically-correct sampling for HR/RR. The firmware
-            # frame rate must be high enough (>= ~17 fps); see frame_rate_hz.
-            yield Chirp(
-                ts_unix=ts,
-                chirp_idx=self._chirp_idx,
-                samples=combined.mean(axis=0),
-            )
+        for samples in samples_list:
+            yield Chirp(ts_unix=ts, chirp_idx=self._chirp_idx, samples=samples)
             self._chirp_idx += 1
-        else:
-            # Legacy: one Chirp per chirp. Bursty slow-time -> wrong fs for
-            # vitals (HR comes back NaN); kept only for raw-capture analysis.
-            for k in range(c.chirps_per_frame):
-                yield Chirp(
-                    ts_unix=ts,
-                    chirp_idx=self._chirp_idx,
-                    samples=combined[k],
-                )
-                self._chirp_idx += 1
 
     def __iter__(self) -> Iterator["Chirp"]:
         while not self._closed:
