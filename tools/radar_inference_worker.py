@@ -599,6 +599,18 @@ def main() -> None:
         help="emit a prediction every N seconds (faster than CSI's 5 s; "
         "radar gives us meaningfully more responsive HR)",
     )
+    p.add_argument(
+        "--frame-rate",
+        type=float,
+        default=100.0,
+        help=(
+            "slow-time sampling rate (Hz) = the radar frame rate the DSP "
+            "assumes. With the collector averaging chirps per frame, set this "
+            "to the firmware frame rate (e.g. 20 for framePeriodicity=50). The "
+            "default 100 matches the legacy per-chirp model (wrong for the "
+            "bursty SPI stream -- yields NaN HR)."
+        ),
+    )
     p.add_argument("--no-rr", action="store_true", help="disable RR estimation")
     p.add_argument(
         "--no-apnea",
@@ -698,7 +710,10 @@ def main() -> None:
     # publishes. Honoring VIFI_RADAR_N_RX keeps the worker's config object
     # in sync with what the collector is emitting (useful for log lines
     # and downstream metadata).
-    config = RadarConfig(n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")))
+    config = RadarConfig(
+        n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")),
+        frame_rate_hz=args.frame_rate,
+    )
 
     metrics_enabled = os.environ.get("VIFI_METRICS_ENABLED", "").lower() in (
         "1",

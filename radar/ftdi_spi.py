@@ -88,14 +88,27 @@ class FtdiSpiConfig:
     # FT232H master at 15 MHz; match it.
     spi_freq_hz: int = 15_000_000
     # Chirp + frame structure (must match the flashed firmware's cfg).
-    # Defaults match MotionDetect.cfg: frameCfg NumOfChirpsInBurst=2,
-    # NumOfBurstsInFrame=16 (arg4; NOT NumOfChirpsAccum=8), 3 RX enabled.
+    # HR profile: small frame so a high, DETERMINISTIC frame rate is sustainable
+    # over SPI (vitals need the frame rate as slow-time, not the chirps -- the
+    # chirps are bursty and averaged away). frameCfg NumOfChirpsInBurst=2,
+    # NumOfBurstsInFrame=2 -> 4 chirps/frame -> 4*3*256*2 = 6144 B/frame (~8x
+    # smaller than the 32-chirp profile, so 20 fps streams with headroom).
     n_chirps_in_burst: int = 2
-    n_bursts_in_frame: int = 16
+    n_bursts_in_frame: int = 2
     n_adc_samples: int = 256
     n_rx: int = 3
     # Bytes per ADC sample. int16 real-valued = 2.
     bytes_per_sample: int = 2
+    # Coherently average the chirps within each frame into ONE slow-time sample
+    # (SNR gain; correct vitals sampling). When True the chirp output rate = the
+    # frame rate. See _parse_frame_to_chirps. Set False only for raw analysis.
+    average_chirps_per_frame: bool = True
+    # Slow-time (frame) sampling rate the DSP should assume, in Hz. With
+    # average_chirps_per_frame this is the firmware frame rate (e.g. 20 fps from
+    # framePeriodicity=50). Must be high enough for the HR band (>= ~17 Hz to
+    # clear the 0.8-3 Hz band-pass and the worker's min-window). Exposed on the
+    # reader's RadarConfig so downstream knows the real fs.
+    frame_rate_hz: float = 20.0
     # How long to wait for SPI_BUSY to go low before giving up on a frame.
     # The demo runs at ~5 Hz, so 2 sec is a generous timeout.
     busy_wait_timeout_s: float = 2.0
@@ -146,6 +159,7 @@ class SpiFtdiReader:
         # exposes a RadarConfig, so we mirror that contract here).
         self.config = RadarConfig(
             samples_per_chirp=self._ftdi.n_adc_samples,
+            frame_rate_hz=self._ftdi.frame_rate_hz,
         )
         self._controller = SpiController(cs_count=1)
         self._controller.configure(self._ftdi.ftdi_url)
@@ -252,15 +266,31 @@ class SpiFtdiReader:
         # This is a quick MRC approximation. For full MRC we'd weight by
         # per-RX SNR after range-FFT; that's a follow-up once we have a
         # clean baseline to compare against.
-        combined = analytic.mean(axis=1)
+        combined = analytic.mean(axis=1)  # (chirps, samples), RX-averaged
         ts = time.time()
-        for k in range(c.chirps_per_frame):
+        if c.average_chirps_per_frame:
+            # The chirps within a frame are a burst (~ms apart): they see the
+            # same chest position, so they carry NO slow-time (vitals) signal --
+            # they're for SNR. Coherently average them into ONE complex sample
+            # per frame. The slow-time series is then sampled at the FRAME rate,
+            # which is the physically-correct sampling for HR/RR. The firmware
+            # frame rate must be high enough (>= ~17 fps); see frame_rate_hz.
             yield Chirp(
                 ts_unix=ts,
                 chirp_idx=self._chirp_idx,
-                samples=combined[k],
+                samples=combined.mean(axis=0),
             )
             self._chirp_idx += 1
+        else:
+            # Legacy: one Chirp per chirp. Bursty slow-time -> wrong fs for
+            # vitals (HR comes back NaN); kept only for raw-capture analysis.
+            for k in range(c.chirps_per_frame):
+                yield Chirp(
+                    ts_unix=ts,
+                    chirp_idx=self._chirp_idx,
+                    samples=combined[k],
+                )
+                self._chirp_idx += 1
 
     def __iter__(self) -> Iterator["Chirp"]:
         while not self._closed:
