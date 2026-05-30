@@ -47,8 +47,12 @@ dur = ts[-1] - ts[0]
 eff_rate = (len(ts) - 1) / dur if dur > 0 else 0.0
 n_uniq_ts = len(np.unique(np.round(ts, 4)))
 print(f"chirps={len(chirps)} cube={adc.shape} window={dur:.2f}s")
-print(f"effective chirp rate = {eff_rate:.1f} chirp/s ; unique timestamps = {n_uniq_ts}")
-print(f"  -> ~{len(chirps) / max(n_uniq_ts, 1):.1f} chirps share each timestamp (per-frame ts)")
+print(
+    f"effective chirp rate = {eff_rate:.1f} chirp/s ; unique timestamps = {n_uniq_ts}"
+)
+print(
+    f"  -> ~{len(chirps) / max(n_uniq_ts, 1):.1f} chirps share each timestamp (per-frame ts)"
+)
 # crude signal check: per-chirp mean phase variation across the window
 ph = np.angle(adc[:, adc.shape[1] // 4])  # a mid range bin, slow-time phase
 print(f"slow-time phase std (one bin) = {np.std(np.unwrap(ph)):.3f} rad")
