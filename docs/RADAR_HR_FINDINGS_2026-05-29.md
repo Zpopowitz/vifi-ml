@@ -76,18 +76,42 @@ Per-capture correlation of radar HR vs H10, sliding 20s windows, mean clutter:
 5. **Widening the cardiac band past 150 bpm** — no effect; the radar's peaks are
    already below 150 because of the low artifact, not because of clipping.
 
-## The actual bottleneck + next work (all offline-able on this dataset)
+## The bottleneck — investigated offline 2026-05-30, spectral methods are at their ceiling
 
-A persistent ~80 bpm peak dominates the cardiac band regardless of true HR.
-Forcing the search band to 90-180 Hz recovered ~111 bpm on a true-140 segment
-(vs 82.8 default), proving the true peak is present but out-competed — but a
-fixed high-pass would break rest. The work:
-- Identify the ~80 artifact (respiration harmonic? clutter residual? structural)
-  and suppress it (the harmonic notch exists but isn't removing it — investigate
-  f_resp accuracy and notch width).
-- Peak disambiguation that doesn't need to know the HR a priori.
-- More captures across HR to confirm r=+0.56 isn't partly the shared decay trend
-  (n=2 elevated captures so far).
+The ~80 bpm artifact **is a respiration harmonic** (`tools/spi_debug/artifact_probe.py`):
+at rest f_resp~16.7 brpm puts the 5th harmonic at 83; in `post_activity_3` (fast
+breathing ~27 brpm) the 3rd harmonic lands at 81, and the notch removes it when
+keyed right. Two findings killed every spectral fix:
 
-Deployment hardening (continuous monitoring, unattended NRST recovery, stream
-trimming) is parked until HR is trustworthy. See [[project_radar_hr_snr_bound]].
+1. **The respiration estimate is unreliable** — on elevated captures it locks onto
+   a sub-0.12 Hz drift and reports ~6 brpm when breathing is actually ~25-30, so
+   the harmonic notch is mis-keyed.
+2. **But fixing it makes HR *worse*** (`resp_notch_experiment.py`): correctly
+   keying the notch drops pooled MRC tracking from r=+0.56 to **r=+0.01**, because
+   the heartbeat geometrically *collides* with the respiration harmonics — notch
+   the harmonic and you notch the heartbeat. This is the hard case the
+   `radar.vitals.heart_rate_spectral` docstring already calls out, now confirmed
+   on real data.
+
+Nothing beats the baseline: notch as-is r=+0.56 / MAE 27; notch OFF r=+0.46;
+notch correctly-keyed r=+0.01; band-widening no effect. **Hand-tuned spectral
+peak-picking + harmonic notching has hit its ceiling here** — the heartbeat is
+weak and overlaps the respiration harmonics, which single-capture spectral methods
+fundamentally cannot separate.
+
+### Where that leaves HR
+
+- **Learned model (the real path).** A temporal/morphological model
+  ([[radarODE-MTL]] is already the roadmap's Phase 3 backbone) can separate the
+  heartbeat from harmonics using beat shape + sequence structure that a spectral
+  picker can't. Needs a real labeled dataset — which is what we started building
+  today. This is the highest-value direction.
+- **Better SNR (geometry/hardware)** so the heartbeat dominates spectrally:
+  fixed optimal range/angle, or more averaging. Reduces the collision's bite.
+- **More captures across HR** to grow the dataset for the model and to confirm
+  r=+0.56 isn't partly the shared decay trend (n=2 elevated captures so far).
+
+Spectral DSP (Phase 2) remains necessary plumbing (range FFT, MTI, displacement)
+but is not sufficient for accurate HR in this weak-signal regime. Deployment
+hardening (continuous monitoring, unattended NRST recovery, stream trimming) is
+parked until HR is trustworthy. See `project_radar_hr_snr_bound`.
