@@ -115,3 +115,42 @@ Spectral DSP (Phase 2) remains necessary plumbing (range FFT, MTI, displacement)
 but is not sufficient for accurate HR in this weak-signal regime. Deployment
 hardening (continuous monitoring, unattended NRST recovery, stream trimming) is
 parked until HR is trustworthy. See `project_radar_hr_snr_bound`.
+
+## The thru line (2026-05-30): it's a SELECTION problem, oracle = 3.0 bpm
+
+Sharper than "spectral ceiling." Using the H10 to label the true peak in every
+window (`tools/spi_debug/thru_line.py`):
+
+- The true-HR peak is **present in the spectrum 86%** of windows, within a median
+  2.5 bpm of truth, at ~60% the height of the dominant peak. It's there, just
+  rank ~5 by height.
+- **Oracle (perfect selection among candidate peaks) = 3.0 bpm MAE**, vs 41.6 for
+  pick-tallest. So the entire gap is *which peak we pick*, not missing signal.
+  This is a learnable peak-SELECTION problem, not an SNR wall.
+
+Partial discriminators, none truth-grade alone:
+- **off the respiration comb** (dominant peak is on-comb 68%; true peak off-comb
+  64%) -> selector MAE 34.2 (`feature_discriminator.py`)
+- **temporal continuity** (oracle-seeded greedy) -> MAE 13.5
+
+**Hand-tuning the combination FAILS** (`viterbi_selector.py`): an untrained
+Viterbi over candidates (off-comb x height emission + smoothness transition) got
+MAE 40 -- worse than argmax, because the per-peak emission was a bad guess and the
+smoothness prior committed to wrong tracks. **The emission must be LEARNED.**
+
+### Path to oracle
+1. **Dataset** (gating): the H10 labels the correct candidate peak in every
+   window. Need many labeled candidate-peaks (more captures, subjects, HR ranges).
+   28 windows proves the signal + that hand-tuning fails; far too few to train.
+2. **Trained per-peak emission**: XGBoost over each candidate's features
+   (off-comb distance, relative height, prominence, harmonic structure, cross-RX
+   phase) -> P(heartbeat), labeled by H10.
+3. **Continuity/Viterbi on the learned scores** (the structure is fine; it was
+   starved of a good emission).
+4. **Floor-lifters** (raise the oracle itself; ~14% of windows currently have no
+   findable true peak): longer windows (more presence + sharper peak), better SNR
+   via fixed geometry.
+
+Realistic target: single-digit bpm (~5-8), not exactly 3.0 (unrecoverable windows
++ collisions cap it). This is the natural intermediate before radarODE-MTL
+waveform reconstruction: select the right peak first, reconstruct morphology later.
