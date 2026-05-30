@@ -154,3 +154,42 @@ smoothness prior committed to wrong tracks. **The emission must be LEARNED.**
 Realistic target: single-digit bpm (~5-8), not exactly 3.0 (unrecoverable windows
 + collisions cap it). This is the natural intermediate before radarODE-MTL
 waveform reconstruction: select the right peak first, reconstruct morphology later.
+
+## Getting below 3 -> <1 bpm (2026-05-30): the oracle is resolution-limited
+
+The 3.0 oracle was a 20s-window artifact. Spectral HR is bounded by frequency
+resolution 1/T, so the oracle floor drops with window length
+(`thru_line.py`-style sweep):
+
+| window | resolution 1/T | oracle MAE rest | oracle MAE elevated/decay |
+|---|---|---|---|
+| 20s | 3.0 bpm | 2.3 | 3.4 |
+| 45s | 1.3 | 1.0 | 1.3 |
+| 60s | 1.0 | 0.9 | 1.1 |
+| 90s | 0.7 | **0.8** | **0.9** |
+
+So **<1 bpm is reachable spectrally** with 60-90s windows + a near-perfect (learned)
+selector -- cleanest for STABLE HR, which is the resting/bedridden deployment case.
+Longer windows also sharpen peaks (easier selection). Tradeoff: a 90s window is
+90s of averaging -- fine for HR-trend monitoring, useless for beat-to-beat.
+Fast-changing HR smears a long window (the elevated <1 partly flatters the oracle).
+**For HRV and dynamic HR, <1 needs time-domain beat-by-beat** (IBI, how the H10
+does it; resolution-independent) -- the radarODE-MTL endgame. So: resting-HR <1 =
+long windows + learned selector; dynamic-HR/HRV <1 = beat-by-beat.
+
+## RR (respiratory rate) -- the near-term win
+
+RR is the easy signal (respiration is the dominant chest motion). Prototype
+(`tools/spi_debug/rr_probe.py`): band the displacement to **0.12-0.7 Hz** (removes
+the sub-0.12 Hz drift the current estimate locks onto; keeps fast post-exercise
+breathing) and take the dominant peak. Result: plausible RR (rest 17.1 brpm,
+post-exercise 25.4), and it fixes the broken current path (which gave 6.7 brpm
+post-exercise). The H10-RSA cross-check was inconclusive (the IBI spectrum is
+dominated by low-freq HRV, returns ~9 brpm flat -- RSA is too weak to validate
+here). **Proper validation needs the Vernier Go Direct belt in a paired capture.**
+
+Implementation notes: RR must be a SEPARATE estimate from the HR notch -- a
+correctly-keyed respiration estimate activates the harmonic notch and *hurts* HR
+(the collision, above), so the RR output and the HR f_resp must be decoupled. Add
+a continuity tracker (reuse `rr_dsp.py` pattern, 0.50 brpm MAE on CSI). RR is worth
+doing in parallel with the HR dataset/selector work.
