@@ -101,3 +101,35 @@ Add a bounded timeout to the firmware `MCSPI_transfer` (currently
 `SystemP_WAIT_FOREVER`) so a collector restart can't hang the board, and have
 the collector service stop on SIGTERM (clean cable release). Until then, the
 SPI capture needs an operator present for restarts.
+
+## Update 2026-05-29 (PM-2): stable 20 fps achieved; HR real but ~13% low
+
+The frame-rate problem is **solved**. Shrinking the frame to 4 chirps
+(`frameCfg 2 8 600 2 50 0`, 6144 B) + per-frame chirp averaging gives a
+**deterministic 20.0 chirp/s** on the Pi (was drifting 2-5 fps). `radar.process`
+at `fs=20` then returns **real HR: 73.8 bpm, coverage 1.0, 28 beats** over ~22 s,
+vs Polar H10 **~85 bpm**. So the radar tracks the heartbeat, but reads ~13% low.
+
+**Open accuracy gap (next, offline):** 73.8 vs 85 (ratio ~0.87). Either the true
+slow-time rate isn't exactly 20, or there's a DSP bias. Resolve by recording a
+synchronized radar+H10 dataset and validating across a RANGE of HRs (e.g. rest
+vs post-exercise) — do NOT just fudge `fs` to match one point. Also unresolved:
+per-frame-averaged (73.8) vs the earlier per-chirp probe (84.9, which matched
+the H10's 86) — figure out which model is physically right.
+
+**Operational fragility hit repeatedly (needs hardening before unattended use):**
+- Stopping the collector while the board streams hangs the board (no firmware
+  `MCSPI_transfer` timeout) and can wedge the FTDI into uninterruptible USB I/O
+  (survives SIGKILL; needs a physical cable replug). Reset cycle = replug FTDI +
+  NRST every iteration.
+- Running two collectors / the H10 BLE + redis + collector together starves the
+  Pi; the bus publisher hits its error cap and silently drops to redis.
+Fixes: firmware `MCSPI_transfer` timeout; ensure a single collector; the
+collector already handles SIGTERM (closes the cable) but can't when the read is
+already wedged. Until these land, the SPI path needs an operator present.
+
+**Recommended path to accuracy (avoids the live fragility):** with the stable
+20 fps config, record ONE clean synchronized radar+H10 capture to disk (~60-90 s,
+ideally at two HR levels), then do all DSP tuning/validation offline with
+`tools/spi_debug/dsp_probe.py` as the harness. Bake the validated fs/model into
+the collector + worker, add the firmware timeout, then it's set-and-forget.
