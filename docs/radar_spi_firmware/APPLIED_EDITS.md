@@ -92,3 +92,46 @@ board during flashing; only the board USB connected.
 - A defensive `MCSPI` transfer timeout (open params `transferTimeout`, currently
   `WAIT_FOREVER`) was NOT added — not needed once the buffer is correct, but would
   make a future handshake failure non-hanging.
+
+## Update 2026-05-29 (PM-2): MCSPI transfer timeout (robustness) + HR small-frame profile
+
+Two further changes on top of the buffer fix above.
+
+### Edit 5 — bound the MCSPI transfer timeout (firmware)
+File: `source/mmw_cli.c`, `gMcspiOpenParams`:
+```
+- .transferTimeout        = SystemP_WAIT_FOREVER,
++ .transferTimeout        = 1000,   /* ~1 s in system ticks; was WAIT_FOREVER */
+```
+Why: with `WAIT_FOREVER`, if the FTDI host stops clocking (collector
+stopped/restarted) the per-frame blocking `MCSPI_transfer` waits forever and
+hangs the whole DPC task -> board unresponsive, needs NRST + an FTDI replug
+(the cable wedges into uninterruptible USB I/O). With a bounded timeout the
+transfer returns a timeout error, `dpc.c` logs "SPI Raw Data Transfer Failed"
+and continues, and the board stays alive/recoverable. Normal frames complete in
+<50 ms, so it never false-triggers during a live capture. Rebuild + reflash.
+
+### HR capture cfg (runtime, not a firmware edit)
+For heart rate the slow-time sampling = the FRAME rate, and the chirps within a
+frame are a burst (averaged for SNR, no slow-time info). So use a SMALL frame at
+a HIGH, sustainable frame rate. In `MotionDetect.cfg`:
+```
+frameCfg 2 8 600 2 50 0      # 2 chirps x 2 bursts = 4 chirps/frame, 50 ms = 20 fps
+lowPowerCfg 0
+adcLogging 2                 # (sent before sensorStart by radar_kickstart_adc)
+```
+-> `adcDataPerFrame=6144`, deterministic 20.0 fps over SPI. The collector
+(`radar/ftdi_spi.py`, `average_chirps_per_frame=True`, `n_bursts_in_frame=2`,
+`frame_rate_hz=20`) emits one averaged complex sample per frame; the worker runs
+with `--frame-rate 20`. (The old 32-chirp/49152 B frame can't sustain >~5 fps and
+drifts -> HR NaN.) Accuracy still being validated against the Polar H10.
+
+### Flashing from the Pi (board attached to the Pi, not the dev machine)
+arprog + the appimage are staged on the Pi (`~/arprog/`, `~/vifi_mpd_spi.appimage`).
+SOP flash mode = S1.1 OFF + S1.2 OFF, power-cycle, then:
+```
+cd ~/arprog && ~/vifi-ml/.venv/bin/python arprog_cmdline.py \
+  -p /dev/serial/by-id/usb-Texas_Instruments_XDS110*-if00 \
+  -f ~/vifi_mpd_spi.appimage -s SFLASH
+```
+Then run mode (S1.1 ON, S1.6 ON, S1.5 ON), power-cycle + NRST.
