@@ -1,9 +1,25 @@
 # Radar Startup Runbook — IWRL6432BOOST on the ViFi Live Stack
 
-What to do the day the TI IWRL6432BOOST shows up. End state: beat-by-beat
-HR / HRV / respiration drawing on the live dashboard, on the exact same
-widgets that the WiFi CSI stack was driving. No code change needed past
-this runbook.
+> **STATUS (2026-05-31): partly superseded — read this first.** This
+> runbook was written pre-board. Since 2026-05-26 the board has been
+> running and several assumptions here are now wrong:
+> - The **raw-ADC-over-SPI** path (not the TLV-over-UART path in
+>   sections 2-3) is the one that WORKS. SPI capture is SOLVED; the
+>   reproducible recipe (flashing, SDK edits, capture) is
+>   `docs/radar_spi_firmware/APPLIED_EDITS.md`. Use that for flashing,
+>   not "TI Sensing Hub" below.
+> - Board-day errata learned on the real REV A1 board (SOPs on
+>   S1.1/S1.2, S1.5 must be ON, data UART is the `-if00` interface,
+>   range-profile TLV is type 302/uint32, Uniflash uses a Serial
+>   Connection not XDS110 JTAG) are NOT yet folded into the steps below.
+> - End state is **averaged HR/RR**, not "beat-by-beat" — radar HR is
+>   currently data-bound at ~10-11 bpm MAE. See
+>   `docs/RADAR_HR_FINDINGS_2026-05-29.md`.
+> - Keep the pipeline **single-RX** (see the multi-RX note in section 2).
+
+What to do the day the TI IWRL6432BOOST shows up. End state: HR / RR /
+respiration drawing on the live dashboard, on the exact same widgets that
+the WiFi CSI stack was driving. No code change needed past this runbook.
 
 Spec: `docs/superpowers/specs/2026-05-22-radar-integration-sp2-design.md`.
 Plan: `docs/superpowers/plans/2026-05-22-radar-integration-sp2-plan.md`.
@@ -28,13 +44,12 @@ of these is verifiable now, with no hardware.
    on your machine before the board lands. Local Redis required.
    ```bash
    # Terminal 1: collector publishes 30 s of synthetic chirps at HR=72, RR=15.
-   # Set --n-rx 3 to exercise the MRC multi-RX path that the real board uses.
+   # Keep it single-RX -- the multi-RX MRC path is falsified (see section 2).
    VIFI_BUS_URL=redis://localhost:6379/0 .venv/bin/python -u tools/radar_collector.py \
        --source synth --bus --patient-id synthtest \
-       --duration 30 --synth-no-realtime --n-rx 3
+       --duration 30 --synth-no-realtime
    # Terminal 2: worker reads stream from the start, publishes vitals.
-   # VIFI_RADAR_N_RX matches the collector; the DSP auto-detects shape too.
-   VIFI_BUS_URL=redis://localhost:6379/0 VIFI_RADAR_N_RX=3 .venv/bin/python -u tools/radar_inference_worker.py \
+   VIFI_BUS_URL=redis://localhost:6379/0 .venv/bin/python -u tools/radar_inference_worker.py \
        --patient-id synthtest --window 10 --stride 2 --from-start
    # Verify:
    redis-cli xrange hr.predicted.synthtest - + | grep hr_bpm
@@ -107,26 +122,25 @@ The board ships unflashed; we flash a vital-signs profile once.
 3. Flash. Confirm the green / orange status LEDs match the SDK's
    expected pattern for "configured and idle."
 
-### Multi-RX (MRC) note for the parser
+### Multi-RX note for the parser — keep it SINGLE-RX
 
-The DSP now supports a multi-RX ADC cube via maximal-ratio combining
-(~4.8 dB SNR on white noise; biggest free accuracy lever in the
-pipeline). The path is forward-compatible: single-RX captures continue
-to work unchanged. To activate MRC on board-day:
+**Do NOT enable multi-RX combining.** The DSP contains an equal-weight
+MRC stage (`radar/dsp.py:mrc_combine`), but it was **falsified as an
+accuracy win on real hardware** (2026-05-29 captures): the heartbeat is
+strong on a single RX (which one flips capture to capture — RX0 in one
+capture, RX2 in another), and equal-weight combining averages the good
+antenna together with the noisy ones. The best single RX tracked the
+heart far better per capture (correlation +0.81 / +0.85) than MRC
+(+0.46 / +0.49); MRC's pooled MAE was ~27 bpm (tracks direction, not yet
+magnitude). The published literature agrees — multi-antenna combining is
+net-negative for HR at boresight (Ahmed/Park/Cho, Sensors 2022). See
+`docs/RADAR_HR_FINDINGS_2026-05-29.md`.
 
-1. The TLV parser (Section 3 below) must emit `Chirp.samples` shaped
-   `(samples_per_chirp, n_rx)` for each chirp. Single-RX captures keep
-   the legacy 1-D shape.
-2. Run the collector with `--n-rx 3` so the synth path matches; the
-   USB path infers shape from the parser output.
-3. Set `VIFI_RADAR_N_RX=3` on the worker (or in `/etc/vifi/live.env`)
-   so its `RadarConfig` advertises the right value. The DSP detects
-   the actual shape from the cube either way.
-
-If `UsbFrameSource._parse_chunk` emits 1-D samples (legacy single-RX),
-the pipeline still works -- MRC is a no-op on 2-D input. So pinning
-the parser at single-RX first to ship vitals fast, then adding the
-RX axis once vitals are validated, is a defensible board-day plan.
+On board-day, run the parser at **single-RX** (1-D `Chirp.samples`) and
+leave `VIFI_RADAR_N_RX` at 1. Do not pass `--n-rx 3`; do not set
+`VIFI_RADAR_N_RX=3`. The data-backed multi-RX upgrade is NOT MRC — it is
+best-RX / range-angle-cell selection by a cardiac phase-quality metric
+("localize-then-select"), which is a planned build, not a board-day flag.
 
 ## 3. Pin the TLV parser
 

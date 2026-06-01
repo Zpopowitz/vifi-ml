@@ -32,7 +32,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal.windows import hann
 
-from radar.config import RadarConfig
+from radar.config import CARDIAC_BAND_HZ, RadarConfig
+from radar.vitals import cardiac_signal
 
 
 @dataclass
@@ -67,8 +68,10 @@ def range_fft(adc: np.ndarray, window: str = "hann") -> np.ndarray:
     `adc` is complex, either:
       - 2-D `(n_chirps, n_fast)` -- legacy single-RX path
       - 3-D `(n_chirps, n_fast, n_rx)` -- multi-RX path; the FFT runs
-        independently per RX (the per-RX range profiles are coherent-
-        combined later in the pipeline via `mrc_combine`).
+        independently per RX (the per-RX range profiles are collapsed
+        later via `mrc_combine` -- see that function's WARNING: equal-
+        weight combining was falsified on real data; best-RX selection
+        is the data-backed replacement).
 
     A Hann window is applied before the FFT to suppress spectral leakage
     from strong clutter into the chest bin (I001 reasoning, same as
@@ -135,19 +138,25 @@ def remove_clutter(range_profile: np.ndarray, method: str = "mean") -> np.ndarra
 def mrc_combine(profile_3d: np.ndarray) -> np.ndarray:
     """Combine a `(n_chirps, n_bins, n_rx)` profile across the RX axis.
 
-    Equal-weight coherent summation, then normalize by sqrt(n_rx). This
-    is a simple form of maximal-ratio combining suitable for the BOOST's
-    three PCB-co-located RX antennas seeing the same chest target: each
-    RX has the same expected signal phase to a stationary reflector, so
-    coherent summation gives a sqrt(n_rx) amplitude gain (n_rx gain in
-    power), which is 4.77 dB for 3 RX. Independent thermal noise across
-    channels does not gain from coherent summation, so the SNR
-    improvement is 10*log10(n_rx) dB on white noise.
+    Equal-weight coherent summation, then normalize by sqrt(n_rx). The
+    sqrt(n_rx) amplitude / 10*log10(n_rx) dB white-noise SNR gain only
+    holds when every RX sees the SAME signal phase plus INDEPENDENT
+    noise (the assumption the synth in `radar.synth` was built to).
 
-    Proper SNR-weighted MRC (per-bin noise estimation, per-RX phase
-    pre-rotation) is a future refinement; the equal-weight version
-    captures the dominant accuracy win without the bookkeeping. See the
-    pipeline plan if you want to tune it for a particular noise model.
+    WARNING -- falsified as an accuracy win on real hardware. On the
+    2026-05-29 paired radar+H10 captures the heartbeat tracked the heart
+    far better on the best SINGLE RX (per-capture correlation +0.81 and
+    +0.85) than on equal-weight MRC (+0.46 / +0.49), but WHICH RX was
+    best flipped capture to capture. Combining averages the good antenna
+    together with the noisy ones; MRC's pooled MAE was ~27 bpm (it tracks
+    direction, pooled r=+0.56, not magnitude). The published literature
+    agrees that multi-antenna combining is net-negative for HR at
+    boresight (Ahmed/Park/Cho, Sensors 2022). The data-backed primitive
+    is "localize-then-select": pick the best RX / range-angle cell by a
+    cardiac phase-quality metric, not coherent-sum all RX. See
+    `docs/RADAR_HR_FINDINGS_2026-05-29.md`. This function is retained
+    only as a comparison baseline (rx_select="mrc"); it is NOT the
+    default and is NOT an accuracy win.
     """
     p = np.asarray(profile_3d)
     if p.ndim == 2:
@@ -307,25 +316,113 @@ def displacement_from_iq(
     return disp, center, radius
 
 
+def _cardiac_peakiness(displacement: np.ndarray, fs: float) -> float:
+    """Cardiac-band spectral peakiness of a displacement series.
+
+    Peak magnitude / median magnitude inside the cardiac band: high when a
+    sharp heartbeat tone is present, ~1 when the band is flat. This is the
+    per-channel phase-quality metric used to rank antennas -- a proxy for the
+    "time phase coherence index" range-bin/channel selectors in the FMCW
+    vital-signs literature (Accurate Multi-Target Vital Signs Detection,
+    Measurement 2024). Deliberately cardiac-SPECIFIC: raw energy / broadband
+    SNR ranks the wrong RX on real data, because the strongest channel is
+    often clutter or breathing, not the heartbeat.
+    """
+    x = np.asarray(displacement, dtype=np.float64)
+    n = x.size
+    if n < 8:
+        return 0.0
+    x = x - x.mean()
+    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+    mag = np.abs(np.fft.rfft(x * hann(n, sym=False)))
+    band = (freqs >= CARDIAC_BAND_HZ[0]) & (freqs <= CARDIAC_BAND_HZ[1])
+    if not np.any(band):
+        return 0.0
+    band_mag = mag[band]
+    return float(np.max(band_mag) / (np.median(band_mag) + 1e-12))
+
+
+def select_best_rx(
+    clean_profile_3d: np.ndarray,
+    config: RadarConfig,
+    gate_m: tuple[float, float] = (0.2, 2.0),
+) -> tuple[np.ndarray, int]:
+    """Collapse a multi-RX cube to the single antenna with the best heartbeat.
+
+    Takes a `(n_chirps, n_bins, n_rx)` clutter-removed cube, scores each RX by
+    the cardiac phase-quality of its extracted displacement, and returns
+    `(best_profile_2d, rx_index)`.
+
+    This is the data-backed replacement for `mrc_combine`. On the 2026-05-29
+    paired radar+H10 captures the heartbeat was strong on one RX (which one
+    flips capture to capture) while equal-weight combining averaged it down;
+    selecting the best channel by a cardiac-specific metric recovers it.
+    Published support: multi-antenna combining is net-negative for HR at
+    boresight (Ahmed/Park/Cho, Sensors 2022); per-bin/channel phase-quality
+    selection is standard FMCW practice (Measurement 2024). Selection (not
+    combining) is also why the good antenna's flipping between captures stops
+    mattering: we re-pick every window.
+    """
+    p = np.asarray(clean_profile_3d)
+    if p.ndim != 3:
+        raise ValueError("select_best_rx expects 3-D (n_chirps, n_bins, n_rx)")
+    fs = config.frame_rate_hz
+    best_idx = 0
+    best_score = -np.inf
+    for r in range(p.shape[2]):
+        prof = p[..., r]
+        bin_track = track_range_bin(prof, config, gate_m=gate_m)
+        disp, _, _ = displacement_from_iq(chest_iq(prof, bin_track), config)
+        # Score the harmonic-notched CARDIAC signal, not raw displacement:
+        # breathing harmonics fall in the cardiac band (the ~80 bpm artifact
+        # in the real captures) and would otherwise select the antenna with
+        # the loudest breathing harmonic instead of the loudest heartbeat.
+        cardiac, _ = cardiac_signal(disp, fs)
+        score = _cardiac_peakiness(cardiac, fs)
+        if score > best_score:
+            best_score = score
+            best_idx = r
+    return p[..., best_idx], best_idx
+
+
 def extract_displacement(
     adc: np.ndarray,
     config: RadarConfig,
     clutter_method: str = "mean",
     gate_m: tuple[float, float] = (0.2, 2.0),
+    rx_select: str | int = "auto",
 ) -> tuple[np.ndarray, DspInfo]:
     """Full DSP chain: raw ADC -> chest-displacement waveform (metres).
 
     Returns `(displacement_m, info)`. `displacement_m` has one sample per
     chirp (the slow-time / frame rate); `info` carries the bin track and
     circle fit for debugging.
+
+    `rx_select` controls how a multi-RX cube is collapsed (no-op for 2-D
+    single-RX input, which leaves the legacy path unchanged):
+      - ``"auto"`` (default): pick the single best antenna by cardiac
+        phase-quality (`select_best_rx`). The data-backed production path.
+      - ``int``: force that RX index (diagnostic -- measure one antenna's
+        consistency across captures).
+      - ``"mrc"``: legacy equal-weight combine (`mrc_combine`), retained
+        only as a comparison baseline; falsified as an accuracy win.
     """
     profile = range_fft(adc)
     clean = remove_clutter(profile, method=clutter_method)
-    # MRC across RX channels when the input is multi-RX. No-op for 2-D
-    # (single-RX) input so the legacy single-channel test path is
-    # unchanged.
     if clean.ndim == 3:
-        clean = mrc_combine(clean)
+        if rx_select == "auto":
+            clean, _ = select_best_rx(clean, config, gate_m=gate_m)
+        elif rx_select == "mrc":
+            clean = mrc_combine(clean)
+        elif isinstance(rx_select, int) and not isinstance(rx_select, bool):
+            if not 0 <= rx_select < clean.shape[2]:
+                raise ValueError(
+                    f"rx_select index {rx_select} out of range "
+                    f"for {clean.shape[2]} RX channels"
+                )
+            clean = clean[..., rx_select]
+        else:
+            raise ValueError(f"invalid rx_select: {rx_select!r}")
     bin_track = track_range_bin(clean, config, gate_m=gate_m)
     iq = chest_iq(clean, bin_track)
     disp, center, radius = displacement_from_iq(iq, config)

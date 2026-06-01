@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$CLAUDE_PROJECT_DIR/.cursor/rules/Cofounder.mdc\" 2>/dev/null || true",
+            "statusMessage": "Loading Cofounder persona"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$CLAUDE_PROJECT_DIR/.cursor/rules/Cofounder.mdc\" 2>/dev/null || true",
+            "statusMessage": "Loading Cofounder persona"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$CLAUDE_PROJECT_DIR/.cursor/rules/Cofounder.mdc\" 2>/dev/null || true",
+            "statusMessage": "Reloading Cofounder persona after compaction"
+          }
+        ]
+      }
+    ]
+  }
+}

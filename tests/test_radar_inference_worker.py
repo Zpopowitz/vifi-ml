@@ -644,3 +644,39 @@ def test_pipeline_hrv_tracks_synth_truth_at_normal_breathing():
     # filter + finite FFT bin width introduces sub-bin jitter (~5-20 ms).
     assert res.hrv["sdnn_ms"] == pytest.approx(true_sdnn, abs=30.0)
     assert res.hrv["rmssd_ms"] == pytest.approx(true_rmssd, abs=30.0)
+
+
+def test_run_once_survives_mixed_rx_shape_window():
+    """A window mixing legacy single-RX (samples,) frames with new multi-RX
+    (samples, n_rx) frames must not crash np.stack. run_once keeps the
+    newest-format frames and recovers HR from them.
+
+    Reachable when a radar stream replays pre-multi-RX 1-D frames ahead of
+    the new 2-D frames (e.g. --from-start over a stream that spans the
+    format change). An unguarded np.stack on mixed shapes raises ValueError
+    and would take down the inference service.
+    """
+    from radar.synth import synth_capture
+    from tools.radar_inference_worker import _Frame, _Window, run_once
+
+    cfg = RadarConfig(n_rx=3, frame_rate_hz=20.0)
+    cube, _meta = synth_capture(
+        cfg, duration_s=45.0, hr_bpm=72.0, rr_bpm=15.0, snr_db=10.0, seed=0
+    )
+    assert cube.ndim == 3 and cube.shape[2] == 3
+
+    win = _Window(duration_s=120.0)
+    t0 = 1_000_000.0
+    dt = 1.0 / cfg.frame_rate_hz
+    # Stale single-RX frames sitting ahead of the new format in the stream.
+    for i in range(20):
+        win.push(
+            _Frame(ts_unix=t0 + i * dt, samples=np.zeros(256, dtype=np.complex128))
+        )
+    # The current multi-RX frames; each cube[i] is (samples, n_rx) = (256, 3).
+    for i in range(cube.shape[0]):
+        win.push(_Frame(ts_unix=t0 + (20 + i) * dt, samples=cube[i]))
+
+    result = run_once(win, cfg, expected_samples_per_chirp=256)
+    assert result is not None
+    assert result.hr_bpm is not None and abs(result.hr_bpm - 72.0) <= 5.0

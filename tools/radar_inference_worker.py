@@ -66,6 +66,7 @@ from modules.bus import (  # noqa: E402
     MessageBus,
     apnea_events,
     bus_from_env,
+    dlq,
     hr_predicted,
     presence_events,
     radar_raw,
@@ -93,7 +94,8 @@ class _Frame:
     """One chirp pulled off the bus."""
 
     ts_unix: float
-    samples: np.ndarray  # complex, shape (samples_per_chirp,)
+    # complex, shape (samples_per_chirp,) single-RX or (samples_per_chirp, n_rx) multi-RX
+    samples: np.ndarray
 
 
 class _Window:
@@ -179,6 +181,14 @@ def run_once(
     # Defensive: drop frames whose sample count doesn't match the
     # config. A board reconfig mid-session shouldn't crash the worker.
     valid = [f for f in frames if f.samples.shape[0] == expected_samples_per_chirp]
+    if len(valid) < MIN_CHIRPS_FOR_PROCESSING:
+        return None
+    # A format transition (legacy single-RX 1-D frames left in the stream
+    # ahead of multi-RX (samples, n_rx) frames) would make np.stack raise and
+    # crash the worker. Keep only frames matching the newest frame's full
+    # shape; the window self-heals as it fills with the current format.
+    ref_shape = valid[-1].samples.shape
+    valid = [f for f in valid if f.samples.shape == ref_shape]
     if len(valid) < MIN_CHIRPS_FOR_PROCESSING:
         return None
     adc = np.stack([f.samples for f in valid], axis=0)
@@ -270,6 +280,12 @@ def apnea_run_once(
     if len(frames) < min_chirps:
         return []
     valid = [f for f in frames if f.samples.shape[0] == expected_samples_per_chirp]
+    if len(valid) < min_chirps:
+        return []
+    # Same guard as run_once: a mix of single-RX 1-D and multi-RX 2-D frames
+    # in one window would crash np.stack. Keep the newest frame's full shape.
+    ref_shape = valid[-1].samples.shape
+    valid = [f for f in valid if f.samples.shape == ref_shape]
     if len(valid) < min_chirps:
         return []
     adc = np.stack([f.samples for f in valid], axis=0)
@@ -429,10 +445,8 @@ def run_worker(
                 # Malformed radar frame is a poison pill: re-delivering
                 # never helps. DLQ + ACK + move on (per the SP1 DLQ pattern).
                 log.warning("malformed radar msg %s -> DLQ: %s", m.msg_id, exc)
-                from modules.bus import dlq as _dlq_topic  # noqa: PLC0415
-
                 bus.publish(
-                    _dlq_topic(m.topic),
+                    dlq(m.topic),
                     {
                         "original_topic": m.topic,
                         "original_msg_id": m.msg_id,
@@ -599,6 +613,18 @@ def main() -> None:
         help="emit a prediction every N seconds (faster than CSI's 5 s; "
         "radar gives us meaningfully more responsive HR)",
     )
+    p.add_argument(
+        "--frame-rate",
+        type=float,
+        default=100.0,
+        help=(
+            "slow-time sampling rate (Hz) = the radar frame rate the DSP "
+            "assumes. With the collector averaging chirps per frame, set this "
+            "to the firmware frame rate (e.g. 20 for framePeriodicity=50). The "
+            "default 100 matches the legacy per-chirp model (wrong for the "
+            "bursty SPI stream -- yields NaN HR)."
+        ),
+    )
     p.add_argument("--no-rr", action="store_true", help="disable RR estimation")
     p.add_argument(
         "--no-apnea",
@@ -698,7 +724,10 @@ def main() -> None:
     # publishes. Honoring VIFI_RADAR_N_RX keeps the worker's config object
     # in sync with what the collector is emitting (useful for log lines
     # and downstream metadata).
-    config = RadarConfig(n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")))
+    config = RadarConfig(
+        n_rx=int(os.environ.get("VIFI_RADAR_N_RX", "1")),
+        frame_rate_hz=args.frame_rate,
+    )
 
     metrics_enabled = os.environ.get("VIFI_METRICS_ENABLED", "").lower() in (
         "1",

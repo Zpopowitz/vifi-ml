@@ -1,5 +1,21 @@
 # ViFi — Contactless Patient Monitoring (notes for Claude)
 
+## Operating persona (always in effect)
+
+For every response in this repository I operate as the **Technical Cofounder
+(The Radical Rationalist)**: lead with the core evaluation (no flattery,
+affirmations, or apologies), translate technical reality into business
+implications for a non-technical founder, back assertions with verified data,
+do the whole job (no placeholders or "table it for later"), run the four-pillar
+review before building, and stand my ground on real risk instead of folding.
+
+The single source of truth is `.cursor/rules/Cofounder.mdc` (the same file
+Cursor reads, so editing it once updates both tools). It is imported below and
+is independently re-injected at session start, before every prompt, and after
+compaction by the hooks in `.claude/settings.json`.
+
+@.cursor/rules/Cofounder.mdc
+
 **Two sensors, one platform.**
 
 - **Shipped baseline (WiFi CSI):** 13.90 bpm cross-session HR MAE on
@@ -12,13 +28,27 @@
   zero-padded FFT → parabolic peak refinement → 9-dim feature vector →
   XGBoost. The live stack currently runs this.
 - **Current direction (60 GHz FMCW radar, v2):** TI IWRL6432BOOST (ordered
-  2026-05-20). The `radar/` DSP module is built and tested against synth;
-  SP2 (merged) wired the radar inference worker into the same sensor-agnostic
-  bus the CSI worker uses, so swapping sensors is a one-command operator
-  action (`./tools/setup_live_stack.sh --with-radar`). Board-day work is
-  pinning `UsbFrameSource._parse_chunk`; runbook in `docs/RADAR_STARTUP.md`.
-  Known gap: the DSP pipeline is single-RX end-to-end; the board has 3 RX
-  antennas. Adding MRC combining is on the pre-board work list.
+  2026-05-20, on the bench and running since 2026-05-26). The `radar/` DSP
+  module runs end-to-end and SP2 (merged) wired the radar inference worker
+  into the same sensor-agnostic bus the CSI worker uses
+  (`./tools/setup_live_stack.sh --with-radar`). Raw-ADC-over-SPI capture is
+  SOLVED (root cause was an EDMA buffer overrun, not the busy pin; recipe in
+  `docs/radar_spi_firmware/APPLIED_EDITS.md`). Current reality: HR is
+  DATA-bound, not algorithm-bound -- on the 2026-05-29 paired radar+H10
+  captures the radar TRACKS the heart (pooled r=+0.56 over 74-151 bpm) but
+  is NOT yet accurate (pooled MAE ~27 bpm), dominated by an ~80 bpm
+  breathing-harmonic artifact. The oracle (perfect peak selection) reaches
+  3.0 bpm at 20 s windows and <1 bpm at 60-90 s, so the gap is artifact-
+  suppression + a learned peak-selector on a paired dataset, not antenna
+  math. The fix is a multi-subject paired dataset + a learned
+  peak-selector (see `docs/RADAR_HR_FINDINGS_2026-05-29.md`,
+  `docs/RADAR_DATASET_PROTOCOL.md`, `project_radar_ml_roadmap`), NOT a
+  combiner. The board has 3 RX but the DSP is single-RX by design: equal-
+  weight MRC (`radar/dsp.py:mrc_combine`) is IMPLEMENTED AND FALSIFIED on
+  real data (heartbeat lives on one RX, that RX ranks last on quality, MRC
+  made HR worse); the data-backed replacement is best-RX/range-angle-cell
+  selection ("localize-then-select"), corroborated by Ahmed/Park/Cho,
+  Sensors 2022. Open board-day items live in `docs/RADAR_STARTUP.md`.
 
 Both sensors publish to the same vitals topics (`hr.predicted.<pid>`,
 `rr.predicted.<pid>`). The dashboard does not know or care which one is
@@ -57,7 +87,9 @@ indexes every script in `tools/` by purpose.
 - **Radar collector (USB → bus):** `tools/radar_collector.py`
 - **Radar inference worker (bus → vitals):** `tools/radar_inference_worker.py` (publishes to the SAME `hr.predicted` / `rr.predicted` topics the CSI worker uses)
 - **Board-day runbook:** `docs/RADAR_STARTUP.md`
-- **Radar research:** `docs/RADAR_PHASE0_NOTES.md`, `docs/RADAR_DEMAND_THESIS.md`
+- **Empirical HR truth + dataset protocol:** `docs/RADAR_HR_FINDINGS_2026-05-29.md`, `docs/RADAR_DATASET_PROTOCOL.md`
+- **SPI capture fix (reproducible):** `docs/radar_spi_firmware/APPLIED_EDITS.md`
+- **Radar research:** `docs/RADAR_PHASE0_NOTES.md` (demand thesis not yet written — gated on customer interviews)
 
 ### Ground-truth sensors + capture orchestration
 - **Capture orchestrator:** `tools/run_paired_session.py` (also `tools/capture.sh --live`, `tools/capture_hr_sweep.sh`)

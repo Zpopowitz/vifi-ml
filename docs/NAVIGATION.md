@@ -52,12 +52,19 @@ state, then come back here for everything else.
 
 ### Plug in the radar
 
+The board has been running since 2026-05-26. Start with the empirical
+truth, not the pre-board runbook.
+
 | Goal | Path |
 |---|---|
-| Board-day runbook (connect → flash → parse → enable) | [`RADAR_STARTUP.md`](./RADAR_STARTUP.md) |
-| Architecture decisions for radar v2 | `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md` |
+| **Where radar HR actually is (read first)** | [`RADAR_HR_FINDINGS_2026-05-29.md`](./RADAR_HR_FINDINGS_2026-05-29.md) |
+| **Reproducible SPI capture fix (flash + edits + capture)** | [`radar_spi_firmware/APPLIED_EDITS.md`](./radar_spi_firmware/APPLIED_EDITS.md) |
+| Stage-2 paired-dataset protocol | [`RADAR_DATASET_PROTOCOL.md`](./RADAR_DATASET_PROTOCOL.md) |
+| Board-day runbook (partly superseded — see its banner) | [`RADAR_STARTUP.md`](./RADAR_STARTUP.md) |
+| SPI debug + firmware-fix history | [`RADAR_SPI_DEBUG.md`](./RADAR_SPI_DEBUG.md), [`RADAR_SPI_FIRMWARE_FIX.md`](./RADAR_SPI_FIRMWARE_FIX.md) |
+| Architecture decisions for radar v2 (pre-board, partly superseded) | `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md` |
 | Phase-0 background research | [`RADAR_PHASE0_NOTES.md`](./RADAR_PHASE0_NOTES.md) |
-| Demand thesis (commercial validation) | [`RADAR_DEMAND_THESIS.md`](./RADAR_DEMAND_THESIS.md) |
+| Demand thesis | **not yet written** (gated on customer interviews — see below) |
 
 ### Add a new sensor
 
@@ -78,7 +85,7 @@ Reference implementation: SP2 (radar). Spec: `docs/superpowers/specs/2026-05-22-
 | Goal | Path |
 |---|---|
 | Interview script (16 Qs, listening rubric, decision matrix) | [`DEMAND_VALIDATION_INTERVIEWS.md`](./DEMAND_VALIDATION_INTERVIEWS.md) |
-| Current demand-thesis draft | [`RADAR_DEMAND_THESIS.md`](./RADAR_DEMAND_THESIS.md) |
+| Demand thesis | **not yet written** — synthesize from interviews above |
 | Competitive landscape | [`COMPETITIVE_LANDSCAPE.md`](./COMPETITIVE_LANDSCAPE.md) |
 
 ### Harden security for non-bench use

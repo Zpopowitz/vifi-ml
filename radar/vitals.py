@@ -332,6 +332,10 @@ def motion_mask(
       still well above the multiple-of-baseline floor.
     """
     displacement = np.asarray(displacement, dtype=np.float64)
+    if displacement.size < 2:
+        # np.gradient needs >=2 samples; a 0/1-sample window carries no
+        # velocity information, so report "no motion" rather than raise.
+        return np.zeros(displacement.size, dtype=bool)
     velocity = np.gradient(displacement) * fs
     win = max(3, int(round(window_s * fs)))
     # Sliding-window RMS via a uniform moving average of velocity^2.

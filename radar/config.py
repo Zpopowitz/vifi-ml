@@ -9,6 +9,7 @@ range bins, and a ~100 Hz frame rate (revised up from the OOB demo's
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 # Speed of light (m/s) — CODATA exact value.
@@ -101,8 +102,8 @@ class RadarConfig:
         A target moving by d shifts the round-trip path by 2 d, i.e. the
         phase by 4 pi d / lambda. Inverting: d = phase * lambda / (4 pi).
         """
-        return phase_rad * self.wavelength_m / (4.0 * 3.141592653589793)
+        return phase_rad * self.wavelength_m / (4.0 * math.pi)
 
     def displacement_to_phase_rad(self, displacement_m: float) -> float:
         """Inverse of `phase_to_displacement_m` — used by the synth generator."""
-        return displacement_m * (4.0 * 3.141592653589793) / self.wavelength_m
+        return displacement_m * (4.0 * math.pi) / self.wavelength_m
