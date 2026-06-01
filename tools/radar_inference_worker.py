@@ -76,6 +76,7 @@ from modules.presence_state import PresenceStateMachine  # noqa: E402
 from observability import install_worker_metrics  # noqa: E402
 from radar import RadarConfig, process  # noqa: E402
 from radar.dsp import extract_displacement  # noqa: E402
+from radar.vitals import RrTracker  # noqa: E402
 
 log = logging.getLogger("vifi.radar_inference_worker")
 
@@ -375,6 +376,7 @@ def run_worker(
     in_topic = radar_raw(patient_id)
     hr_topic = hr_predicted(patient_id)
     rr_topic = rr_predicted(patient_id) if publish_rr else None
+    rr_tracker = RrTracker()  # per-stream RR continuity smoother
     apnea_topic = apnea_events(patient_id) if publish_apnea else None
     presence_topic = presence_events(patient_id) if publish_presence else None
     presence_sm = (
@@ -511,6 +513,9 @@ def run_worker(
                 metrics["predictions_total"].labels(patient_id, "hr").inc()
 
         if rr_topic is not None and vitals.rr_bpm is not None:
+            # Smooth across windows: breathing rate changes slowly, so a
+            # single window's outlier is rate-limited rather than published.
+            smoothed_rr = rr_tracker.update(vitals.rr_bpm)
             bus.publish(
                 rr_topic,
                 {
@@ -519,7 +524,7 @@ def run_worker(
                     "window_start_s": now - window_s,
                     "window_end_s": now,
                     "window_s": float(window_s),
-                    "rr_bpm": round(vitals.rr_bpm, 2),
+                    "rr_bpm": round(smoothed_rr, 2),
                     "rr_confidence": round(vitals.coverage, 3),
                     "f_resp_hz": round(vitals.f_resp_hz, 4),
                     "coverage": round(vitals.coverage, 3),

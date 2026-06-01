@@ -31,6 +31,7 @@ from radar.vitals import (
     ibi_seconds,
     match_filter_confidence,
     motion_mask,
+    reported_respiration_rate,
     respiration_rate,
 )
 
@@ -153,8 +154,12 @@ def process(
     has_still = (run_hi - run_lo) >= int(8.0 * fs)
     if has_still:
         still_disp = displacement[run_lo:run_hi]
-        rr_bpm = respiration_rate(still_disp, fs)
-        f_resp_hz = rr_bpm / 60.0
+        # The HR harmonic notch is keyed to RESP_BAND (decoupled, on purpose:
+        # keying it with the drift-fixed reported RR hurts HR on the cardiac
+        # collision -- docs/RADAR_HR_FINDINGS_2026-05-29.md).
+        f_resp_hz = respiration_rate(still_disp, fs) / 60.0
+        # The PUBLISHED RR uses the drift-fixed 0.12-0.7 Hz band.
+        rr_bpm = reported_respiration_rate(still_disp, fs)
     else:
         rr_bpm = float("nan")
         f_resp_hz = respiration_rate(displacement, fs) / 60.0

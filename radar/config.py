@@ -19,6 +19,13 @@ C_M_S = 299_792_458.0
 # is where breathing's 4th-8th harmonics also land — the geometric
 # collision the harmonic notch in radar.vitals exists to handle.
 RESP_BAND_HZ = (0.10, 0.60)
+# Reporting band for the published respiration rate (7-42 brpm). The 0.12 Hz
+# floor (vs RESP_BAND's 0.10) rejects the sub-0.12 Hz baseline drift that
+# otherwise wins the dominant peak post-exercise (the 6.7 brpm bug,
+# docs/RADAR_HR_FINDINGS_2026-05-29.md); the 0.7 Hz ceiling keeps fast
+# post-exertion breathing. Deliberately SEPARATE from RESP_BAND_HZ, which keys
+# the HR harmonic notch -- keying the notch with this estimate hurts HR.
+RR_REPORT_BAND_HZ = (0.12, 0.70)
 CARDIAC_BAND_HZ = (0.80, 2.50)
 
 # Physiological plausibility bounds, used to sanity-check estimates.
