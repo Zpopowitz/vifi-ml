@@ -621,13 +621,14 @@ def main() -> None:
     p.add_argument(
         "--frame-rate",
         type=float,
-        default=100.0,
+        default=float(os.environ.get("VIFI_RADAR_FRAME_RATE_HZ", "100")),
         help=(
             "slow-time sampling rate (Hz) = the radar frame rate the DSP "
             "assumes. With the collector averaging chirps per frame, set this "
-            "to the firmware frame rate (e.g. 20 for framePeriodicity=50). The "
-            "default 100 matches the legacy per-chirp model (wrong for the "
-            "bursty SPI stream -- yields NaN HR)."
+            "to the firmware frame rate (e.g. 20 for framePeriodicity=50). "
+            "Defaults to $VIFI_RADAR_FRAME_RATE_HZ (so the systemd unit's "
+            "EnvironmentFile drives it) or 100; 100 matches the legacy "
+            "per-chirp model and is WRONG for the bursty SPI stream (NaN HR)."
         ),
     )
     p.add_argument("--no-rr", action="store_true", help="disable RR estimation")

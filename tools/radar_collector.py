@@ -202,12 +202,14 @@ class UsbFrameSource:
         config: Optional[RadarConfig] = None,
         timeout_s: float = 1.0,
         n_rx: int = 1,
+        max_silence_s: float = 10.0,
     ) -> None:
         self.config = config or RadarConfig()
         self.port = port
         self.baud = baud
         self.timeout_s = timeout_s
         self.n_rx = n_rx
+        self.max_silence_s = max_silence_s
         self._serial = None  # lazy
         self._buf = bytearray()
         self._chirp_idx = 0
@@ -302,11 +304,26 @@ class UsbFrameSource:
         # caller closes the iterator (collector loop) or the serial port
         # raises an error.
         chunk_size = 4096
+        last_data = time.time()
         while True:
-            chunk = self._serial.read(chunk_size)
+            try:
+                chunk = self._serial.read(chunk_size)
+            except OSError as exc:
+                # USB unplug / port error surfaces as a serial/OS error. Exit
+                # so systemd `Restart=always` recovers the collector instead
+                # of leaving it alive-but-dead.
+                raise ConnectionError(f"radar serial read failed: {exc}") from exc
             if not chunk:
-                # timeout, no bytes; keep polling
+                # pyserial returns b"" on a timeout AND on a dead port, with no
+                # exception. A healthy board streams continuously, so sustained
+                # silence means the board is gone -- exit for a systemd restart.
+                if time.time() - last_data > self.max_silence_s:
+                    raise ConnectionError(
+                        f"no radar data for {self.max_silence_s:.0f}s "
+                        "(board disconnected?); exiting for systemd restart"
+                    )
                 continue
+            last_data = time.time()
             yield from self._parse_chunk(chunk)
 
     def close(self) -> None:
@@ -347,7 +364,9 @@ class _BusPublisher:
         self._error_count = 0
         self._published = 0
 
-    def publish(self, chirp: Chirp, samples_per_chirp: int) -> None:
+    def publish(self, chirp: Chirp, samples_per_chirp: int) -> bool:
+        """Publish one chirp. Returns True on success, False if the bus threw
+        (so the caller's throughput count reflects real publishes only)."""
         try:
             self.bus.publish(
                 self.topic,
@@ -362,12 +381,14 @@ class _BusPublisher:
                 ts_ms=int(chirp.ts_unix * 1000),
             )
             self._published += 1
+            return True
         except Exception as exc:
             self._error_count += 1
             if self._error_count <= 3:
                 print(f"  [bus publish failed: {exc}]", file=sys.stderr)
             elif self._error_count == 4:
                 print("  [bus publish suppressed]", file=sys.stderr)
+            return False
 
     def close(self) -> None:
         # Only release the bus if we constructed it. Injected buses
@@ -415,9 +436,9 @@ def run_collector(
         if duration_s > 0 and (time.time() - t0) >= duration_s:
             break
         if publisher is not None:
-            publisher.publish(chirp, samples_per_chirp)
-            n_published += 1
-            if not quiet and n_published % 200 == 0:
+            if publisher.publish(chirp, samples_per_chirp):
+                n_published += 1
+            if not quiet and n_published > 0 and n_published % 200 == 0:
                 rate = n_published / max(1e-6, time.time() - t0)
                 print(
                     f"  [{n_published} chirps published, {rate:.1f} chirp/s]",
