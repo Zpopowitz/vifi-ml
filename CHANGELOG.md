@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — radar HR direction corrected to match real-hardware findings
+- **Best-RX antenna selection replaces equal-weight MRC as the multi-RX
+  default** (`radar/dsp.py:select_best_rx`; `rx_select` on
+  `extract_displacement` / `process`). Real captures and the literature
+  (Ahmed/Park/Cho, Sensors 2022) falsified equal-weight MRC as an accuracy
+  win; it is retained only as a comparison baseline (`rx_select="mrc"`), with
+  a force-single-RX diagnostic (`rx_select=<int>`). The synth now models the
+  bench-faithful case (heartbeat on one antenna).
+- **Doc truth-pass** (`CLAUDE.md`, `docs/STATUS.md`, `docs/NAVIGATION.md`,
+  `docs/RADAR_STARTUP.md`): radar HR is data-bound (~27 bpm pooled; tracks
+  direction r=+0.56), fixed by a paired dataset + a learned peak-selector
+  (oracle 3.0 bpm, <1 bpm at 60-90 s windows), not a combiner. Corrected the
+  retracted CSI 4.15 bpm figure to 13.90 and removed dead
+  `RADAR_DEMAND_THESIS.md` references.
+- Safe fixes: `math.pi` literals in `radar/config.py`, `motion_mask`
+  <2-sample guard, hoisted the worker `dlq` import.
+
+### Added
+- `tools/spi_debug/outlier_rx_test.py`: empirical per-window test of the
+  numerical-outlier antenna hypothesis across the paired captures (verdict:
+  small edge over MRC, but a coin-flip on reliability — antenna is
+  second-order; the artifact + learned selection is the leverage).
+
+### CI
+- bandit excludes `tools/spi_debug/` (bench-research scratch; pickle loads of
+  our own local capture artifacts only, no untrusted input or network surface).
+
 ## [0.4.0] - 2026-05-22
 
 Two merged sub-projects (SP1 + SP2) and one codebase-wide refactor that

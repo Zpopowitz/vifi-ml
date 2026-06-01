@@ -10,6 +10,13 @@ catches), see `docs/AUDIT_PLAN.md`.
 
 ## Last updated
 
+2026-05-31. Radar truth pass: board has been running since 2026-05-26,
+SPI capture solved, three paired radar+H10 captures collected. Radar HR is
+data-bound (~10-11 bpm MAE, fix = dataset + learned selector); equal-weight
+MRC falsified; beat-by-beat is still ahead, not shipped. Corrected the
+retracted CSI 4.15 bpm figure to the authoritative 13.90 bpm. See
+`docs/RADAR_HR_FINDINGS_2026-05-29.md`.
+
 2026-05-22. SP1 persistent live monitoring stack landed — Redis +
 dashboard + inference + audit run as boot-persistent `systemd` services
 on the Pi, and `./tools/capture.sh --live` streams a capture into it
@@ -24,7 +31,7 @@ research roadmap that came out of that session.
 
 ---
 
-## Current state — dual-sensor platform (2026-05-22)
+## Current state — dual-sensor platform (2026-05-31)
 
 ViFi runs two sensors on one sensor-agnostic platform. Both publish to
 the same vitals topics (`hr.predicted.<pid>`, `rr.predicted.<pid>`); the
@@ -34,29 +41,47 @@ dashboard does not know or care which one is upstream.
 
 The shipped, operational sensor. **The live stack runs CSI today.** The
 operator commands further down (Pre-capture, Paired-session, `--live`,
-sync, retrain, LOSO eval) are all CSI. Cross-session HR MAE 4.15 bpm on
-3 paired captures (LOSO, single subject). Saturates ~88-90 bpm on
-elevated HR — known data-bound limit (see `project-hr-data-bottleneck`
-memory + `docs/HOME_PILOT_LOG.md`). `tools/capture_hr_sweep.sh` is the
-cheapest fix path for that ceiling.
+sync, retrain, LOSO eval) are all CSI. Cross-session HR MAE **13.90 bpm**
+on 3 paired captures (LOSO, single subject; the authoritative
+`docs/eval/2026-05-23-loso.json`). An earlier 4.15 bpm figure did NOT
+reproduce and was retracted. Saturates ~88-90 bpm on elevated HR — known
+data-bound limit (see `project-hr-data-bottleneck` memory +
+`docs/HOME_PILOT_LOG.md`). `tools/capture_hr_sweep.sh` is the cheapest
+fix path for that ceiling.
 
-### 60 GHz radar (v2, current direction, hardware-gated)
+### 60 GHz radar (v2, current direction)
 
-The next-generation sensor. **All code shipped, hardware not yet plugged
-in.** TI IWRL6432BOOST ordered 2026-05-20. The `radar/` DSP module,
-`tools/radar_collector.py`, `tools/radar_inference_worker.py`, the two
-systemd units, and the integration tests are merged. `./tools/setup_live_stack.sh
---with-radar` installs the radar services; they start running the day
-the operator plugs in the board and points `VIFI_RADAR_PORT` at the
-data UART. Beat-by-beat HR + HRV unlock then — no training-data
-ceiling because the radar pipeline is geometric, not statistical.
+The next-generation sensor. **On the bench and running since 2026-05-26.**
+TI IWRL6432BOOST. The `radar/` DSP module, `tools/radar_collector.py`,
+`tools/radar_inference_worker.py`, the two systemd units, and the
+integration tests are merged. Raw-ADC-over-SPI capture is **SOLVED**
+(EDMA buffer-overrun fix; recipe in `docs/radar_spi_firmware/APPLIED_EDITS.md`),
+20 fps stable, three paired radar+H10 captures collected.
+
+Current reality (not yet beat-by-beat): the spectral DSP runs end-to-end
+and the radar **tracks the heart** (pooled r=+0.56 over 74-151 bpm) but is
+**not yet accurate** — pooled MAE ~27 bpm on the 2026-05-29 captures,
+dominated by an ~80 bpm breathing-harmonic artifact that the picker grabs
+instead of the true peak. Hand-tuned spectral peak-picking has hit its
+ceiling; the oracle (perfect peak selection) reaches 3.0 bpm at 20 s
+windows and <1 bpm at 60-90 s, so the fix is **artifact-suppression + a
+learned peak-selector on a multi-subject paired dataset**, not algorithmic
+cleverness and not a multi-RX combiner. Equal-weight MRC was implemented
+and **falsified** as an accuracy win (the best single RX tracked far
+better per capture, but which RX flips). Beat-by-beat HR/HRV is the top of
+a 4-step staircase; we are on step 1. RR is the nearest reliable win.
 
 References:
-- Architecture plan: `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md`
+- Empirical HR truth (authoritative): `docs/RADAR_HR_FINDINGS_2026-05-29.md`
+- Stage-2 dataset protocol: `docs/RADAR_DATASET_PROTOCOL.md`
+- ML roadmap: `project_radar_ml_roadmap` memory
+- SPI capture fix (reproducible): `docs/radar_spi_firmware/APPLIED_EDITS.md`
+- Architecture plan (pre-board, partly superseded): `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md`
 - SP2 spec + plan: `docs/superpowers/specs/2026-05-22-radar-integration-sp2-design.md`
   and `docs/superpowers/plans/2026-05-22-radar-integration-sp2-plan.md`
-- Phase 0 research (complete): `docs/RADAR_PHASE0_NOTES.md`
-- Demand thesis (draft, owner sign-off pending): `docs/RADAR_DEMAND_THESIS.md`
+- Phase 0 research: `docs/RADAR_PHASE0_NOTES.md`
+- Demand thesis: **not yet written** (gated on customer interviews — see
+  `docs/DEMAND_VALIDATION_INTERVIEWS.md`; was referenced as "done" in error)
 - Board-day runbook: `docs/RADAR_STARTUP.md`
 - Customer demand validation runbook: `docs/DEMAND_VALIDATION_INTERVIEWS.md`
 
