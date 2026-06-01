@@ -185,7 +185,13 @@ jobs:
         # names) for the directory-exclude to actually work in 1.7.x
         # — otherwise it scans tests/ etc. anyway and we have to
         # # nosec annotate every test file. Found this the hard way.
-        run: bandit -r . -x ./tests,./build,./sbom,./site -ll
+        #
+        # ./tools/spi_debug is excluded for the same reason as ./tests:
+        # it is bench-research / board-bringup scratch (pickle.load of our
+        # OWN local capture artifacts, never untrusted input; no network
+        # surface), not part of the serving path (radar/, api.py,
+        # tools/radar_{collector,inference_worker}.py stay scanned).
+        run: bandit -r . -x ./tests,./build,./sbom,./site,./tools/spi_debug -ll
 
   sbom:
     name: SBOM (CycloneDX)
