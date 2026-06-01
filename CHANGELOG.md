@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — radar HR/RR pipeline next steps (selector harness, RR, hardening)
+- **Learned HR peak-selector** (`radar/hr_selector.py`, tested): candidate
+  extraction + featurization + a Viterbi continuity decode over learned
+  per-candidate scores. Training/leave-one-capture-out eval in
+  `tools/spi_debug/radar_train_hr_selector.py` (XGBoost emission). Single-
+  subject smoke run: pick-tallest 28.3 -> learned 18.5 -> learned+viterbi 17.0,
+  oracle 2.9 (reproduces the documented 3.0). Proves the pipeline; the
+  multi-subject dataset is the gate before it generalizes.
+- **Drift-fixed reported RR** (`reported_respiration_rate`, 0.12-0.7 Hz band)
+  decoupled from the HR harmonic-notch `f_resp`, fixing the post-exercise
+  6.7 brpm bug. **`RrTracker`** rate-limits window-to-window RR jumps; wired
+  into the inference worker.
+
+### Fixed — radar collector robustness (board-day)
+- The collector exits on a dead USB port (serial error or sustained silence)
+  so systemd `Restart=always` recovers it, instead of spinning alive-but-dead.
+- `_BusPublisher.publish` returns success; the throughput count reflects real
+  publishes only.
+- The worker `--frame-rate` defaults from `$VIFI_RADAR_FRAME_RATE_HZ` (env
+  example now 20, the solved SPI profile) instead of a hardcoded 100 (NaN HR).
+
 ### Changed — radar HR direction corrected to match real-hardware findings
 - **Best-RX antenna selection replaces equal-weight MRC as the multi-RX
   default** (`radar/dsp.py:select_best_rx`; `rx_select` on

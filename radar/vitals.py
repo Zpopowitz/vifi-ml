@@ -44,6 +44,7 @@ from radar.config import (
     HR_MAX_BPM,
     HR_MIN_BPM,
     RESP_BAND_HZ,
+    RR_REPORT_BAND_HZ,
 )
 
 # Respiration harmonics to notch out of the cardiac band. The
@@ -132,6 +133,60 @@ def heart_rate_spectral(
     idx = np.where(mask)[0]
     peak = int(idx[int(np.argmax(magnitude[idx]))])
     return _parabolic_peak(magnitude, peak, freqs) * 60.0
+
+
+def reported_respiration_rate(displacement: np.ndarray, fs: float) -> float:
+    """Respiration rate (brpm) for REPORTING -- the published vital.
+
+    Bands the displacement to 0.12-0.7 Hz (7-42 brpm) before taking the
+    dominant peak, so a sub-0.12 Hz baseline drift cannot win the peak (the
+    post-exercise 6.7 brpm bug). Deliberately SEPARATE from
+    `respiration_rate`, which keys the HR harmonic notch: keying the notch
+    with this drift-fixed estimate notches the heartbeat when HR collides
+    with a breathing harmonic and hurts HR (docs/RADAR_HR_FINDINGS_2026-05-29.md).
+
+    Falls back to a band-restricted peak (no pre-bandpass) when the signal
+    is too short for the Butterworth filter, rather than raising.
+    """
+    lo, hi = RR_REPORT_BAND_HZ
+    sig = np.asarray(displacement, dtype=np.float64)
+    if sig.size > 3 * 4 * 2:  # bandpass (order 4) minimum length
+        sig = bandpass(sig, fs, lo, hi)
+    return dominant_frequency(sig, fs, RR_REPORT_BAND_HZ) * 60.0
+
+
+class RrTracker:
+    """Streaming respiration-rate continuity smoother.
+
+    Breathing rate changes slowly, so a single window's wild estimate is
+    almost always an artifact, not a real jump. This rate-limits the
+    window-to-window step to `max_delta_bpm`, so one outlier nudges the
+    track instead of yanking it, and coasts (holds the last value) through a
+    NaN window. The radar analog of the CSI `rr_dsp.py` continuity tracker
+    (0.50 brpm MAE). Stateful: one instance per patient stream.
+    """
+
+    def __init__(self, max_delta_bpm: float = 4.0) -> None:
+        if max_delta_bpm <= 0:
+            raise ValueError("max_delta_bpm must be positive")
+        self.max_delta_bpm = max_delta_bpm
+        self._value: float | None = None
+
+    @property
+    def value(self) -> float:
+        return self._value if self._value is not None else float("nan")
+
+    def update(self, rr_bpm: float) -> float:
+        """Feed one window's RR estimate; return the smoothed value."""
+        if not np.isfinite(rr_bpm):
+            return self.value  # coast on a dropped/invalid window
+        if self._value is None:
+            self._value = float(rr_bpm)
+        else:
+            step = float(rr_bpm) - self._value
+            step = max(-self.max_delta_bpm, min(self.max_delta_bpm, step))
+            self._value += step
+        return self._value
 
 
 def respiration_rate(displacement: np.ndarray, fs: float) -> float:
