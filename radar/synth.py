@@ -156,6 +156,7 @@ def synth_capture(
     motion_window_s: tuple[float, float] | None = None,
     motion_amplitude_m: float = 0.02,
     apnea_window_s: tuple[float, float] | None = None,
+    heartbeat_rx: int | None = None,
     seed: int = 0,
 ) -> tuple[np.ndarray, SynthMeta]:
     """Generate one synthetic FMCW capture.
@@ -181,10 +182,18 @@ def synth_capture(
     n_fast = config.samples_per_chirp
     t = np.arange(n_chirps) / fps
 
+    n_rx = max(1, int(getattr(config, "n_rx", 1)))
+    if heartbeat_rx is not None and not (0 <= heartbeat_rx < n_rx):
+        raise ValueError(f"heartbeat_rx {heartbeat_rx} out of range for n_rx={n_rx}")
+
     # --- chest displacement: breathing + heartbeat (+ optional motion) ---
     breathing = breathing_waveform(t, rr_bpm, breathing_amplitude_m, rng=rng)
     heartbeat, beat_times = heartbeat_waveform(t, hr_bpm, heartbeat_amplitude_m)
     displacement = breathing + heartbeat
+    # `breath_only` carries everything EXCEPT the heartbeat -- the signal the
+    # antennas that don't catch the heartbeat see (the bench reality the
+    # 2026-05-29 captures showed). Used only when heartbeat_rx is set.
+    breath_only = breathing.copy()
 
     if motion_window_s is not None:
         lo, hi = motion_window_s
@@ -192,6 +201,7 @@ def synth_capture(
         # A slow cm-scale sway: large, low-frequency, swamps the vitals.
         sway = motion_amplitude_m * np.sin(2.0 * np.pi * 0.4 * (t - lo))
         displacement = displacement + np.where(mask, sway, 0.0)
+        breath_only = breath_only + np.where(mask, sway, 0.0)
 
     if apnea_window_s is not None:
         # Zero displacement during the apnea window. Clinically an apnea
@@ -204,6 +214,7 @@ def synth_capture(
         lo, hi = apnea_window_s
         apnea_mask = (t >= lo) & (t < hi)
         displacement = np.where(apnea_mask, 0.0, displacement)
+        breath_only = np.where(apnea_mask, 0.0, breath_only)
 
     # --- fast-time tone basis: column m, normalised range-bin freq ---
     m = np.arange(n_fast)
@@ -216,11 +227,19 @@ def synth_capture(
 
     # --- chest target: range tone modulated by per-chirp motion phase ---
     base_phase = config.displacement_to_phase_rad(subject_range_m)
-    motion_phase = config.displacement_to_phase_rad(displacement)
-    chest_phase = base_phase + motion_phase  # shape (n_chirps,)
-    adc = np.exp(1j * chest_phase)[:, None] * tone(subject_bin)[None, :]
+
+    def chest_adc(disp: np.ndarray) -> np.ndarray:
+        """Range tone at the chest bin modulated by a displacement phase."""
+        chest_phase = base_phase + config.displacement_to_phase_rad(disp)
+        wave: np.ndarray = (
+            np.exp(1j * chest_phase)[:, None] * tone(subject_bin)[None, :]
+        )
+        return wave
 
     # --- static clutter: strong reflectors at other range bins ---
+    # Built once as a per-fast-time field so every RX sees the same scene
+    # (static reflectors are constant across chirps and across antennas).
+    clutter_field = np.zeros(n_fast, dtype=np.complex128)
     clutter_bins: list[float] = []
     usable_max_bin = 0.45 * n_fast  # keep clutter well inside the band
     for _ in range(n_clutter):
@@ -231,32 +250,40 @@ def synth_capture(
             cb += 2.0
         amp = float(rng.uniform(4.0, 12.0))  # walls reflect far harder
         cphase = float(rng.uniform(0.0, 2.0 * np.pi))
-        adc += amp * np.exp(1j * cphase) * tone(cb)[None, :]
+        clutter_field += amp * np.exp(1j * cphase) * tone(cb)
         clutter_bins.append(cb)
 
+    adc_full = chest_adc(displacement) + clutter_field[None, :]
+
     # --- multi-RX path: emit a (n_chirps, n_fast, n_rx) cube ---
-    # Co-located RX antennas all see the same chest target with the same
-    # signal phase (they are millimetres apart on the BOOST PCB; the
-    # boresight is normal to the board, so the path-length differences
-    # are far below a wavelength). What differs across RX is the
-    # thermal noise realisation. To exercise the MRC path correctly,
-    # broadcast the noise-free `adc` across the RX axis and add
-    # independent noise per RX.
-    n_rx = max(1, int(getattr(config, "n_rx", 1)))
     noise_sigma = 10.0 ** (-snr_db / 20.0) / np.sqrt(2.0)
+
+    def _noise(shape: tuple[int, ...]) -> np.ndarray:
+        n: np.ndarray = noise_sigma * (
+            rng.standard_normal(shape) + 1j * rng.standard_normal(shape)
+        )
+        return n
+
     if n_rx == 1:
-        noise = noise_sigma * (
-            rng.standard_normal(adc.shape) + 1j * rng.standard_normal(adc.shape)
-        )
-        adc = adc + noise
+        adc = adc_full + _noise(adc_full.shape)
+    elif heartbeat_rx is None:
+        # Legacy model: every RX sees the SAME chest signal (co-located
+        # antennas at boresight, path differences far below a wavelength)
+        # plus independent per-RX thermal noise.
+        cube = np.broadcast_to(adc_full[..., None], adc_full.shape + (n_rx,)).copy()
+        adc = cube + _noise(cube.shape)
     else:
-        # Stack signal across RX axis, then add independent per-RX noise.
-        adc_cube = np.broadcast_to(adc[..., None], adc.shape + (n_rx,)).copy()
-        cube_shape = adc_cube.shape
-        adc_cube = adc_cube + noise_sigma * (
-            rng.standard_normal(cube_shape) + 1j * rng.standard_normal(cube_shape)
-        )
-        adc = adc_cube
+        # Bench-faithful model: the heartbeat is present on ONE antenna only
+        # (the 2026-05-29 paired captures showed the cardiac signal strong on
+        # a single RX, not the common-mode component the legacy model assumed).
+        # The other antennas see breathing + clutter + independent noise but
+        # no heartbeat -- so best-RX selection has a real signal to find.
+        adc_breath = chest_adc(breath_only) + clutter_field[None, :]
+        cube = np.empty(adc_full.shape + (n_rx,), dtype=np.complex128)
+        for r in range(n_rx):
+            base = adc_full if r == heartbeat_rx else adc_breath
+            cube[..., r] = base + _noise(base.shape)
+        adc = cube
 
     meta = SynthMeta(
         hr_bpm=hr_bpm,

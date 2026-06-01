@@ -13,6 +13,7 @@ from radar.dsp import (
     mrc_combine,
     range_fft,
     remove_clutter,
+    select_best_rx,
     select_range_bin,
     track_range_bin,
 )
@@ -170,6 +171,44 @@ def test_mrc_combine_collapses_rx_axis() -> None:
     # 2-D input is returned unchanged.
     p2 = np.ones((n_chirps, n_bins), dtype=np.complex128)
     assert np.allclose(mrc_combine(p2), p2)
+
+
+def test_select_best_rx_picks_the_heartbeat_antenna() -> None:
+    """select_best_rx ranks antennas by CARDIAC signal quality (not raw
+    energy, which our real data showed picks the wrong RX) and returns the
+    single antenna carrying the heartbeat, collapsing the cube to 2-D."""
+    cfg = RadarConfig(n_rx=3, frame_rate_hz=20.0)
+    cube, _ = synth_capture(
+        cfg,
+        duration_s=45.0,
+        hr_bpm=72.0,
+        snr_db=2.0,
+        heartbeat_amplitude_m=0.0002,
+        heartbeat_rx=2,
+        seed=1,
+    )
+    clean = remove_clutter(range_fft(cube), method="mean")
+    best, idx = select_best_rx(clean, cfg)
+    assert best.ndim == 2 and best.shape == clean.shape[:2]
+    assert idx == 2
+
+
+def test_extract_displacement_force_single_rx_uses_that_channel() -> None:
+    """rx_select=<int> forces one antenna (the founder's diagnostic mode):
+    forcing the heartbeat antenna differs from forcing a quiet one."""
+    cfg = RadarConfig(n_rx=3, frame_rate_hz=20.0)
+    cube, _ = synth_capture(
+        cfg,
+        duration_s=20.0,
+        hr_bpm=72.0,
+        heartbeat_amplitude_m=0.0002,
+        heartbeat_rx=0,
+        seed=3,
+    )
+    disp0, _ = extract_displacement(cube, cfg, rx_select=0)
+    disp1, _ = extract_displacement(cube, cfg, rx_select=1)
+    assert disp0.shape == disp1.shape
+    assert not np.allclose(disp0, disp1)
 
 
 def test_mrc_combine_gives_snr_gain_on_independent_noise() -> None:

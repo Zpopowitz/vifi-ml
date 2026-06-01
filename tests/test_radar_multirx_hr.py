@@ -1,19 +1,28 @@
-"""End-to-end multi-RX validation on synth (Stage 2 of the MRC work).
+"""End-to-end multi-RX validation on synth (best-RX selection).
 
 These pin two things about the full pipeline once a 3-RX ADC cube flows
-through it (the capture layer now preserves the RX axis; see
+through it (the capture layer preserves the RX axis; see
 ``tests/test_ftdi_spi_parse.py``):
 
-1. The 3-RX cube flows through ``process`` and recovers the known HR -- the
-   plumbing from a per-RX cube to ``mrc_combine`` is correct.
-2. The 3-RX MRC path yields a higher cardiac-peak SNR than a single RX
-   channel of the same capture -- the SNR gain MRC exists to provide.
+1. The 3-RX cube flows through ``process`` and recovers the known HR via
+   the default ``rx_select="auto"`` path (pick the single best antenna).
+2. When the heartbeat lives on ONE antenna (which one flips capture to
+   capture) -- the bench reality the 2026-05-29 captures showed --
+   auto-select finds that antenna wherever it sits and recovers HR.
 
-NOTE: the synth's range-FFT + slow-time integration gain is large enough that
-single-RX already recovers HR perfectly at every valid SNR, so this cannot
-show an HR-accuracy *difference* on synth. The real accuracy payoff is a
-hardware question (the live single-RX capture showed 10.3 bpm MAE with a
-buried cardiac peak); see project_radar_hr_snr_bound.
+NOTE on what synth can and cannot prove. On synthetic data even a
+one-third-weighted CLEAN heartbeat is trivially recoverable, so MRC also
+recovers HR near-perfectly here; the synth CANNOT demonstrate that best-RX
+selection beats MRC on accuracy. That evidence is empirical: on the
+2026-05-29 hardware captures the best single RX tracked the heart far
+better per capture (correlation +0.81 / +0.85) than MRC (+0.46 / +0.49),
+and MRC's pooled MAE was ~27 bpm (tracks direction, not magnitude). The
+literature agrees combining is net-negative for HR at boresight
+(Ahmed/Park/Cho, Sensors 2022). So this file pins the synth-provable claim
+(auto-select locates the heartbeat antenna and recovers HR); the
+MRC-is-worse claim lives in ``docs/RADAR_HR_FINDINGS_2026-05-29.md`` and
+``project_radar_hr_snr_bound``. Equal-weight MRC (``rx_select="mrc"``) is
+retained only as a comparison baseline, never the default.
 """
 
 from __future__ import annotations
@@ -27,25 +36,17 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from radar.config import CARDIAC_BAND_HZ, RadarConfig  # noqa: E402
+from radar.config import RadarConfig  # noqa: E402
 from radar.pipeline import process  # noqa: E402
 from radar.synth import synth_capture  # noqa: E402
-from radar.vitals import _band_spectrum  # noqa: E402
 
 _FS = 20.0
 _HR = 72.0
 
 
-def _cardiac_peak_snr(cardiac: np.ndarray, fs: float) -> float:
-    """Cardiac-band peak magnitude / band-median magnitude (a peakiness SNR)."""
-    freqs, mag = _band_spectrum(cardiac, fs)
-    band = (freqs >= CARDIAC_BAND_HZ[0]) & (freqs <= CARDIAC_BAND_HZ[1])
-    band_mag = mag[band]
-    return float(np.max(band_mag) / (np.median(band_mag) + 1e-12))
-
-
 def test_multi_rx_cube_recovers_known_hr() -> None:
-    """A 3-RX synth cube flows through process() and recovers the known HR."""
+    """A 3-RX synth cube flows through process() (default best-RX select)
+    and recovers the known HR."""
     cfg = RadarConfig(n_rx=3, frame_rate_hz=_FS)
     cube, _meta = synth_capture(
         cfg,
@@ -54,6 +55,7 @@ def test_multi_rx_cube_recovers_known_hr() -> None:
         rr_bpm=15.0,
         snr_db=2.0,
         heartbeat_amplitude_m=0.0002,
+        heartbeat_rx=1,
         seed=0,
     )
     assert cube.ndim == 3 and cube.shape[2] == 3  # the multi-RX cube reaches process
@@ -63,23 +65,24 @@ def test_multi_rx_cube_recovers_known_hr() -> None:
     assert abs(res.hr_bpm - _HR) <= 3.6
 
 
-def test_mrc_improves_cardiac_peak_snr_over_single_rx() -> None:
-    """Averaged over noise realisations, the 3-RX MRC path gives a higher
-    cardiac-peak SNR than using one RX channel of the same capture."""
+def test_auto_select_recovers_hr_wherever_the_heartbeat_antenna_sits() -> None:
+    """Auto-select locates the heartbeat antenna no matter which RX carries
+    it (the good antenna flips capture to capture on real hardware) and
+    recovers HR. This is the synth-provable claim; that selection BEATS MRC
+    on accuracy is a hardware/literature result (see the module docstring)."""
     cfg = RadarConfig(n_rx=3, frame_rate_hz=_FS)
-    single, multi = [], []
-    for seed in range(12):
+    for rx in range(3):
         cube, _ = synth_capture(
             cfg,
             duration_s=45.0,
             hr_bpm=_HR,
             rr_bpm=15.0,
-            snr_db=1.0,
+            snr_db=2.0,
             heartbeat_amplitude_m=0.0002,
-            seed=seed,
+            heartbeat_rx=rx,
+            seed=rx,
         )
-        multi.append(_cardiac_peak_snr(process(cube, cfg).cardiac, _FS))
-        single.append(_cardiac_peak_snr(process(cube[..., 0], cfg).cardiac, _FS))
-    # MRC sharpens the cardiac peak; require a clear (>2%) mean improvement so
-    # the test asserts a real effect, not numerical noise.
-    assert np.mean(multi) > np.mean(single) * 1.02
+        hr = process(cube, cfg).hr_bpm  # default rx_select="auto"
+        assert np.isfinite(hr)
+        # 3.6 bpm tolerance mirrors the project's HR label-noise floor.
+        assert abs(hr - _HR) <= 3.6, f"heartbeat_rx={rx}: HR {hr:.1f} off"

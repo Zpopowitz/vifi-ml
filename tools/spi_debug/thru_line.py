@@ -108,9 +108,7 @@ print(f"distance of nearest peak to truth: median {np.median(dists):.1f} bpm")
 print(f"\nMAE -- pick TALLEST peak (≈ current argmax):  {np.mean(argmax_err):.1f} bpm")
 print(f"MAE -- ORACLE (perfect selection among peaks): {np.mean(oracle_err):.1f} bpm")
 print("  => the gap between these is what a smarter selector could recover.")
-print(
-    "\nread: if presence is high but it's rarely the dominant peak (low rank-1 rate,"
-)
+print("\nread: if presence is high but it's rarely the dominant peak (low rank-1 rate,")
 print(
     "rel height <1), the heartbeat is THERE but out-competed -> learnable selection problem."
 )

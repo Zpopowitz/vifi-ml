@@ -130,13 +130,19 @@ def process(
     adc: np.ndarray,
     config: RadarConfig,
     clutter_method: str = "mean",
+    rx_select: str | int = "auto",
 ) -> VitalsResult:
     """Run the full pipeline: raw ADC cube -> VitalsResult.
 
     `adc` is `(n_chirps, samples_per_chirp)` complex. `clutter_method` is
     passed through to the MTI stage (``mean`` offline, ``iir`` streaming).
+    `rx_select` controls multi-RX collapse (see `extract_displacement`):
+    ``"auto"`` picks the best antenna (default), an int forces one antenna,
+    ``"mrc"`` is the legacy combine baseline.
     """
-    displacement, dsp_info = extract_displacement(adc, config, clutter_method)
+    displacement, dsp_info = extract_displacement(
+        adc, config, clutter_method, rx_select=rx_select
+    )
     fs = config.frame_rate_hz
     gated = motion_mask(displacement, fs)
 

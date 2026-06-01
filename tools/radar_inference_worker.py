@@ -66,6 +66,7 @@ from modules.bus import (  # noqa: E402
     MessageBus,
     apnea_events,
     bus_from_env,
+    dlq,
     hr_predicted,
     presence_events,
     radar_raw,
@@ -444,10 +445,8 @@ def run_worker(
                 # Malformed radar frame is a poison pill: re-delivering
                 # never helps. DLQ + ACK + move on (per the SP1 DLQ pattern).
                 log.warning("malformed radar msg %s -> DLQ: %s", m.msg_id, exc)
-                from modules.bus import dlq as _dlq_topic  # noqa: PLC0415
-
                 bus.publish(
-                    _dlq_topic(m.topic),
+                    dlq(m.topic),
                     {
                         "original_topic": m.topic,
                         "original_msg_id": m.msg_id,

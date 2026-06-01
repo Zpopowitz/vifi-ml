@@ -5,8 +5,43 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from radar.config import RadarConfig
+from radar.config import CARDIAC_BAND_HZ, RadarConfig
 from radar.synth import breathing_waveform, heartbeat_waveform, synth_capture
+from radar.vitals import _band_spectrum
+
+
+def _cardiac_peak_snr(cardiac: np.ndarray, fs: float) -> float:
+    """Cardiac-band peak magnitude / band-median magnitude."""
+    freqs, mag = _band_spectrum(cardiac, fs)
+    band = (freqs >= CARDIAC_BAND_HZ[0]) & (freqs <= CARDIAC_BAND_HZ[1])
+    band_mag = mag[band]
+    return float(np.max(band_mag) / (np.median(band_mag) + 1e-12))
+
+
+def test_heartbeat_on_single_rx_isolates_cardiac_signal() -> None:
+    """With heartbeat_rx set, the heartbeat lives on ONE antenna only --
+    the bench reality the 2026-05-29 captures showed (cardiac strong on a
+    single RX, not the common-mode component the old synth assumed). The
+    other antennas carry breathing + clutter + noise but no heartbeat."""
+    from radar.pipeline import process
+
+    cfg = RadarConfig(n_rx=3, frame_rate_hz=20.0)
+    cube, _ = synth_capture(
+        cfg,
+        duration_s=45.0,
+        hr_bpm=72.0,
+        rr_bpm=15.0,
+        snr_db=2.0,
+        heartbeat_amplitude_m=0.0002,
+        heartbeat_rx=2,
+        seed=0,
+    )
+    assert cube.ndim == 3 and cube.shape[2] == 3
+    # The cardiac peak must be sharpest on the heartbeat-bearing antenna.
+    snrs = [
+        _cardiac_peak_snr(process(cube[..., r], cfg).cardiac, 20.0) for r in range(3)
+    ]
+    assert int(np.argmax(snrs)) == 2
 
 
 def test_capture_shape_and_dtype() -> None:
