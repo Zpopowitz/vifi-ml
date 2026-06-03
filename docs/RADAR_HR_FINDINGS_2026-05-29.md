@@ -133,7 +133,7 @@ Partial discriminators, none truth-grade alone:
   64%) -> selector MAE 34.2 (`feature_discriminator.py`)
 - **temporal continuity** (oracle-seeded greedy) -> MAE 13.5
 
-**Hand-tuning the combination FAILS** (`viterbi_selector.py`): an untrained
+**Hand-tuning the combination FAILS** (removed bench script `viterbi_selector.py`; see `docs/RETIRED_ARTIFACTS.md`): an untrained
 Viterbi over candidates (off-comb x height emission + smoothness transition) got
 MAE 40 -- worse than argmax, because the per-peak emission was a bad guess and the
 smoothness prior committed to wrong tracks. **The emission must be LEARNED.**

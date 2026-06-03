@@ -4,6 +4,9 @@ Fast lookup. "I want to do X → go here." If you're new to the repo, read
 `CLAUDE.md` for the headline + `docs/STATUS.md` for current operator
 state, then come back here for everything else.
 
+**Retired paths and falsified approaches:** [`RETIRED_ARTIFACTS.md`](./RETIRED_ARTIFACTS.md)
+(read before resurrecting deleted docs, scripts, or metrics).
+
 ---
 
 ## I want to…
@@ -61,7 +64,8 @@ truth, not the pre-board runbook.
 | **Reproducible SPI capture fix (flash + edits + capture)** | [`radar_spi_firmware/APPLIED_EDITS.md`](./radar_spi_firmware/APPLIED_EDITS.md) |
 | Stage-2 paired-dataset protocol | [`RADAR_DATASET_PROTOCOL.md`](./RADAR_DATASET_PROTOCOL.md) |
 | Board-day runbook (partly superseded — see its banner) | [`RADAR_STARTUP.md`](./RADAR_STARTUP.md) |
-| SPI debug + firmware-fix history | [`RADAR_SPI_DEBUG.md`](./RADAR_SPI_DEBUG.md), [`RADAR_SPI_FIRMWARE_FIX.md`](./RADAR_SPI_FIRMWARE_FIX.md) |
+| SPI debug history (investigation log) | [`RADAR_SPI_DEBUG.md`](./RADAR_SPI_DEBUG.md) |
+| Retired SPI bringup/fix/restart docs (purged) | [`RETIRED_ARTIFACTS.md`](./RETIRED_ARTIFACTS.md) |
 | Architecture decisions for radar v2 (pre-board, partly superseded) | `docs/superpowers/plans/2026-05-20-radar-v2-architecture.md` |
 | Phase-0 background research | [`RADAR_PHASE0_NOTES.md`](./RADAR_PHASE0_NOTES.md) |
 | Demand thesis | **not yet written** (gated on customer interviews — see below) |

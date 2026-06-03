@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — paired RR ground truth in the capture session (Stage-2 dataset)
+- The Vernier GDX-RB belt is now captured **in parallel** with the H10 in both
+  `tools/capture_labeled.sh` (rest) and `tools/go_capture.sh` (elevated), pinned
+  to core 1 (off the collector's busy-wait core 3 and the H10's core 0) so the
+  20 fps SPI stream never starves. Best-effort by design: a missing/asleep belt
+  never aborts the load-bearing radar+H10 capture, and `RR=0` disables it.
+- `tools/radar_capture_session.sh` pulls the belt's raw force CSV + sidecar meta,
+  records `rr_rows` in `meta.json`, and warns (never fails) on a thin RR log.
+  `docs/RADAR_DATASET_PROTOCOL.md` updated to make the belt a standard per-session
+  capture rather than optional.
+
+### Fixed — capture refuses to save a corrupt arm (board-day safety)
+- `tools/radar_kickstart_adc.py` now raises `SystemExit` (was a soft warning) when
+  the `adcLogging` response lacks `adcDataPerFrame` — the one-shot was already
+  consumed this boot and the board needs an NRST. `radar_arm.sh`,
+  `capture_labeled.sh`, and `radar_capture_session.sh` gate on that exit code and
+  abort before dumping, so a half-armed board can no longer stream stale/corrupt
+  ADC that still lands on disk looking "saved."
+
+### Changed — repository scope + hygiene
+- `CLAUDE.md` gains a "Current engineering focus (radar-only)" section: a do/don't
+  table that makes radar v2 the default scope and gates CSI/ESP32 work behind an
+  explicit ask. CSI stays shipped but maintenance-only.
+- `.gitignore` excludes `.claude/settings.local.json` and the purged
+  `docs/superpowers/` plans/specs (removed from tracking, kept on disk per
+  `RETIRED_ARTIFACTS.md`).
+
 ### Added — radar HR/RR pipeline next steps (selector harness, RR, hardening)
 - **Learned HR peak-selector** (`radar/hr_selector.py`, tested): candidate
   extraction + featurization + a Viterbi continuity decode over learned

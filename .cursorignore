@@ -1,0 +1,96 @@
+# --- Python / toolchain noise ---
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Never index captures, models, or audit payloads ---
+data/
+models/
+models_*/
+models_real/
+audit_logs/
+*.joblib
+*.pkl
+*.h5
+*.onnx
+
+# --- Site build output (source lives in site/src/) ---
+site/node_modules/
+site/.astro/
+site/dist/
+site/.vercel/
+
+# --- Agent / plugin / IDE artifacts (not ViFi product code) ---
+.claude/settings.local.json
+.compound-engineering/
+.gstack/
+.cursor/projects/
+agent-transcripts/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Superseded or loop-inducing docs (truth: STATUS + RADAR_HR_FINDINGS + APPLIED_EDITS) ---
+docs/RADAR_SPI_PI_BRINGUP.md
+docs/RADAR_SPI_FIRMWARE_FIX.md
+docs/RADAR_SPI_RESTART.md
+docs/RADAR_SPI_DEBUG.md
+docs/AUDIT_PLAN.md
+docs/superpowers/
+
+# --- Phantom docs (linked but missing — stop agents inventing content) ---
+docs/HOME_PILOT_LOG.md
+docs/FUTURE_ARCHITECTURE.md
+docs/DEMAND_VALIDATION_INTERVIEWS.md
+MODEL_CARD.md
+RESULTS.md
+ROADMAP.md
+FAQ.md
+
+# --- Bench SPI scratch (keep APPLIED_EDITS + findings; ignore experiment graveyard) ---
+tools/spi_byte_dump.py
+tools/spi_byte_dump_with_uart.py
+tools/spi_dbg_run.py
+tools/spi_dbg_raw.py
+tools/spi_dbg_both_uarts.py
+tools/spi_dbg_simple.py
+tools/spi_debug/analyze_sync_capture.py
+tools/spi_debug/feature_discriminator.py
+tools/spi_debug/spi_adclog_check.py
+tools/spi_debug/spi_adclog_fresh.py
+tools/spi_debug/spi_miso_test.py
+tools/spi_debug/spi_perframe_capture.py
+tools/spi_debug/spi_probe.py
+tools/spi_debug/spi_reorder_test.py
+tools/spi_debug/spi_running_check.py
+tools/spi_debug/viterbi_selector.py
+
+# --- Duplicate charter (persona already in .cursor/rules/Cofounder.mdc + CLAUDE.md) ---
+docs/SOUL.md
+
+# --- Shelved path that does not exist ---
+hr_net/
+
+# --- External memory store (not in repo; names tempt path hallucination) ---
+**/memory/
+project_*

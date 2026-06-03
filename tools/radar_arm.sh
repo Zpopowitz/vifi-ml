@@ -13,7 +13,13 @@ sleep 1
 redis-cli DEL radar.raw.founder >/dev/null 2>&1
 
 echo "=== ARM ===" > /tmp/sync.log
-.venv/bin/python -m tools.radar_kickstart_adc --cfg /home/zpopowitz/MotionDetect.cfg >> /tmp/sync.log 2>&1
+# Gate on arm success before launching the collector -- a failed arm (no fresh
+# NRST) must stop here, loudly, not leave a half-armed board for go_capture.
+if ! .venv/bin/python -m tools.radar_kickstart_adc --cfg /home/zpopowitz/MotionDetect.cfg >> /tmp/sync.log 2>&1; then
+    echo "=== ARM FAILED -- NRST the board and re-run radar_arm.sh ===" >> /tmp/sync.log
+    cat /tmp/sync.log | tail -3
+    exit 1
+fi
 
 echo "=== COLLECTOR (pinned core 3, waiting for sensorStart) ===" >> /tmp/sync.log
 rm -f /tmp/vifi_run.log
