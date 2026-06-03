@@ -4,7 +4,7 @@ numpy==2.4.6
 scipy==1.17.1
 scikit-learn==1.8.0
 xgboost==3.2.0
-fastapi==0.136.1
+fastapi==0.136.3
 uvicorn[standard]==0.48.0
 pydantic==2.13.4
 httpx==0.28.1
@@ -22,7 +22,7 @@ cryptography==48.0.0
 prometheus-client==0.25.0
 # Live message bus (Redis Streams). Optional: in-memory backend works
 # without it, but production deployments and the Live dashboard need Redis.
-redis==7.4.0        ; extra == "bus"
+redis==8.0.0        ; extra == "bus"
 # Hardware loggers (optional; only needed when capturing real data).
 bleak==0.22.3       ; extra == "capture"
 godirect==1.2.1     ; extra == "capture"
