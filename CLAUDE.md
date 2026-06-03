@@ -109,6 +109,7 @@ indexes every script in `tools/` by purpose.
 
 ### Operator + developer docs
 - **Operator status + commands:** `docs/STATUS.md` ← read first
+- **Retired / falsified (do not resurrect blindly):** `docs/RETIRED_ARTIFACTS.md`
 - **Daily reproduction:** `docs/QUICKSTART.md`
 - **Security hardening (SP7-partial):** `docs/SECURITY_HARDENING.md`, `tools/enable_security_mode.sh`
 - **Demand validation interview runbook:** `docs/DEMAND_VALIDATION_INTERVIEWS.md`
