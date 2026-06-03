@@ -20,9 +20,10 @@ touches train, eval, or SSL.
 
 Multi-RX raw-ADC-over-SPI, CPU-pinned collector (core 3), clean **20 fps**, current
 firmware (`vifi_mpd_spi.appimage`). Capture flow: `tools/radar_arm.sh` (pre-arm) +
-`tools/go_capture.sh` (sensorStart + H10) for elevated captures;
-`tools/capture_labeled.sh` for rest. Record the firmware hash + git commit per
-session so the platform is auditable.
+`tools/go_capture.sh` (sensorStart + H10 + RR belt) for elevated captures;
+`tools/capture_labeled.sh` for rest. Both H10 and the Vernier belt are read in
+parallel, pinned to cores 0 and 1 respectively (off the collector's core 3).
+Record the firmware hash + git commit per session so the platform is auditable.
 
 ## Per-subject session (identical for every subject, founder included)
 
@@ -32,8 +33,11 @@ session so the platform is auditable.
   - 2 x rest, >=150 s each (long windows -> finer resolution, the path to <1 bpm).
   - 2-3 x post-exercise decay, ~120 s, pre-armed so the elevated HR is caught
     within ~1 s of sitting (covers the HR range in one capture).
-  - H10 paired throughout (the label). Optional Vernier Go Direct belt for RR
-    ground truth (the only way to validate RR; H10 is HR-only).
+  - H10 paired throughout (the HR label) AND the Vernier Go Direct belt paired
+    throughout for RR ground truth -- the only way to validate RR (H10 is HR-only).
+    The belt is captured in parallel by default (best-effort: a missing/asleep belt
+    never aborts the radar+H10 capture; set RR=0 to disable). Its raw force at 10 Hz
+    is the source of truth; RR is recomputed offline from force, not the onboard DSP.
   - NRST + arm before each capture (board needs a fresh boot per `adcLogging`).
 - **Plus unlabeled:** a few minutes of on-platform radar with no exercise/H10, for
   SSL pretraining (cheap; collect generously).

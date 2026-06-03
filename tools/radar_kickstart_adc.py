@@ -120,9 +120,12 @@ def arm_spi_streaming(port: str, cfg_path: Path, baud: int, settle_s: float) -> 
     resp = s.read_all().decode(errors="replace")
     log.info("adcLogging 2 response: %r", resp[:300])
     if "adcDataPerFrame" not in resp:
-        log.warning(
-            "no 'adcDataPerFrame' in adcLogging response -- arm may have failed "
-            "(board not in SPI build, or needs NRST). Do NOT re-run without a reset."
+        s.close()
+        raise SystemExit(
+            "ARM FAILED: no 'adcDataPerFrame' in the adcLogging response. The board's "
+            "one-shot adcLogging was almost certainly already consumed this boot -- "
+            "press NRST and retry. Refusing to proceed: a capture armed from this state "
+            "streams stale/corrupt data while still looking 'saved'."
         )
 
     s.close()
