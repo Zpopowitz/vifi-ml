@@ -19,7 +19,7 @@ hypothesis==6.155.1          # property-based DSP testing
 # MUST match .pre-commit-config.yaml (rev) and .github/workflows/ci.yml (lint
 # job) or `make format` will fight pre-commit/CI. Bump all three together; do
 # not let Dependabot drift this one alone.
-ruff==0.6.9
+ruff==0.15.15
 mypy==2.1.0
 types-redis==4.6.0.20240903
 types-PyYAML==6.0.12.20260518
