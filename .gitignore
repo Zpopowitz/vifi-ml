@@ -54,3 +54,8 @@ site/.vercel/
 # Agent/plugin tooling artifacts (not part of the ViFi project)
 .compound-engineering/
 install-agents.sh
+.claude/settings.local.json
+
+# Purged from tracking (superseded plans/specs, recorded in RETIRED_ARTIFACTS.md);
+# kept on disk for local reference, never re-indexed into the repo.
+docs/superpowers/
