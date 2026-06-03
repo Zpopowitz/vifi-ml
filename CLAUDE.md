@@ -18,7 +18,28 @@ compaction by the hooks in `.claude/settings.json`.
 
 **Two sensors, one platform.**
 
-- **Shipped baseline (WiFi CSI):** 13.90 bpm cross-session HR MAE on
+## Current engineering focus (radar-only)
+
+**Default scope for all implementation work: 60 GHz radar (v2) only.** The
+company gate is a multi-subject paired radar dataset + learned peak-selector, not
+CSI retraining or WiFi feature work.
+
+| Do by default | Do not unless the user explicitly asks |
+|---|---|
+| `radar/`, `tools/radar_*`, paired capture (`tools/run_paired_session.py`, `tools/radar_capture_session.sh`), `docs/RADAR_*`, `docs/radar_spi_firmware/` | Retrain or tune CSI XGBoost, ESP32 firmware, subcarrier selection, `preprocess.py` / `multipath.py` experiments |
+| Read shared platform code (`modules/bus.py`, `api.py`, `dashboard/`, audit) when a change touches vitals topics or deploy | Treat CSI LOSO (13.90 bpm) as the product accuracy target for radar tasks |
+| Check `docs/RETIRED_ARTIFACTS.md` before resurrecting deleted scripts or falsified approaches (MRC, notch, combiners) | Resurrect purged SPI bench scripts or `docs/superpowers/` plans |
+
+CSI is still **shipped on the live stack** (WiFi inference worker). Do not break
+it when editing shared infrastructure; do not spend agent cycles improving it.
+
+Radar truth (wins for current work): `docs/RADAR_HR_FINDINGS_2026-05-29.md`,
+`docs/RADAR_DATASET_PROTOCOL.md`, `docs/RADAR_STARTUP.md`,
+`docs/radar_spi_firmware/APPLIED_EDITS.md`.
+
+---
+
+- **Shipped baseline (WiFi CSI):** maintenance / context only — not active R&D. 13.90 bpm cross-session HR MAE on
   ESP32-S3 hardware vs Polar H10 ground truth, LOSO across the 3 HR-labeled
   paired captures in `data/captures/founder/`, single subject (see
   `docs/eval/2026-05-23-loso.json`). Per-fold: 13.94 / 7.96 / 19.78 bpm
@@ -56,9 +77,9 @@ upstream; a `sensor:` field on each message is the only marker.
 
 Truth lives in `docs/STATUS.md` (current operator state),
 `docs/LIVE_STACK.md` (the live monitoring runbook),
-`docs/RADAR_STARTUP.md` (board-day runbook), and
-`docs/eval/2026-05-23-loso.json` (current authoritative LOSO eval).
-If those disagree with this file, those win.
+`docs/RADAR_STARTUP.md` (board-day runbook), and for radar HR
+`docs/RADAR_HR_FINDINGS_2026-05-29.md`. CSI LOSO eval only:
+`docs/eval/2026-05-23-loso.json`. If those disagree with this file, those win.
 
 For task-oriented lookup ("I want to do X, where does that code / doc
 live?"), `docs/NAVIGATION.md` is the fast path. `tools/README.md`
@@ -113,7 +134,7 @@ indexes every script in `tools/` by purpose.
 - **Daily reproduction:** `docs/QUICKSTART.md`
 - **Security hardening (SP7-partial):** `docs/SECURITY_HARDENING.md`, `tools/enable_security_mode.sh`
 - **Demand validation interview runbook:** `docs/DEMAND_VALIDATION_INTERVIEWS.md`
-- **Spec → plan → build artifacts:** `docs/superpowers/specs/`, `docs/superpowers/plans/` (each sub-project: SP1 live stack, SP2 radar, synthetic-model removal, radar v2 architecture, beat-detection HR)
+- **Landed SP1/SP2 plans (removed from repo):** see `docs/RETIRED_ARTIFACTS.md`; do not treat as open work
 - **Historical audit + decision log:** `docs/AUDIT_PLAN.md` (PRs A–L complete; kept as reference for past architectural decisions)
 - **Tests:** `tests/` (pytest), plus `test_deploy.sh` (bash, deploy.sh static checks)
 
