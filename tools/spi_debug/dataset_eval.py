@@ -9,11 +9,10 @@ not tracking the heart, it is sitting in the band (the trap the CSI work hit,
 project_hr_model_ceiling). No answer-key tuning: every method uses fixed settings.
 
 Usage: PYTHONPATH=. python tools/spi_debug/dataset_eval.py [dataset_dir]
-       (default: newest data/captures/dataset_*)
+       (default: all captures with dataset_include=true; quarantined excluded)
 """
 
 import csv
-import glob
 import json
 import os
 import pickle
@@ -23,6 +22,7 @@ import sys
 import numpy as np
 
 from radar.config import RadarConfig
+from radar.dataset import included_captures
 from radar.pipeline import process
 
 FS = 20.0
@@ -84,16 +84,16 @@ def methods(cube):
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else None
-    if root is None:
-        dirs = sorted(glob.glob("data/captures/dataset_*"))
-        if not dirs:
-            print(
-                "no data/captures/dataset_* found -- run tools/radar_capture_session.sh first"
-            )
-            return
-        root = dirs[-1]
-    caps = sorted(d for d in glob.glob(os.path.join(root, "*")) if os.path.isdir(d))
-    print(f"dataset: {root}  ({len(caps)} captures)\n")
+    caps = included_captures(root)
+    if not caps:
+        print(
+            "no captures with dataset_include=true (legacy/quarantined excluded) -- "
+            "flag captures via meta.json or run a capture first"
+        )
+        return
+    print(
+        f"included captures: {len(caps)} (dataset_include=true, quarantine excluded)\n"
+    )
 
     rows, names = [], None
     print(f"{'label':>16} {'truth':>6} | estimates (bpm, err)")
@@ -107,7 +107,7 @@ def main():
         m = methods(cube)
         names = names or list(m)
         rows.append((truth, m))
-        cells = "  ".join(f"{k}={v:.0f}({v-truth:+.0f})" for k, v in m.items())
+        cells = "  ".join(f"{k}={v:.0f}({v - truth:+.0f})" for k, v in m.items())
         print(f"{label:>16} {truth:6.1f} | {cells}   [{cube.shape}, n_hr={n}]")
 
     if len(rows) < 2:
