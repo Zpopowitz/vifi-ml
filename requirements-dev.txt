@@ -6,9 +6,10 @@
 #     make install-dev
 
 # Test
-# Bumped to 8.3.4 to clear GHSA-6w46-j5rx-g56g; pytest 9 has API
-# changes we don't want to chase right now.
-pytest==8.3.4
+# 8.4.x clears GHSA-6w46-j5rx-g56g (fixed in 8.3.4) and is REQUIRED by
+# pytest-asyncio>=1.4.0 (needs pytest>=8.4); staying on 8.x avoids the
+# pytest 9 API changes. Keep pytest and pytest-asyncio bumped together.
+pytest==8.4.2
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0
 pytest-timeout==2.4.0
