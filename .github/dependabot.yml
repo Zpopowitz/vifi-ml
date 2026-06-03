@@ -15,6 +15,21 @@ updates:
       - dependencies
       - python
     groups:
+      # pytest and its plugins share coupled version constraints
+      # (pytest-asyncio>=1.4 requires pytest>=8.4, etc.). Group ALL pytest*
+      # packages across every update-type so Dependabot proposes them in ONE
+      # PR and cannot split-bump a plugin past what the pinned pytest allows.
+      # This class of break took main's CI red: #92 bumped pytest-asyncio to
+      # 1.4.0 alone while pytest stayed ==8.3.4, making the dev install
+      # unresolvable. Listed first so pytest* land here, not the catch-all.
+      pytest:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+        update-types:
+          - major
+          - minor
+          - patch
       python-minor-and-patch:
         update-types:
           - minor
