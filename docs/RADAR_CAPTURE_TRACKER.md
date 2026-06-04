@@ -2,7 +2,7 @@
 
 Operational checklist for the paired radar+H10+belt dataset. Protocol +
 rationale: `RADAR_DATASET_PROTOCOL.md`. Captures live (gitignored) under
-`data/captures/stage2/<subject_id>/<capture>/`.
+`data/captures/radar_dataset/<subject_id>/<capture>/`.
 
 Mark a cell: `[ ]` todo, `[~]` captured pending verify, `[x]` verified
 (`meta.json` `capture_ok: true`), `[!]` quarantined (note why). A capture is
@@ -41,7 +41,7 @@ fitness, resting HR.
 
 | # | subject_id | body (H/W/age band) | rest_1 | rest_2 | postex_1 | postex_2 | postex_3 | status |
 |---|---|---|---|---|---|---|---|---|
-| 1 | founder | (fill) | [x] | [ ] | [ ] | [ ] | [ ] | partial (1/5) |
+| 1 | founder | (fill) | [x] | [x] | [x] | [x] | [x] | DONE (5/5) |
 | 2 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
 | 3 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
 | 4 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
@@ -54,9 +54,10 @@ fitness, resting HR.
 | 11 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
 | 12 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
 
-Subject 1 `rest_1` = `dataset_20260603/founder_restval_1` (150 s, at floor; kept
-per protocol -- valid provenance, frozen platform). To migrate into the
-`stage2/founder/` layout when the dataset dir is created.
+Subject 1 (founder) COMPLETE: 5/5 captures at `data/captures/radar_dataset/founder/`,
+all `dataset_include=true`. `rest_1` is the former `dataset_20260603/founder_restval_1`
+(150 s, at floor), migrated. Signal-presence gate passed (oracle 6.77 bpm pooled,
+0.57 bpm on stable rest at 90 s windows; tallest baseline 43.98).
 
 ## Gate log (after ~10-12 subjects)
 

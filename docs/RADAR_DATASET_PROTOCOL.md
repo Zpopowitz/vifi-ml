@@ -102,8 +102,10 @@ Four protections make this hold:
 Consented subjects; **pseudonymized** subject IDs (`pseudonymize.py`), no PII in the
 dataset. Per-capture metadata: pseudo subject_id, coarse body metrics (height,
 weight, age band -- for the diversity analysis), distance/angle, timestamp, HR
-range, firmware hash, git commit. New dataset directory, e.g.
-`data/captures/stage2/<subject_id>/<capture>/`. Gitignored like all `data/`.
+range, firmware hash, git commit. Dataset directory:
+`data/captures/radar_dataset/<subject_id>/<capture>/` (one folder per subject;
+stage-agnostic name -- the same captures train the Stage-1 selector and the
+Stage-2 waveform model). Gitignored like all `data/`.
 
 ## Capture plan -- locked counts + phasing (2026-06-04)
 
