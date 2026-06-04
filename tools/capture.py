@@ -23,10 +23,11 @@ What v1 automates (no new wiring, works with the board as it is today):
      and auto-recapture on a detected frame-collapse / flat-ADC (bounded).
   6. Auto-stamp provenance: git commit + firmware sha + geometry + subject.
 
-v2 (needs ONE jumper from a free FTDI lead AD5/6/7 to the board NRST line):
-  ``reset_board()`` becomes a programmatic FTDI-GPIO pulse and the manual-NRST
-  poll in step 3/5 disappears entirely. The hook is isolated below so v2 is a
-  one-function change, not a rewrite.
+Auto-reset: ``reset_board()`` asserts the board's hardware reset through the
+on-board XDS110 debug probe via pyOCD (``pyocd reset -m hw``), so every capture
+starts from a clean, adcLogging-fresh boot with no physical NRST. Needs the
+one-time 60-xds110 udev rule (hidraw -> group plugdev). ``--no-reset`` falls
+back to a manual NRST + poll; ``--reset-only`` just reboots the board and exits.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from pathlib import Path
 PI = "pi"  # ssh alias (see feedback_pi_resolution)
 PI_REPO = "/home/zpopowitz/vifi-ml"
 PI_PY = ".venv/bin/python"  # relative to PI_REPO after cd
+PI_PYOCD = ".venv/bin/pyocd"  # XDS110 hardware-reset (one-time 60-xds110 udev rule)
 H10_MAC = "24:AC:AC:11:97:DB"
 CFG_PATH = "/home/zpopowitz/MotionDetect.cfg"
 EXPECT_ADC_PER_FRAME = "6144"  # 4 chirps x 3 RX x 256 x 2 (20 fps HR)
@@ -211,7 +213,7 @@ def preflight(rr: bool) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 3. Board liveness + guided recovery   (v2 swaps this for an FTDI-GPIO pulse)
+# 3. Board liveness + auto-reset (XDS110 hardware NRST via pyocd)
 # --------------------------------------------------------------------------- #
 _SENSORSTOP_PROBE = """
 import glob, serial, time
@@ -226,7 +228,7 @@ s.close()
 """
 
 _NRST_CHECKLIST = (
-    "  BOARD SILENT. To recover (v1 = manual; v2 = automatic via FTDI jumper):\n"
+    "  BOARD SILENT (manual --no-reset mode):\n"
     "    1. DIP switches: S1.1 ON, S1.2 OFF, S1.5 ON, S1.6 ON; S4.1/4.2/4.3 OFF.\n"
     "    2. Press NRST (~1s). If still silent: power off ~10s, power on, NRST.\n"
     "    3. Leave it. This poller proceeds the instant the CLI answers.\n"
@@ -236,33 +238,44 @@ _NRST_CHECKLIST = (
 
 
 def reset_board() -> None:
-    """v1: no-op (the human presses NRST; wait_for_board polls).
-    v2: pulse a free FTDI GPIO (AD6) low ~20ms then hi-Z to assert active-low NRST.
+    """Programmatic NRST: assert the board's hardware reset through the on-board
+    XDS110 probe via pyOCD. Equivalent to pressing NRST -- gives an
+    adcLogging-fresh boot. Needs the one-time 60-xds110 udev rule.
     """
-    return
+    code, out = ssh(f"cd {PI_REPO} && {PI_PYOCD} reset -m hw -t cortex_m", timeout=30)
+    if code != 0:
+        tail = (out.strip().splitlines() or ["no output"])[-1][:160]
+        raise Fail(
+            "auto-reset via XDS110/pyocd failed: "
+            + tail
+            + " -- check the probe is connected and the 60-xds110 udev rule grants "
+            "hidraw group plugdev (or pass --no-reset for a manual NRST)."
+        )
 
 
 def board_alive() -> bool:
     return remote_py(_SENSORSTOP_PROBE, timeout=20) == "ALIVE"
 
 
-def wait_for_board(reason: str) -> None:
-    if board_alive():
+def wait_for_board(reason: str, auto_reset: bool = True) -> None:
+    if auto_reset:
+        log(f"  board: auto-reset via XDS110 [{reason}]")
+        reset_board()
+    elif board_alive():
         log("  board: CLI alive")
         return
-    reset_board()
-    log(f"  board not responding ({reason}).")
-    log(_NRST_CHECKLIST)
+    else:
+        log(f"  board not responding ({reason}); manual recovery:")
+        log(_NRST_CHECKLIST)
     deadline = time.monotonic() + BOARD_POLL_S
     while time.monotonic() < deadline:
-        time.sleep(4)
+        time.sleep(3)
         if board_alive():
-            log("  board: CLI alive -> continuing")
+            log("  board: CLI alive (fresh boot)")
             return
     raise Fail(
-        "Board still silent after the recovery window. Most likely a DIP switch "
-        "or the flash. Verify switches, power-cycle + NRST, then reflash per "
-        "APPLIED_EDITS.md if it stays silent."
+        "board never came up after reset. Check power, DIP switches "
+        "(S1.1/2/5/6), and the flash (reflash per APPLIED_EDITS.md if needed)."
     )
 
 
@@ -424,7 +437,18 @@ def main() -> int:
     ap.add_argument(
         "--preflight-only",
         action="store_true",
-        help="run resolve+preflight+board probe and exit (no capture)",
+        help="run resolve+preflight+board reset and exit (no capture)",
+    )
+    ap.add_argument(
+        "--no-reset",
+        dest="auto_reset",
+        action="store_false",
+        help="skip the automatic XDS110 reset; rely on a manual NRST + poll",
+    )
+    ap.add_argument(
+        "--reset-only",
+        action="store_true",
+        help="hardware-reset the board via the XDS110 probe and exit",
     )
     args = ap.parse_args()
 
@@ -434,12 +458,17 @@ def main() -> int:
     try:
         log("[1/6] Pi reachability")
         resolve_pi()
+        if args.reset_only:
+            reset_board()
+            wait_for_board("reset-only", auto_reset=False)
+            log("RESET OK -- board rebooted via XDS110, CLI alive.")
+            return 0
         log("[2/6] preflight")
         preflight(args.rr)
         log("[3/6] board liveness")
-        wait_for_board("pre-capture")
+        wait_for_board("pre-capture", auto_reset=args.auto_reset)
         if args.preflight_only:
-            log("PREFLIGHT OK (--preflight-only). Board armed-ready.")
+            log("PREFLIGHT OK (--preflight-only). Board reset + ready.")
             return 0
     except Fail as e:
         log(f"\nFAIL: {e}")
@@ -468,14 +497,14 @@ def main() -> int:
                 log(
                     "  capture FAILED verify (collapse/flat/HR). Recapturing after NRST."
                 )
-                wait_for_board("post-collapse recapture")
+                wait_for_board("post-collapse recapture", auto_reset=args.auto_reset)
             else:
                 log(f"\nCAPTURE SAVED BUT SUSPECT -> {out}  (verify failed; inspect)")
                 return 3
         except Fail as e:
             log(f"  capture error: {e}")
             if attempt <= args.retries:
-                wait_for_board("post-error recapture")
+                wait_for_board("post-error recapture", auto_reset=args.auto_reset)
             else:
                 log("\nFAIL: capture did not complete after retries.")
                 return 2
