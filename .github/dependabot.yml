@@ -22,6 +22,8 @@ updates:
       # This class of break took main's CI red: #92 bumped pytest-asyncio to
       # 1.4.0 alone while pytest stayed ==8.3.4, making the dev install
       # unresolvable. Listed first so pytest* land here, not the catch-all.
+      # NOTE: pytest* is fully ignored below, so this group is currently moot;
+      # it is kept as a guard in case that ignore is ever lifted.
       pytest:
         patterns:
           - "pytest"
@@ -34,6 +36,24 @@ updates:
         update-types:
           - minor
           - patch
+    # Dev-only tooling pinned in places Dependabot cannot see. The linter and
+    # type-checker revs live in .pre-commit-config.yaml AND as hardcoded
+    # `pip install` lines in .github/workflows/ci.yml (ruff==0.6.9 at the lint
+    # job; pytest==8.3.4 at the e2e job), on top of the pytest/pytest-asyncio
+    # version coupling documented in requirements-dev.txt. Dependabot sees only
+    # requirements-dev.txt, so a lone bump here silently desyncs the other
+    # locations and turns `make format`/CI red -- the #92-class break above.
+    # These ship in NO production artifact and carry no runtime or
+    # patient-facing vulnerability surface, so they are bumped MANUALLY across
+    # every pinned location together, not by Dependabot. Runtime deps (numpy,
+    # scipy, scikit-learn, fastapi, ...) and the security scanners (pip-audit,
+    # bandit) are deliberately NOT ignored -- keeping those current is the
+    # documented FDA cybersecurity control at the top of this file.
+    ignore:
+      - dependency-name: "pytest"
+      - dependency-name: "pytest-*"
+      - dependency-name: "ruff"
+      - dependency-name: "mypy"
 
   - package-ecosystem: docker
     directory: "/"
