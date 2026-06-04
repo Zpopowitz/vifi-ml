@@ -1,7 +1,8 @@
 """Held-out evaluation across the paired radar+H10 HR dataset (plan B).
 
-Globs ``data/captures/dataset_*/<label>/`` and, for each capture, derives the
-H10 ground-truth HR and the radar estimate for a few baseline methods over the
+Reads the curated set via ``radar.dataset.included_captures``
+(``data/captures/radar_dataset/<subject>/<capture>/``) and, for each capture,
+derives the H10 ground-truth HR and the radar estimate for a few baseline methods over the
 H10 read window. The point is NOT per-capture accuracy (a spurious peak can land
 near the truth at one HR) -- it is CROSS-CAPTURE TRACKING: does the estimate move
 WITH the true HR as it varies across captures? A method with low MAE but r~0 is

@@ -572,8 +572,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    day = datetime.now(timezone.utc).strftime("%Y%m%d")
-    out = Path(f"data/captures/dataset_{day}/{args.label}")
+    out = Path(f"data/captures/radar_dataset/{args.subject}/{args.label}")
 
     try:
         log("[1/6] Pi reachability")
