@@ -405,8 +405,28 @@ def firmware_sha() -> str:
     return out.splitlines()[-1] if out else "unattested"
 
 
+def pi_head() -> tuple[str, bool]:
+    """The Pi's actual HEAD + whether its tracked tree is dirty.
+
+    This is the code that produced the raw. ``git_commit`` below is the DEV
+    orchestrator's HEAD (the machine that ran capture.py) -- a different repo
+    state -- so recording both keeps provenance honest instead of stamping the
+    wrong commit. Untracked scratch files are ignored: they do not affect
+    platform reproducibility, only tracked changes vs HEAD do.
+    """
+    code, out = ssh(
+        f"cd {PI_REPO} && git rev-parse --short HEAD && "
+        "(git diff --quiet HEAD && echo CLEAN || echo DIRTY)"
+    )
+    if code != 0:
+        return "unknown", False
+    toks = out.split()
+    return (toks[0] if toks else "unknown"), ("DIRTY" in out)
+
+
 def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
     code, git = _run(["git", "rev-parse", "--short", "HEAD"], timeout=10)
+    pi_sha, pi_dirty = pi_head()
     meta = {
         "label": args.label,
         "duration_s": args.duration,
@@ -417,7 +437,9 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "geometry": {"distance_m": args.distance_m, "angle_deg": args.angle_deg},
         "h10_rows": n_hr,
         "rr_rows": n_rr,
-        "git_commit": git.strip() if code == 0 else "unknown",
+        "git_commit": git.strip() if code == 0 else "unknown",  # dev orchestrator HEAD
+        "pi_commit": pi_sha,  # the Pi code that actually produced the raw
+        "pi_dirty": pi_dirty,  # True = Pi tracked tree had uncommitted edits at capture
         "firmware_sha16": firmware_sha(),
         "verify": ver,
         "notes": args.notes,
