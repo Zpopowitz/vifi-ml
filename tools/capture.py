@@ -315,6 +315,81 @@ def run_capture(duration: int, rr: bool) -> None:
         raise Fail("ARM FAILED on the Pi (board lost its fresh boot mid-run).")
 
 
+def run_elevated_capture(duration: int, rr: bool, countdown: int) -> None:
+    """Post-exercise capture via the pre-arm flow (radar_arm.sh + go_capture.sh).
+
+    The rest flow (run_capture) has a ~15 s bring-up before the H10 read starts,
+    which would discard the top of a decaying post-exercise HR -- the most
+    valuable wide-range data for the selector. Here we pre-arm on the fresh boot
+    (collector running, radar NOT streaming, so no endurance/data burned while we
+    wait), give the operator `countdown` seconds to do the all-out bout and get
+    seated + still, then fire go_capture.sh (sensorStart + H10/RR) so the elevated
+    HR is caught ~1 s after sitting, near peak. The belt + H10 must already be
+    strapped and awake (preflight confirmed it) -- the window is too short for a
+    cold BLE scan.
+    """
+    for s in ("tools/radar_arm.sh", "tools/go_capture.sh"):
+        code, _ = _run(["scp", "-q", s, f"{PI}:/tmp/{Path(s).name}"], timeout=20)
+        if code != 0:
+            raise Fail(f"could not scp {s} to the Pi.")
+
+    # Pre-arm (the slow part) on the fresh boot; radar_arm truncates sync.log.
+    ssh("nohup bash /tmp/radar_arm.sh >/dev/null 2>&1 & echo launched")
+    deadline = time.monotonic() + 45
+    armed = False
+    while time.monotonic() < deadline:
+        time.sleep(2)
+        _, st = ssh(
+            "grep -qE 'ARMED|ARM FAILED' /tmp/sync.log && echo SEEN || echo WAIT"
+        )
+        if "SEEN" in st:
+            armed = True
+            break
+    _, armfail = ssh("grep -q 'ARM FAILED' /tmp/sync.log && echo YES || echo NO")
+    if "YES" in armfail:
+        raise Fail("ARM FAILED on the Pi (no fresh boot -- the board needs an NRST).")
+    if not armed:
+        raise Fail(
+            "pre-arm timed out -- radar_arm.sh wrote neither ARMED nor ARM FAILED "
+            "in 45 s. Check the Pi/board, then retry (no bout wasted yet)."
+        )
+
+    log(
+        f"  board ARMED. EXERCISE NOW -- capture auto-fires in {countdown}s. Do the "
+        f"all-out bout, then be SEATED + STILL ~2-3 s before it hits 0."
+    )
+    remaining = countdown
+    while remaining > 0:
+        step = min(5, remaining)
+        time.sleep(step)
+        remaining -= step
+        log(f"    fire in {remaining}s")
+
+    rr_env = "" if rr else "RR=0 "
+    _, fired = ssh(
+        f"{rr_env}nohup bash /tmp/go_capture.sh {duration} '{H10_MAC}' "
+        ">/dev/null 2>&1 & echo fired"
+    )
+    if "fired" not in fired:
+        raise Fail(
+            "could not fire go_capture.sh (link dropped at the fire moment?). "
+            "Retry -- re-arm + re-countdown."
+        )
+    log(
+        f"  FIRED -- capturing {duration}s of elevated decay (sensorStart -> H10+RR)..."
+    )
+    waited, budget = 0, duration + 60
+    while waited < budget:
+        time.sleep(5)
+        waited += 5
+        _, done = ssh(
+            "grep -q 'SYNC CAPTURE DONE' /tmp/sync.log 2>/dev/null "
+            "&& echo DONE || echo WAIT"
+        )
+        if "DONE" in done:
+            break
+
+
 def dump_and_pull(out: Path, rr: bool) -> dict:
     dumped = remote_py(
         "import redis, pickle\n"
@@ -366,7 +441,9 @@ def verify(out: Path) -> dict:
     hr = pd.read_csv(out / "hr_h10.csv")
     hr_col = "hr_bpm" if "hr_bpm" in hr else hr.columns[-1]
     n_hr = len(hr)
-    hr_ok = n_hr >= 10 and 40 <= hr[hr_col].min() and hr[hr_col].max() <= 200
+    hr_min = float(hr[hr_col].min()) if n_hr else 0.0
+    hr_max = float(hr[hr_col].max()) if n_hr else 0.0
+    hr_ok = n_hr >= 10 and 40 <= hr_min and hr_max <= 200
 
     rr_path = out / "rr_log.csv"
     if rr_path.exists():
@@ -384,6 +461,9 @@ def verify(out: Path) -> dict:
         "adc_std": round(adc_std, 3),
         "adc_ok": adc_std > 1 and adc_uniq > 50,
         "n_hr": n_hr,
+        "hr_min": round(hr_min, 1),
+        "hr_max": round(hr_max, 1),
+        "hr_range": round(hr_max - hr_min, 1),
         "hr_ok": bool(hr_ok),
         "rr_note": rr_note,
         "rr_ok": rr_ok,
@@ -405,11 +485,32 @@ def firmware_sha() -> str:
     return out.splitlines()[-1] if out else "unattested"
 
 
+def pi_head() -> tuple[str, bool]:
+    """The Pi's actual HEAD + whether its tracked tree is dirty.
+
+    This is the code that produced the raw. ``git_commit`` below is the DEV
+    orchestrator's HEAD (the machine that ran capture.py) -- a different repo
+    state -- so recording both keeps provenance honest instead of stamping the
+    wrong commit. Untracked scratch files are ignored: they do not affect
+    platform reproducibility, only tracked changes vs HEAD do.
+    """
+    code, out = ssh(
+        f"cd {PI_REPO} && git rev-parse --short HEAD && "
+        "(git diff --quiet HEAD && echo CLEAN || echo DIRTY)"
+    )
+    if code != 0:
+        return "unknown", False
+    toks = out.split()
+    return (toks[0] if toks else "unknown"), ("DIRTY" in out)
+
+
 def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
     code, git = _run(["git", "rev-parse", "--short", "HEAD"], timeout=10)
+    pi_sha, pi_dirty = pi_head()
     meta = {
         "label": args.label,
         "duration_s": args.duration,
+        "mode": "elevated" if getattr(args, "elevated", False) else "rest",
         "captured_utc": datetime.now(timezone.utc).isoformat(),
         "subject": args.subject,
         "h10_mac": H10_MAC,
@@ -417,7 +518,9 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "geometry": {"distance_m": args.distance_m, "angle_deg": args.angle_deg},
         "h10_rows": n_hr,
         "rr_rows": n_rr,
-        "git_commit": git.strip() if code == 0 else "unknown",
+        "git_commit": git.strip() if code == 0 else "unknown",  # dev orchestrator HEAD
+        "pi_commit": pi_sha,  # the Pi code that actually produced the raw
+        "pi_dirty": pi_dirty,  # True = Pi tracked tree had uncommitted edits at capture
         "firmware_sha16": firmware_sha(),
         "verify": ver,
         "notes": args.notes,
@@ -454,6 +557,19 @@ def main() -> int:
         action="store_true",
         help="hardware-reset the board via the XDS110 probe and exit",
     )
+    ap.add_argument(
+        "--elevated",
+        action="store_true",
+        help="post-exercise capture: pre-arm, countdown for the bout, fire at "
+        "peak HR (radar_arm.sh + go_capture.sh) instead of the rest bring-up",
+    )
+    ap.add_argument(
+        "--countdown",
+        type=int,
+        default=60,
+        help="seconds from arm to auto-fire in --elevated mode (the bout + sit "
+        "window; the radar is armed-not-streaming so a generous window is free)",
+    )
     args = ap.parse_args()
 
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -481,7 +597,10 @@ def main() -> int:
     for attempt in range(1, args.retries + 2):
         try:
             log(f"[4/6] capture (attempt {attempt})")
-            run_capture(args.duration, args.rr)
+            if args.elevated:
+                run_elevated_capture(args.duration, args.rr, args.countdown)
+            else:
+                run_capture(args.duration, args.rr)
             log("[5/6] pull + verify")
             stats = dump_and_pull(out, args.rr)
             n_hr = max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)
@@ -492,6 +611,16 @@ def main() -> int:
                 f"H10={ver['n_hr']} ({'ok' if ver['hr_ok'] else 'SUSPECT'})  "
                 f"RR={ver['rr_note']}"
             )
+            if args.elevated:
+                log(
+                    f"  HR range: {ver['hr_min']}-{ver['hr_max']} bpm (span {ver['hr_range']})"
+                )
+                if ver["hr_max"] < 100 or ver["hr_range"] < 15:
+                    log(
+                        "  WARNING: bout may not have elevated HR (want max>=100, "
+                        "span>=15 bpm). Consider a redo with a harder/longer bout "
+                        "for the wide-range data the selector needs."
+                    )
             log("[6/6] provenance")
             stamp(out, args, stats["n_rr"], n_hr, ver)
             if ver["capture_ok"]:
