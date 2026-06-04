@@ -16,7 +16,6 @@ Usage: PYTHONPATH=. python tools/spi_debug/radar_train_hr_selector.py [dataset_d
 
 from __future__ import annotations
 
-import glob
 import json
 import os
 import pickle
@@ -25,6 +24,7 @@ import sys
 import numpy as np
 
 from radar.config import RadarConfig
+from radar.dataset import included_captures
 from radar.hr_selector import (
     candidate_feature_matrix,
     extract_candidates,
@@ -96,13 +96,10 @@ def _windows(cap_dir: str):
 
 def main() -> None:
     root = sys.argv[1] if len(sys.argv) > 1 else None
-    if root is None:
-        dirs = sorted(glob.glob("data/captures/dataset_*"))
-        if not dirs:
-            print("no data/captures/dataset_* found")
-            return
-        root = dirs[-1]
-    caps = sorted(d for d in glob.glob(os.path.join(root, "*")) if os.path.isdir(d))
+    caps = included_captures(root)
+    if not caps:
+        print("no captures with dataset_include=true (legacy/quarantined excluded)")
+        return
 
     try:
         from xgboost import XGBClassifier

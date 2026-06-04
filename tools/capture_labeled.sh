@@ -60,4 +60,9 @@ echo "=== H10 READ DONE $(date +%s) ===" >> /tmp/sync.log
 # The belt started ~with the H10 and ran the same DUR, so it finishes near-now.
 [ -n "$RR_PID" ] && wait "$RR_PID" 2>/dev/null
 echo "=== RR READ DONE $(date +%s) ===" >> /tmp/sync.log
+# Stop our collector so it does not leak: a lingering collector holds the FTDI
+# cable and pegs core 3, which breaks the NEXT capture's FTDI preflight (resource
+# busy). The frames are already in redis for the dev-side dump, and the board is
+# hardware-reset (pyocd/NRST) before the next capture, which halts streaming.
+pkill -9 -f tools.radar_collector 2>/dev/null
 echo "=== SYNC CAPTURE DONE ===" >> /tmp/sync.log

@@ -1,0 +1,13 @@
+# TI XDS110 (CMSIS-DAP) debug probe on the IWRL6432BOOST (USB 0451:bef3).
+# Grants the `plugdev` group access to the probe's hidraw + USB nodes so pyOCD
+# can assert a hardware reset (programmatic NRST) without root. Used by the ViFi
+# radar capture harness: tools/capture.py reset_board() runs `pyocd reset -m hw`.
+#
+# One-time install on the capture Pi:
+#   sudo cp deploy/udev/60-xds110.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --action=add /sys/class/hidraw/hidraw0
+#   # verify: ls -l /dev/hidraw0  ->  crw-rw---- root plugdev
+# (also: pip install pyocd into the Pi venv; user must be in the plugdev group)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", GROUP="plugdev", MODE="0660"
+KERNEL=="hidraw*", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", GROUP="plugdev", MODE="0660"
