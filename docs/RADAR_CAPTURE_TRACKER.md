@@ -26,6 +26,9 @@ a post-ex for a rest.
 
 ## Per-capture field checklist (run for every capture)
 
+- [ ] environment: operator OUT of beam (behind board / out of room); subject the ONLY mover; no fans / HVAC draft / pets / foot-traffic; ~1 m+ clear space behind subject
+- [ ] geometry: board boresight on the subject's sternum, square, ~1 m; stable chair (if rolling -> lock/chock wheels + swivel)
+- [ ] tier + `--protocol-note` set per the safety screen (A all-out / B moderate / C rest+paced)
 - [ ] NRST the board, confirm fresh boot
 - [ ] `tools/radar_arm.sh` (pre-arm) succeeds -- abort on arm failure, do NOT stream stale
 - [ ] H10 contact good (skin contact, BLE connected); belt awake (or RR=0 intentionally)

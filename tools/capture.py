@@ -539,6 +539,7 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "pi_dirty": pi_dirty,  # True = Pi tracked tree had uncommitted edits at capture
         "firmware_sha16": firmware_sha(),
         "verify": ver,
+        "protocol_note": args.protocol_note,
         "notes": args.notes,
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
@@ -576,6 +577,13 @@ def main() -> int:
         help="coarse muscle-vs-fat build -- what the radar feels, which BMI cannot see",
     )
     ap.add_argument("--waist-cm", dest="waist_cm", type=float, default=None)
+    ap.add_argument(
+        "--protocol-note",
+        dest="protocol_note",
+        default="",
+        help="elevation method / safety tier for this subject -- e.g. 'Tier A "
+        "all-out', 'Tier B moderate brisk-walk', 'Tier C rest+paced-breathing'",
+    )
     ap.add_argument("--notes", default="")
     ap.add_argument("--no-rr", dest="rr", action="store_false")
     ap.add_argument("--retries", type=int, default=RETRIES)
