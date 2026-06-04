@@ -2,10 +2,10 @@
 # Test deps live in requirements-dev.txt (not audited at runtime).
 numpy==2.4.6
 scipy==1.17.1
-scikit-learn==1.8.0
+scikit-learn==1.9.0
 xgboost==3.2.0
 fastapi==0.136.3
-uvicorn[standard]==0.48.0
+uvicorn[standard]==0.49.0
 pydantic==2.13.4
 httpx==0.28.1
 # pandas remains for some tools (eval_harness etc.); streamlit was
