@@ -45,6 +45,10 @@ PI = "pi"  # ssh alias (see feedback_pi_resolution)
 PI_REPO = "/home/zpopowitz/vifi-ml"
 PI_PY = ".venv/bin/python"  # relative to PI_REPO after cd
 PI_PYOCD = ".venv/bin/pyocd"  # XDS110 hardware-reset (one-time 60-xds110 udev rule)
+# Pi-side scratch paths capture_labeled.sh writes. The Pi is a single-user bench
+# appliance, not a shared multi-user host, so bandit's B108 hardcoded-/tmp
+# temp-file warning does not apply here.
+PI_TMP = "/tmp"  # nosec B108
 H10_MAC = "24:AC:AC:11:97:DB"
 CFG_PATH = "/home/zpopowitz/MotionDetect.cfg"
 EXPECT_ADC_PER_FRAME = "6144"  # 4 chirps x 3 RX x 256 x 2 (20 fps HR)
@@ -321,13 +325,13 @@ def dump_and_pull(out: Path, rr: bool) -> dict:
         "print(len(rows))\n"
     )
     log(f"  dumped {dumped} radar frames")
-    if not scp_pull("/tmp/radar_cap.pkl", out / "radar_cap.pkl"):
+    if not scp_pull(f"{PI_TMP}/radar_cap.pkl", out / "radar_cap.pkl"):
         raise Fail("radar pull failed.")
-    if not scp_pull("/tmp/hr_pi.csv", out / "hr_h10.csv"):
+    if not scp_pull(f"{PI_TMP}/hr_pi.csv", out / "hr_h10.csv"):
         raise Fail("H10 pull failed -- no HR label.")
     n_rr = 0
-    if rr and scp_pull("/tmp/rr_pi.csv", out / "rr_log.csv"):
-        scp_pull("/tmp/rr_pi.csv.meta.json", out / "rr_log.csv.meta.json")
+    if rr and scp_pull(f"{PI_TMP}/rr_pi.csv", out / "rr_log.csv"):
+        scp_pull(f"{PI_TMP}/rr_pi.csv.meta.json", out / "rr_log.csv.meta.json")
         n_rr = max(0, sum(1 for _ in (out / "rr_log.csv").open()) - 1)
     return {"n_rr": n_rr}
 
