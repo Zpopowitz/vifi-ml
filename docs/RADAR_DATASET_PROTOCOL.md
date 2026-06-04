@@ -153,9 +153,52 @@ windows -- no hard-coded 150/180 to trip on. Separate (non-blocking) item: `WIN_
 is fixed at 20 s; parameterize it to 60-90 s for the resting <1 bpm path (a 150 s
 rest supports ~one 90 s window, 180 s supports ~one more).
 
+## Subject tiers + elevation safety (2026-06-04)
+
+The Tier-A all-out bout in the per-subject session above is for young/fit subjects
+ONLY. Screen on health/fitness, NOT age alone -- age is the prior, a 30-second
+screen is the decision. Screen: any heart condition / chest pain / on beta-blockers
+/ sedentary? Any flag drops the subject a tier. Consent + supervision + fall
+precautions scale with intensity. Record the method per capture in `--protocol-note`.
+
+| Tier | Who (default) | Elevation method | HR target | Captures |
+|---|---|---|---|---|
+| **A -- full** | ~18-40, cleared, active | all-out bout (sprint / burpees) | ~85-90% max (150-180) | 2 rest + 3 elevated |
+| **B -- moderate** | ~40-65, cleared, no cardiac flags | brisk walk / stairs / sit-to-stands | moderate ~110-135 (65-75% max, "can still talk", RPE 12-14) | 2 rest + 2 elevated |
+| **C -- gentle/rest** | ~65+, frail, or ANY cardiac flag / beta-blocker | rest + paced deep breathing (RSA modulates HR safely) +/- light sit-to-stands | natural rest -> mild ~90-110 | 3-4 rest + optional gentle |
+
+NEVER push an elderly or at-risk subject to maximal exertion -- cardiac + fall +
+liability red line. Band coverage is a COHORT property: the young cover the high
+band (130-180), mid-age the mid-band (70-135), elderly the resting/low band plus
+physiology diversity (stiffer vessels, low HRV, AFib, blunted rates). Do NOT force
+the full HR range out of every subject. The `--elevated` tooling is identical
+across tiers; only the bout intensity and elevated-capture count change.
+
+## Capture environment + operator position
+
+- **Operator OUT of the radar beam** -- behind the board (its back-null) and still,
+  or out of the room. The subject must be the ONLY mover in the beam for the whole
+  capture; the cardiac signal is sub-mm and any other motion swamps it.
+- **Static structure is not a confound.** Walls, furniture, and the chair are removed
+  by MTI/clutter subtraction, so room and chair *type* do not bias the cross-subject
+  comparison. Only IN-capture motion and OTHER movers matter -- fans, HVAC draft,
+  pets, foot traffic, a window with motion outside. Kill them before capturing.
+- **Chair:** stable / non-rolling preferred; if rolling, lock or chock the wheels and
+  swivel. Marking the wheel spots fixes placement, not in-capture drift.
+- **No close hard wall directly behind the subject** (multipath ghost); leave ~1 m+
+  of clear space behind them.
+- **Aim:** boresight on the mid-sternum (not a heart pinpoint), square within
+  ~+/-15-20 deg, ~1 m. The wide patch beam tolerates ~+/-10-15 cm of vertical slop.
+  Move the BOARD to each subject's sternum (height-adjustable mount); keep one
+  comfortable chair + natural upright posture. Hold the *setup* consistent across
+  subjects; absolute board height is expected to vary per subject (why it is not
+  logged). Room variation across subjects is mild deployment-robustness upside.
+
 ## Status
 
-Dataset does NOT exist yet (subject 1 partial: 1/5 labeled captures). Gated on:
-Pi back on the network, and recruiting diverse subjects (the real blocker --
-more founder data does not help generalization). Next action: finish the founder
-session as the elevated-flow shakeout, then recruit toward the 12-subject pilot.
+Subject 1 (founder) COMPLETE: 5/5 captures in `data/captures/radar_dataset/founder/`,
+all `dataset_include=true`; signal-presence gate passed (oracle 6.77 bpm pooled,
+0.57 bpm stable-rest @ 90 s windows; tallest baseline 43.98). Subject 2 in progress.
+Per-subject recipe + platform are solved; the binding constraint is now recruiting
+diverse subjects across tiers/builds/sexes/ages. The cross-subject `learned` LOSO
+number -- the company gate -- unlocks at subject 2.
