@@ -507,6 +507,21 @@ def pi_head() -> tuple[str, bool]:
 def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
     code, git = _run(["git", "rev-parse", "--short", "HEAD"], timeout=10)
     pi_sha, pi_dirty = pi_head()
+    geometry = {"distance_m": args.distance_m, "angle_deg": args.angle_deg}
+    if args.board_height_cm is not None:
+        geometry["board_height_cm"] = args.board_height_cm
+    body = {
+        k: v
+        for k, v in (
+            ("height_cm", args.height_cm),
+            ("weight_kg", args.weight_kg),
+            ("age", args.age),
+            ("sex", args.sex),
+            ("build", args.build),
+            ("waist_cm", args.waist_cm),
+        )
+        if v is not None
+    }
     meta = {
         "label": args.label,
         "duration_s": args.duration,
@@ -515,7 +530,8 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "subject": args.subject,
         "h10_mac": H10_MAC,
         "n_rx": 3,
-        "geometry": {"distance_m": args.distance_m, "angle_deg": args.angle_deg},
+        "geometry": geometry,
+        "body": body,
         "h10_rows": n_hr,
         "rr_rows": n_rr,
         "git_commit": git.strip() if code == 0 else "unknown",  # dev orchestrator HEAD
@@ -538,6 +554,28 @@ def main() -> int:
     ap.add_argument("--subject", required=True, help="subject pseudo-ID for provenance")
     ap.add_argument("--distance-m", dest="distance_m", type=float, default=1.0)
     ap.add_argument("--angle-deg", dest="angle_deg", type=float, default=0.0)
+    ap.add_argument(
+        "--board-height-cm",
+        dest="board_height_cm",
+        type=float,
+        default=None,
+        help="board antenna-center height (cm); re-leveled to each subject's sternum",
+    )
+    # Coarse body metrics for the diversity analysis (pseudonymized, no PII).
+    # Deliberately NOT BMI: subcutaneous chest fat -- not total mass -- attenuates
+    # the mm-scale cardiac motion, so record build/waist (adiposity) + sex. BMI
+    # is recomputable from height/weight if ever wanted; it is not the body axis.
+    ap.add_argument("--height-cm", dest="height_cm", type=float, default=None)
+    ap.add_argument("--weight-kg", dest="weight_kg", type=float, default=None)
+    ap.add_argument("--age", type=int, default=None)
+    ap.add_argument("--sex", choices=["M", "F", "other"], default=None)
+    ap.add_argument(
+        "--build",
+        choices=["lean", "athletic", "average", "higher_fat"],
+        default=None,
+        help="coarse muscle-vs-fat build -- what the radar feels, which BMI cannot see",
+    )
+    ap.add_argument("--waist-cm", dest="waist_cm", type=float, default=None)
     ap.add_argument("--notes", default="")
     ap.add_argument("--no-rr", dest="rr", action="store_false")
     ap.add_argument("--retries", type=int, default=RETRIES)
