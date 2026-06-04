@@ -1,25 +1,30 @@
 """Bootstrap the IWRL6432BOOST motion_and_presence demo for SPI ADC streaming.
 
-After a power-cycle / NRST the firmware sits idle at a CLI prompt. We need to:
-1. (optional) sensorStop -- clear any leftover running state
-2. Send the chirp config from a `.cfg` file (skipping the `baudRate` switch)
-3. sensorStart  -- demo begins chirping
-4. `adcLogging 2`  -- enables `gMmwMssMCB.spiADCStream = 1`, configures MCSPI,
-   starts streaming raw ADC bytes over the SPI peripheral on every frame
+After a power-cycle / NRST the firmware sits idle at a CLI prompt. The proven
+SPI raw-ADC bring-up order (bench-verified 2026-05-29) is:
 
-Once this script exits, the firmware keeps streaming. The
-`SpiFtdiReader` (`--source ftdi`) consumes the SPI byte stream from the
-host side via the C232HM-DDHSL-0 cable.
+1. ARM (this tool, default mode): sensorStop, send the cfg with `lowPowerCfg 0`
+   and `adcLogging`/`sensorStart`/`baudRate` HELD BACK, then `adcLogging 2`.
+   Sensor is left STOPPED. Expect `adcDataPerFrame=...` in the response.
+2. Start the FTDI consumer so it is reading/clocking the SPI bus:
+   `tools/radar_collector.py --source ftdi --bus --patient-id <pid>`.
+3. START (this tool, `--sensor-start-only`): send `sensorStart`. The firmware's
+   per-frame MCSPI transfer blocks until the host clocks it, so the consumer
+   MUST be up first -- starting the sensor with no reader hangs the M4 (recover
+   with NRST, not just a power-cycle).
 
-The `if00` UART is used for control here; the host's bus-collector
-later opens the same port for TLV reads in --source usb mode, OR closes
-this control channel entirely if running --source ftdi.
+Footguns: `adcLogging` is once-per-boot (EDMA alloc; twice crashes). The CLI
+ignores commands once the sensor is streaming. `lowPowerCfg` must be 0.
 
 Usage::
 
+    # 1. arm
     .venv/bin/python -m tools.radar_kickstart_adc \\
         --port /dev/serial/by-id/usb-Texas_Instruments_XDS110*-if00 \\
         --cfg ~/ti/MMWAVE_L_SDK_05_05_04_02/examples/mmw_demo/motion_and_presence_detection/profiles/xwrL64xx-evm/MotionDetect.cfg
+    # 2. start the FTDI collector (separate process), then:
+    # 3. begin chirping
+    .venv/bin/python -m tools.radar_kickstart_adc --sensor-start-only
 """
 
 from __future__ import annotations
@@ -50,12 +55,21 @@ def resolve_port(port: str | None) -> str:
     return matches[0]
 
 
-def send_cfg(port: str, cfg_path: Path, baud: int, settle_s: float) -> None:
-    """Open the UART, send the cfg lines + sensorStart + adcLogging 2."""
+def _open(port: str, baud: int):
     import serial  # noqa: PLC0415
 
     log.info("opening %s @ %d", port, baud)
-    s = serial.Serial(port, baud, timeout=2.0)
+    return serial.Serial(port, baud, timeout=2.0)
+
+
+def arm_spi_streaming(port: str, cfg_path: Path, baud: int, settle_s: float) -> None:
+    """Arm SPI raw-ADC streaming: send the cfg + ``adcLogging 2`` with the sensor
+    STOPPED. Does NOT send ``sensorStart`` -- the FTDI consumer must already be
+    reading before the sensor starts, because the firmware's per-frame MCSPI
+    transfer blocks until the host clocks it (proven on the bench 2026-05-29;
+    starting with no reader hangs the M4).
+    """
+    s = _open(port, baud)
     s.reset_input_buffer()
 
     # Clear any prior running state.
@@ -64,18 +78,26 @@ def send_cfg(port: str, cfg_path: Path, baud: int, settle_s: float) -> None:
     time.sleep(0.5)
     s.read_all()
 
-    # Send the chirp profile (skipping the baudRate switch -- we keep 115200
-    # for the control channel; we don't read TLVs here, the FTDI consumer
-    # handles the data path).
     log.info("sending cfg from %s", cfg_path)
     lines = []
     for raw in cfg_path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("%"):
             continue
-        if line.startswith("baudRate "):
-            log.info("skipping cfg line: %s", line)
+        # Held back / driven explicitly:
+        #  - baudRate: keep the control UART at 115200.
+        #  - adcLogging: we send 'adcLogging 2' once below; sending the cfg's
+        #    'adcLogging 0' first would call it twice -> EDMA double-alloc crash.
+        #  - sensorStart: must come AFTER the FTDI consumer is reading
+        #    (run this tool with --sensor-start-only once the collector is up).
+        if line.startswith(("baudRate", "adcLogging", "sensorStart")):
+            log.info("holding back cfg line: %s", line)
             continue
+        # SPI raw streaming needs low-power mode OFF (it gates the SPI pads off).
+        if line.startswith("lowPowerCfg"):
+            if line != "lowPowerCfg 0":
+                log.info("forcing %r -> 'lowPowerCfg 0' for SPI streaming", line)
+            line = "lowPowerCfg 0"
         lines.append(line)
 
     n_errors = 0
@@ -89,22 +111,42 @@ def send_cfg(port: str, cfg_path: Path, baud: int, settle_s: float) -> None:
             log.error("cfg error on %r: %s", line, resp[:120])
     log.info("cfg sent (%d lines, %d errors)", len(lines), n_errors)
 
-    # Enable raw ADC streaming over SPI.
+    # Enable raw ADC streaming over SPI (sensor still stopped, so the CLI acts
+    # on it; once streaming the CLI ignores commands). Once per boot only.
     log.info("sending: adcLogging 2  (enables SPI_ADC_DATA_STREAMING)")
     s.write(b"adcLogging 2\r\n")
     s.flush()
     time.sleep(settle_s)
     resp = s.read_all().decode(errors="replace")
-    log.info("adcLogging 2 response: %r", resp[:200])
+    log.info("adcLogging 2 response: %r", resp[:300])
+    if "adcDataPerFrame" not in resp:
+        s.close()
+        raise SystemExit(
+            "ARM FAILED: no 'adcDataPerFrame' in the adcLogging response. The board's "
+            "one-shot adcLogging was almost certainly already consumed this boot -- "
+            "press NRST and retry. Refusing to proceed: a capture armed from this state "
+            "streams stale/corrupt data while still looking 'saved'."
+        )
 
-    # NOTE: we do NOT close the port immediately; the demo continues
-    # streaming over SPI regardless of who's connected here. Close cleanly.
     s.close()
     log.info(
-        "kickstart complete. Demo is now streaming raw ADC over SPI on "
-        "every frame. Start the FTDI consumer with: "
-        "tools/radar_collector.py --source ftdi --bus --patient-id <pid>"
+        "ARMED (sensor stopped, SPI configured). Next: start the FTDI consumer "
+        "'tools/radar_collector.py --source ftdi --bus --patient-id <pid>', then "
+        "run this tool again with --sensor-start-only to begin chirping."
     )
+
+
+def send_sensor_start(port: str, baud: int) -> None:
+    """Send ``sensorStart`` only. Use AFTER the FTDI consumer is reading."""
+    s = _open(port, baud)
+    s.reset_input_buffer()
+    log.info("sending: sensorStart 0 0 0 0")
+    s.write(b"sensorStart 0 0 0 0\r\n")
+    s.flush()
+    time.sleep(1.0)
+    resp = s.read_all().decode(errors="replace")
+    log.info("sensorStart response: %r", resp[:200])
+    s.close()
 
 
 def main() -> None:
@@ -117,9 +159,15 @@ def main() -> None:
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument(
         "--cfg",
-        required=True,
+        default=None,
         type=Path,
-        help="path to a MotionDetect.cfg-style chirp profile",
+        help="path to a MotionDetect.cfg-style chirp profile (required to arm)",
+    )
+    p.add_argument(
+        "--sensor-start-only",
+        action="store_true",
+        help="send only 'sensorStart' (use AFTER the FTDI collector is reading); "
+        "does not send the cfg or adcLogging",
     )
     p.add_argument(
         "--settle",
@@ -135,11 +183,17 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    port = resolve_port(args.port)
+
+    if args.sensor_start_only:
+        send_sensor_start(port, args.baud)
+        return
+
+    if args.cfg is None:
+        raise SystemExit("--cfg is required to arm (or pass --sensor-start-only)")
     if not args.cfg.exists():
         raise SystemExit(f"cfg not found: {args.cfg}")
-
-    port = resolve_port(args.port)
-    send_cfg(port, args.cfg, args.baud, args.settle)
+    arm_spi_streaming(port, args.cfg, args.baud, args.settle)
 
 
 if __name__ == "__main__":

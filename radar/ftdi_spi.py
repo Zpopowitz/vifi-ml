@@ -1,7 +1,8 @@
 """FTDI/SPI consumer for raw ADC streaming from the IWRL6432BOOST.
 
 Wraps a C232HM-DDHSL-0 USB-to-SPI cable (FT232H) via ``pyftdi``, configured
-as SPI master at 30 MHz. The TI motion_and_presence demo (built with
+as SPI master at 15 MHz (matching TI's reference reader). The TI
+motion_and_presence demo (built with
 ``SPI_ADC_DATA_STREAMING=1``) acts as the SPI peripheral: after each
 radar frame, the M4F core drops the SPI_BUSY GPIO low, then transmits
 ``adcDataPerFrame`` bytes (raw ADC samples) via MCSPI, then raises
@@ -9,7 +10,7 @@ SPI_BUSY high.
 
 This module:
 1. Opens the FT232H via pyftdi (needs udev rules for non-root access)
-2. Configures SPI master at 30 MHz, mode 0 (CPOL=0, CPHA=0)
+2. Configures SPI master at 15 MHz, mode 0 (CPOL=0, CPHA=0)
 3. Polls the SPI_BUSY pin (cable pin Grey = FT232H AD4)
 4. On falling edge, reads ``adc_bytes_per_frame`` bytes
 5. Parses bytes as int16 real-valued ADC samples
@@ -28,10 +29,10 @@ Cable color -> FT232H pin (C232HM-DDHSL-0 datasheet):
   Red     -    DO NOT CONNECT (3.3 V output)
   Black   -    GND
 
-Bandwidth check (board-day cfg, 2026-05-26):
+Bandwidth check (MotionDetect.cfg, 2026-05-29):
   per-frame ADC bytes = nChirpsInBurst * nBurstsInFrame * nAdcSamples * nRx * 2
-                      = 2 * 8 * 256 * 3 * 2  =  24,576 bytes (24 KB)
-  At measured 4.7 frames/sec: 0.92 Mbit/s on a 30 Mbit/s link -> 32.5x headroom.
+                      = 2 * 16 * 256 * 3 * 2  =  49,152 bytes (48 KB)
+  At ~5 frames/sec: 1.97 Mbit/s on a 15 Mbit/s link -> ~7.6x headroom.
 """
 
 from __future__ import annotations
@@ -53,6 +54,27 @@ log = logging.getLogger("vifi.radar.ftdi_spi")
 SPI_BUSY_BIT = 4
 SPI_BUSY_MASK = 1 << SPI_BUSY_BIT
 
+
+def deframe_adc_int16(raw: bytes) -> np.ndarray:
+    """De-frame raw SPI bytes into signed int16 ADC samples, matching TI.
+
+    The IWRL6432 MCSPI slave streams the ADC buffer as 32-bit words, MSB
+    first. TI's reference reader (``tools/spi_adc_streaming/source/spi_fccsp.py``)
+    de-frames those bytes as: group every 4 bytes into a big-endian uint32
+    word, then split each word into two signed int16s emitting the LOW half
+    first, then the HIGH half (``parser()`` + ``printfile_format()``).
+
+    Equivalently: read big-endian int16 pairs and swap the two halves within
+    each 32-bit word. A naive ``np.frombuffer(raw, np.int16)`` (native
+    little-endian, no word split) produces a different, scrambled stream --
+    this function is pinned to TI's logic by ``tests/test_ftdi_spi_deframe.py``.
+    Trailing bytes that don't fill a 32-bit word are dropped (TI does the same).
+    """
+    n4 = (len(raw) // 4) * 4
+    words = np.frombuffer(raw[:n4], dtype=">i2").reshape(-1, 2)
+    return words[:, ::-1].reshape(-1).astype(np.int16)
+
+
 # FT232H VID:PID
 FTDI_VID = 0x0403
 FT232H_PID = 0x6014
@@ -62,16 +84,31 @@ FT232H_PID = 0x6014
 class FtdiSpiConfig:
     """Configuration for the FTDI/SPI consumer."""
 
-    # SPI clock (firmware drives at 30 MHz per loeens spi_transmit.c)
-    spi_freq_hz: int = 30_000_000
+    # SPI clock. TI's reference reader (spi_fccsp.py set_device) runs the
+    # FT232H master at 15 MHz; match it.
+    spi_freq_hz: int = 15_000_000
     # Chirp + frame structure (must match the flashed firmware's cfg).
-    # Defaults match MotionDetect.cfg with 3 RX enabled.
+    # HR profile: small frame so a high, DETERMINISTIC frame rate is sustainable
+    # over SPI (vitals need the frame rate as slow-time, not the chirps -- the
+    # chirps are bursty and averaged away). frameCfg NumOfChirpsInBurst=2,
+    # NumOfBurstsInFrame=2 -> 4 chirps/frame -> 4*3*256*2 = 6144 B/frame (~8x
+    # smaller than the 32-chirp profile, so 20 fps streams with headroom).
     n_chirps_in_burst: int = 2
-    n_bursts_in_frame: int = 8
+    n_bursts_in_frame: int = 2
     n_adc_samples: int = 256
     n_rx: int = 3
     # Bytes per ADC sample. int16 real-valued = 2.
     bytes_per_sample: int = 2
+    # Coherently average the chirps within each frame into ONE slow-time sample
+    # (SNR gain; correct vitals sampling). When True the chirp output rate = the
+    # frame rate. See _parse_frame_to_chirps. Set False only for raw analysis.
+    average_chirps_per_frame: bool = True
+    # Slow-time (frame) sampling rate the DSP should assume, in Hz. With
+    # average_chirps_per_frame this is the firmware frame rate (e.g. 20 fps from
+    # framePeriodicity=50). Must be high enough for the HR band (>= ~17 Hz to
+    # clear the 0.8-3 Hz band-pass and the worker's min-window). Exposed on the
+    # reader's RadarConfig so downstream knows the real fs.
+    frame_rate_hz: float = 20.0
     # How long to wait for SPI_BUSY to go low before giving up on a frame.
     # The demo runs at ~5 Hz, so 2 sec is a generous timeout.
     busy_wait_timeout_s: float = 2.0
@@ -99,6 +136,49 @@ class FtdiSpiConfig:
         return self.n_adc_samples * self.n_rx
 
 
+def parse_frame_samples(data: bytes, config: FtdiSpiConfig) -> list[np.ndarray]:
+    """De-frame one SPI frame into per-slow-time-sample complex arrays.
+
+    Each returned array is shaped ``(n_adc_samples, n_rx)`` -- the RX axis is
+    PRESERVED so the DSP can combine the three channels *after* the range FFT
+    (``radar.dsp.mrc_combine``), where coherent combining actually adds. An
+    unaligned complex average across RX on the raw ADC (the old behaviour)
+    mixes whole range profiles at mismatched phases and partially cancels the
+    chest signal, so the combine must not happen here.
+
+    With ``average_chirps_per_frame`` the burst chirps -- which see the same
+    chest position and carry no slow-time/vitals signal -- are averaged into
+    ONE slow-time sample (SNR); otherwise one sample per chirp is returned.
+
+    Byte layout is ``[chirp][rx][sample]`` (chirps outer, rx middle, samples
+    inner), matching the TI MCSPI stream. Raises ``ValueError`` if the byte
+    count doesn't match the configured frame geometry.
+    """
+    from scipy.signal import hilbert  # noqa: PLC0415
+
+    samples = deframe_adc_int16(data)
+    expected = config.chirps_per_frame * config.n_rx * config.n_adc_samples
+    if samples.size != expected:
+        raise ValueError(
+            f"frame size mismatch: got {samples.size} int16 samples, "
+            f"expected {expected}"
+        )
+    # (chirps, rx, samples) real cube; int16 -> float32 for FFT precision.
+    cube = samples.reshape(
+        config.chirps_per_frame, config.n_rx, config.n_adc_samples
+    ).astype(np.float32)
+    # Hilbert across the fast-time (sample) axis -> analytic IQ. The IWRL6432
+    # ADC is real-valued; without IQ phase reconstruction the downstream DACM /
+    # circle-fit can't see the chest displacement.
+    analytic = hilbert(cube, axis=-1).astype(np.complex64)  # (chirps, rx, samples)
+    # Reorder to (chirps, samples, rx): samples is the range-FFT axis and rx is
+    # last, matching radar.dsp's (n_chirps, n_fast, n_rx) multi-RX contract.
+    analytic = np.moveaxis(analytic, 1, 2)
+    if config.average_chirps_per_frame:
+        return [analytic.mean(axis=0)]  # (samples, rx)
+    return [analytic[k] for k in range(config.chirps_per_frame)]  # each (samples, rx)
+
+
 class SpiFtdiReader:
     """Reads raw ADC frames from the IWRL6432BOOST via FTDI/SPI.
 
@@ -122,6 +202,7 @@ class SpiFtdiReader:
         # exposes a RadarConfig, so we mirror that contract here).
         self.config = RadarConfig(
             samples_per_chirp=self._ftdi.n_adc_samples,
+            frame_rate_hz=self._ftdi.frame_rate_hz,
         )
         self._controller = SpiController(cs_count=1)
         self._controller.configure(self._ftdi.ftdi_url)
@@ -178,63 +259,26 @@ class SpiFtdiReader:
         return data
 
     def _parse_frame_to_chirps(self, data: bytes) -> Iterator["Chirp"]:
-        """Split a frame's bytes into per-chirp Chirp objects.
+        """Split a frame's bytes into Chirp objects, RX axis preserved.
 
-        Byte layout (assumed; verify against first real frame):
-        [chirp0 rx0 sample0..255][chirp0 rx1 ...][chirp0 rx2 ...][chirp1 ...]...
-        i.e., n_chirps outer loop, n_rx middle, n_adc_samples inner.
-
-        Pipeline per chirp:
-        1. Reshape int16 LE bytes into (chirps, rx, samples) real cube
-        2. Apply Hilbert transform across samples axis -> analytic signal
-           (complex IQ with reconstructed phase). This is the single most
-           important step: the IWRL6432 ADC is real-valued, and without
-           IQ phase reconstruction, downstream DSP (DACM, circle-fit,
-           cardiac extraction) can't see the chest displacement signal.
-        3. Coherent-average across RX antennas. RX0/1/2 on this BOOST are
-           ~lambda/2 apart, so they all see roughly the same chest signal
-           with slightly different phases. Equal-weight coherent sum
-           gives ~sqrt(n_rx) SNR gain in practice; cardiac-specific MRC
-           would do better but requires per-bin phase alignment (future).
-        4. Yield one Chirp per (chirp_idx, combined samples) pair.
+        Delegates the de-framing + IQ reconstruction to ``parse_frame_samples``
+        (each sample is ``(n_adc_samples, n_rx)``) and wraps the result in the
+        collector's ``Chirp`` dataclass with a monotonically increasing index.
+        The RX channels are NOT combined here -- the DSP front-end combines them
+        after the range FFT (``radar.dsp.mrc_combine``).
         """
         # Late-import the Chirp dataclass to avoid a circular import; the
         # collector module imports this file.
-        from scipy.signal import hilbert  # noqa: PLC0415
-
         from tools.radar_collector import Chirp  # noqa: PLC0415
 
-        c = self._ftdi
-        # int16 LE, total samples = n_chirps * n_rx * n_adc_samples
-        samples = np.frombuffer(data, dtype=np.int16)
-        expected_samples = c.chirps_per_frame * c.n_rx * c.n_adc_samples
-        if samples.size != expected_samples:
-            log.warning(
-                "frame size mismatch: got %d int16 samples, expected %d -- skipping",
-                samples.size,
-                expected_samples,
-            )
+        try:
+            samples_list = parse_frame_samples(data, self._ftdi)
+        except ValueError as e:
+            log.warning("%s -- skipping frame", e)
             return
-        # Reshape to (chirps, rx, samples). int16 -> float32 for FFT precision.
-        cube = samples.reshape(c.chirps_per_frame, c.n_rx, c.n_adc_samples).astype(
-            np.float32
-        )
-        # Hilbert across samples axis -> analytic signal (complex64). For each
-        # chirp/rx, scipy.signal.hilbert(x) returns x + j*H(x), where H is the
-        # discrete Hilbert transform along the last axis.
-        analytic = hilbert(cube, axis=-1).astype(np.complex64)
-        # Coherent-average across RX (equal weights) -> (chirps, samples).
-        # This is a quick MRC approximation. For full MRC we'd weight by
-        # per-RX SNR after range-FFT; that's a follow-up once we have a
-        # clean baseline to compare against.
-        combined = analytic.mean(axis=1)
         ts = time.time()
-        for k in range(c.chirps_per_frame):
-            yield Chirp(
-                ts_unix=ts,
-                chirp_idx=self._chirp_idx,
-                samples=combined[k],
-            )
+        for samples in samples_list:
+            yield Chirp(ts_unix=ts, chirp_idx=self._chirp_idx, samples=samples)
             self._chirp_idx += 1
 
     def __iter__(self) -> Iterator["Chirp"]:
