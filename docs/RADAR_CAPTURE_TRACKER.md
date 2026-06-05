@@ -16,7 +16,8 @@ DONE only at `[x]`.
 | 2 | `rest_2` | rest | >=150 s (target 180) | test-retest of rest_1 |
 | 3 | `postex_1` | post-exercise decay | ~120 s | all-out bout, pre-armed, sit, catch HR <1 s |
 | 4 | `postex_2` | post-exercise decay | ~120 s | second bout |
-| 5 | `postex_3` | post-exercise decay | ~120 s | third bout |
+| 5 | `postex_3` | post-exercise decay | ~120 s | third bout (Tier B: 2 bouts; Tier C: none) |
+| 6 | `rr_fast` | paced fast breathing AT REST | ~90 s | seated STILL, ~25-28/min metronome, NO exercise; tests tachypnea RR absent motion |
 | - | (unlabeled) | harvested | warm-up + dead time | save all raw; no dedicated slot in pilot |
 
 Every labeled capture: H10 + Vernier belt paired in parallel; NRST + arm before

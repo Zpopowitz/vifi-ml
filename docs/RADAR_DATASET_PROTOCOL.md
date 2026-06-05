@@ -39,6 +39,11 @@ Record the firmware hash + git commit per session so the platform is auditable.
     is the data-starved axis (the selector learns peak-disambiguation here, not at
     rest); take the top of the old 2-3 range. The only sanctioned per-subject
     knob is +1 post-exercise for a fit subject -- never trade a post-ex for a rest.
+  - **1 x rr_fast (paced fast breathing AT REST), ~90 s** -- subject seated and
+    STILL, breathing to a metronome ~25-28 /min, NO exercise. Isolates whether
+    radar RR resolves tachypnea **absent body motion** (the clinical case); the
+    post-exercise RR test is confounded by settling motion (see regime map below).
+    Safe for all tiers (mild; stop if lightheaded). Label `rr_fast`.
   - H10 paired throughout (the HR label) AND the Vernier Go Direct belt paired
     throughout for RR ground truth -- the only way to validate RR (H10 is HR-only).
     The belt is captured in parallel by default (best-effort: a missing/asleep belt
@@ -194,11 +199,47 @@ across tiers; only the bout intensity and elevated-capture count change.
   subjects; absolute board height is expected to vary per subject (why it is not
   logged). Room variation across subjects is mild deployment-robustness upside.
 
+## Regime map + model guidance (2026-06-05, falsified on founder+subj03)
+
+The earlier "oracle ~3 bpm everywhere = recoverable" framing was **over-stated**.
+A decoy-vs-real falsification (nearest candidate to the true H10 vs to a random
+fake HR, using the real `extract_candidates`) shows:
+
+| regime | HR (single-window spectral) | RR |
+|---|---|---|
+| **Rest** (~65) | true peak ~**1.9x** better than chance -> REAL, recoverable | **0.36 brpm** (2 subjects) -- excellent |
+| **Elevated, stable** (~127) | ~**1.0x** -- basically chance | untested clean (rr_fast) |
+| **Elevated, fast-changing** (decay) | ~**0.4x** -- WORSE than chance | **9 brpm off** (confounded by settling motion) |
+
+Read: **the radar is a RESTING vitals sensor today.** At rest both vitals are
+strong. Elevated/post-exercise degrades BOTH HR and RR; the band-fix did NOT
+rescue elevated RR (the failure is motion-confounded, not a drift artifact ->
+`rr_fast` capture added to disambiguate the still-tachypnea clinical case).
+
+**Model guidance:**
+- A single-window spectral peak-selector (Stage 1) works for **resting HR only**;
+  it cannot recover elevated/dynamic HR (there is no peak at the true rate to
+  select). Do NOT over-invest in single-window selector features (already saw no
+  gain). Dynamic HR needs **temporal continuity + time-domain morphology**
+  (Stage 2, radarODE), gated on the multi-subject dataset.
+- **No re-capture on any model pivot** -- all of it (continuity, harmonics,
+  cross-RX source separation, morphology) reprocesses the saved 3-RX raw offline
+  (protection #1). Captures are model-agnostic.
+
+**Product frame:** lead with **contactless resting continuous monitoring +
+baseline-trend early-warning** (RR-led; RR is the strongest, earliest
+deterioration vital and works now at rest). Acute/elevated accuracy and
+beat-by-beat (HRV/arrhythmia) are the **research frontier**, not near-term claims.
+
+**Open research questions (tracked):**
+1. Does `rr_fast` (still tachypnea) recover elevated RR? -> tests if deterioration RR is real.
+2. Do continuity/morphology recover elevated HR where single-window spectral fails?
+3. Continuous long-duration (hours) monitoring reliability + false-alarm rate -- unvalidated.
+
 ## Status
 
-Subject 1 (founder) COMPLETE: 5/5 captures in `data/captures/radar_dataset/founder/`,
-all `dataset_include=true`; signal-presence gate passed (oracle 6.77 bpm pooled,
-0.57 bpm stable-rest @ 90 s windows; tallest baseline 43.98). Subject 2 in progress.
-Per-subject recipe + platform are solved; the binding constraint is now recruiting
-diverse subjects across tiers/builds/sexes/ages. The cross-subject `learned` LOSO
-number -- the company gate -- unlocks at subject 2.
+Subjects: founder (1) COMPLETE 5/5; subj03 in progress (rest_1 in: HR oracle 1.1 bpm
+@60s, RR 0.36 brpm -- 2nd body confirms resting signal). subj02 deferred. Platform +
+per-subject recipe solved; binding constraint is recruiting diverse subjects (tiers,
+builds, **sexes -- all male so far**, ages). Cross-subject `learned` LOSO number
+unlocks once a 2nd subject's set is complete.
