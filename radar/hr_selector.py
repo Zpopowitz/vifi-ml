@@ -16,15 +16,19 @@ the emission must be LEARNED. The path to the oracle is:
   4. Floor-lifters: longer (60-90 s) windows raise the oracle toward <1 bpm.
 
 This module is the reusable, tested core: deterministic candidate extraction +
-featurization (step 2's inputs) and the Viterbi continuity decode (step 3). The
-training + leave-one-subject-out evaluation that needs the labeled dataset lives
-in tools/radar_train_hr_selector.py. The classifier itself is data-gated: a
-single subject is enough to prove the pipeline runs, not to train a model that
-generalizes (28-83 windows, one body).
+featurization (step 2's inputs), the per-fold training sample weights, and the
+Viterbi continuity decode (step 3). The training + leave-one-subject-out
+evaluation that needs the labeled dataset lives in
+tools/spi_debug/radar_track_accuracy.py (the company gate) and its
+leave-one-capture-out sibling tools/spi_debug/radar_train_hr_selector.py. The
+classifier itself is data-gated: a single subject is enough to prove the
+pipeline runs, not to train a model that generalizes (28-83 windows, one body).
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -124,6 +128,64 @@ def candidate_feature_matrix(cands: list[Candidate]) -> np.ndarray:
     if not cands:
         return np.empty((0, len(FEATURE_NAMES)), dtype=np.float64)
     return np.asarray([c.features() for c in cands], dtype=np.float64)
+
+
+# HR bins for stratified training weights. Post-exercise / elevated windows are
+# far rarer than resting ones (the data-starved axis -- the selector learns
+# peak-disambiguation in the elevated band, not at rest:
+# docs/RADAR_DATASET_PROTOCOL.md). Without re-weighting, the resting band
+# dominates the emission's loss by sheer count. Edges are a balancing heuristic
+# over the observed ~74-151 bpm span, not a physiological claim.
+HR_BIN_EDGES_BPM = (0.0, 90.0, 120.0, 150.0, float("inf"))
+
+
+def _hr_bin(bpm: float) -> int:
+    """Index of the HR_BIN_EDGES_BPM bin containing `bpm` (clamped at the ends)."""
+    for i in range(len(HR_BIN_EDGES_BPM) - 1):
+        if HR_BIN_EDGES_BPM[i] <= bpm < HR_BIN_EDGES_BPM[i + 1]:
+            return i
+    return 0 if bpm < HR_BIN_EDGES_BPM[0] else len(HR_BIN_EDGES_BPM) - 2
+
+
+def balanced_sample_weights(
+    groups: Sequence[object], truths: Sequence[float]
+) -> np.ndarray:
+    """Per-row training weights that equalize each group's and each HR-bin's
+    total contribution to the loss.
+
+    Training rows are per-candidate, so a subject (or capture) with more windows
+    -- or the over-represented resting HR band -- would otherwise dominate the
+    XGBoost loss purely by count. Each row's weight is
+    (1 / rows in its group) x (1 / rows in its HR bin), normalized to mean 1, so
+    every group and every HR bin pulls equally regardless of how many windows it
+    contributed.
+
+    `groups[i]` is the balancing key of row i -- the SUBJECT for leave-one-
+    subject-out (the company gate) or the CAPTURE for leave-one-capture-out.
+    `truths[i]` is that row's window H10 truth (bpm), binned by HR_BIN_EDGES_BPM.
+
+    This counteracts count-skew only; it cannot manufacture coverage a regime
+    lacks. Per-subject LOSO already neutralizes cross-subject count imbalance in
+    the *eval*; this neutralizes it inside each training *fold*.
+    """
+    groups_list = list(groups)
+    truths_list = [float(t) for t in truths]
+    n = len(groups_list)
+    if n == 0:
+        return np.empty(0, dtype=np.float64)
+    if len(truths_list) != n:
+        raise ValueError("groups and truths must have the same length")
+
+    group_counts = Counter(groups_list)
+    bins = [_hr_bin(t) for t in truths_list]
+    bin_counts = Counter(bins)
+
+    w = np.array(
+        [1.0 / (group_counts[g] * bin_counts[b]) for g, b in zip(groups_list, bins)],
+        dtype=np.float64,
+    )
+    w *= n / w.sum()  # normalize to mean 1 (keeps the effective learning rate stable)
+    return w
 
 
 def viterbi_decode(

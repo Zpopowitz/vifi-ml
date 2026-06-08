@@ -14,9 +14,11 @@ training/LOCO-eval orchestration lives in tools/radar_train_hr_selector.py.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from radar.hr_selector import (
     FEATURE_NAMES,
+    balanced_sample_weights,
     candidate_feature_matrix,
     extract_candidates,
     viterbi_decode,
@@ -71,3 +73,41 @@ def test_viterbi_prefers_smooth_track_over_jumpy_higher_score() -> None:
     ]
     track = viterbi_decode(freqs, scores, continuity_bpm=6.0)
     assert all(abs(f - 72.0) <= 3.0 for f in track)
+
+
+def test_balanced_weights_equalize_group_totals() -> None:
+    """A group with 3x the rows must still carry the same total weight, so a
+    subject with more windows can't dominate the cross-subject emission."""
+    groups = ["A", "A", "A", "B"]
+    truths = [72.0, 72.0, 72.0, 72.0]  # all one HR bin -> isolates group balancing
+    w = balanced_sample_weights(groups, truths)
+    a = sum(wi for wi, g in zip(w, groups) if g == "A")
+    b = sum(wi for wi, g in zip(w, groups) if g == "B")
+    assert np.isclose(a, b)
+    assert np.isclose(w.mean(), 1.0)
+
+
+def test_balanced_weights_equalize_hr_bin_totals() -> None:
+    """The rare elevated band must carry the same total weight as the common
+    resting band despite contributing far fewer windows."""
+    groups = ["A", "A", "A", "A"]  # one group -> isolates HR-bin balancing
+    truths = [70.0, 70.0, 70.0, 130.0]  # three resting, one elevated
+    w = balanced_sample_weights(groups, truths)
+    rest = sum(wi for wi, t in zip(w, truths) if t < 90.0)
+    elev = sum(wi for wi, t in zip(w, truths) if t >= 120.0)
+    assert np.isclose(rest, elev)
+
+
+def test_balanced_weights_uniform_when_already_balanced() -> None:
+    w = balanced_sample_weights(["A", "B"], [70.0, 70.0])
+    assert np.allclose(w, 1.0)
+
+
+def test_balanced_weights_empty_is_empty() -> None:
+    w = balanced_sample_weights([], [])
+    assert w.shape == (0,)
+
+
+def test_balanced_weights_length_mismatch_raises() -> None:
+    with pytest.raises(ValueError):
+        balanced_sample_weights(["A"], [])
