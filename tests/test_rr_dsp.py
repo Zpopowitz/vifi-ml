@@ -79,6 +79,49 @@ def test_decompose_rejects_non_2d():
         decompose(np.zeros(100), max_components=4)
 
 
+def test_decompose_falls_back_to_no_components_on_linalgerror(monkeypatch):
+    """Rare LAPACK non-convergence must degrade to "no components this
+    window" (the tracker coasts), mirroring
+    multipath.subtract_top_components — not crash the inference worker."""
+    motion = _motion(seed=3)
+
+    def _nonconvergent_svd(*args, **kwargs):
+        raise np.linalg.LinAlgError("SVD did not converge")
+
+    monkeypatch.setattr(np.linalg, "svd", _nonconvergent_svd)
+    out = decompose(motion, max_components=4)
+    assert out.shape == (motion.shape[0], 0)
+    assert out.dtype == np.float64
+
+
+def test_tracker_reports_unavailable_on_svd_failure(monkeypatch):
+    """End-to-end: an SVD failure inside update() yields a gated reading,
+    not an exception."""
+    tracker = RespirationTracker(FS)
+
+    def _nonconvergent_svd(*args, **kwargs):
+        raise np.linalg.LinAlgError("SVD did not converge")
+
+    monkeypatch.setattr(np.linalg, "svd", _nonconvergent_svd)
+    reading = tracker.update(_motion(seed=4), FS)
+    assert reading.available is False
+
+
+def test_fft_window_matches_numpy_hanning():
+    """rr_dsp now imports scipy's hann (same import preprocess uses).
+    The 2026-06-09 eval claimed np.hanning was a *periodic* Hann and the
+    two FFT paths leaked differently — false: np.hanning is the
+    symmetric Hann, identical to scipy's hann(n, sym=True) to floating-
+    point rounding, so the import unification changed nothing
+    numerically."""
+    from scipy.signal.windows import hann
+
+    for n in (16, 256, 257, 1000):
+        np.testing.assert_allclose(
+            np.hanning(n), hann(n, sym=True), rtol=0.0, atol=1e-14
+        )
+
+
 def test_window_candidates_finds_breath():
     cands = window_candidates(_motion(breath_bpm=22.0, noise_amp=0.2), FS)
     assert cands, "expected at least one candidate"

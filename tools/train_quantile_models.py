@@ -45,6 +45,47 @@ def _seed() -> int:
     return int(os.environ.get("VIFI_SEED", "42"))
 
 
+EARLY_STOPPING_ROUNDS = 50
+
+
+def fit_hr_regressor(
+    X_tr: np.ndarray,
+    y_tr: np.ndarray,
+    X_va: np.ndarray,
+    y_va: np.ndarray,
+    *,
+    seed: int,
+    quantile_alpha: float | None = None,
+):
+    """Fit one HR regressor (mean when `quantile_alpha` is None, else a
+    pinball-loss quantile model) with the shared hyperparameters.
+
+    Every fit gets the same eval_set + early stopping: without it the
+    quantile models always grow all 400 trees and the CI bounds overfit
+    the handful of available sessions while the mean model stops early.
+    """
+    from xgboost import XGBRegressor  # noqa: PLC0415
+
+    kwargs: dict = dict(
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        tree_method="hist",
+        random_state=seed,
+        early_stopping_rounds=EARLY_STOPPING_ROUNDS,
+    )
+    if quantile_alpha is None:
+        kwargs["objective"] = "reg:squarederror"
+    else:
+        kwargs["objective"] = "reg:quantileerror"
+        kwargs["quantile_alpha"] = quantile_alpha
+    model = XGBRegressor(**kwargs)
+    model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+    return model
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -108,7 +149,6 @@ def main() -> None:
     print(f"[=] total: {X.shape[0]} windows across {len(args.pair)} sessions")
 
     from sklearn.model_selection import train_test_split
-    from xgboost import XGBRegressor
 
     X_tr, X_va, y_tr, y_va = train_test_split(
         X,
@@ -119,49 +159,21 @@ def main() -> None:
 
     args.model_dir.mkdir(parents=True, exist_ok=True)
 
-    mean_model = XGBRegressor(
-        n_estimators=400,
-        max_depth=5,
-        learning_rate=0.08,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="reg:squarederror",
-        tree_method="hist",
-        random_state=seed,
-    )
-    mean_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+    mean_model = fit_hr_regressor(X_tr, y_tr, X_va, y_va, seed=seed)
     pred_mean = mean_model.predict(X_va)
     mae = float(np.mean(np.abs(pred_mean - y_va)))
     print(f"[=] mean MAE: {mae:.2f} bpm")
     mean_model.save_model(args.model_dir / "hr_model.json")
 
-    q_low_model = XGBRegressor(
-        n_estimators=400,
-        max_depth=5,
-        learning_rate=0.08,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="reg:quantileerror",
-        quantile_alpha=args.quantile_low,
-        tree_method="hist",
-        random_state=seed + 1,
+    q_low_model = fit_hr_regressor(
+        X_tr, y_tr, X_va, y_va, seed=seed + 1, quantile_alpha=args.quantile_low
     )
-    q_low_model.fit(X_tr, y_tr, verbose=False)
     pred_low = q_low_model.predict(X_va)
     q_low_model.save_model(args.model_dir / "hr_model_q_low.json")
 
-    q_high_model = XGBRegressor(
-        n_estimators=400,
-        max_depth=5,
-        learning_rate=0.08,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="reg:quantileerror",
-        quantile_alpha=args.quantile_high,
-        tree_method="hist",
-        random_state=seed + 2,
+    q_high_model = fit_hr_regressor(
+        X_tr, y_tr, X_va, y_va, seed=seed + 2, quantile_alpha=args.quantile_high
     )
-    q_high_model.fit(X_tr, y_tr, verbose=False)
     pred_high = q_high_model.predict(X_va)
     q_high_model.save_model(args.model_dir / "hr_model_q_high.json")
 
@@ -186,6 +198,12 @@ def main() -> None:
                 "seed": seed,
                 "quantile_low": args.quantile_low,
                 "quantile_high": args.quantile_high,
+                "early_stopping_rounds": EARLY_STOPPING_ROUNDS,
+                "best_iteration": {
+                    "mean": int(mean_model.best_iteration),
+                    "q_low": int(q_low_model.best_iteration),
+                    "q_high": int(q_high_model.best_iteration),
+                },
                 "n_train": int(X_tr.shape[0]),
                 "n_val": int(X_va.shape[0]),
                 "metrics": {

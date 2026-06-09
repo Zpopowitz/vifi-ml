@@ -36,6 +36,7 @@ import argparse
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -50,9 +51,8 @@ from calibration import (  # noqa: E402
     compute_calibration_vector,
     compute_fingerprint,
     make_calibration_id,
-    utc_now_iso,
 )
-from preprocess import extract_features  # noqa: E402
+from preprocess import build_envelope_from_amps, extract_features  # noqa: E402
 from tools.parse_csi_capture import parse_capture_file  # noqa: E402
 
 
@@ -89,12 +89,7 @@ def compute_features_over_windows(
         resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
         for s in range(win_amps.shape[1]):
             resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
-        x = resampled - np.mean(resampled, axis=0, keepdims=True)
-        variances = np.var(x, axis=0)
-        k = min(8, x.shape[1])
-        picked = x[:, np.argsort(variances)[-k:]]
-        std = np.std(picked, axis=0, keepdims=True) + 1e-9
-        envelope = np.mean(picked / std, axis=1).astype(np.float32)
+        envelope = build_envelope_from_amps(resampled)
         feats.append(extract_features(envelope, fs=fs_resample))
         t += stride_s
     if not feats:
@@ -191,14 +186,19 @@ def main() -> None:
 
     cal_vec = compute_calibration_vector(feats)
     fingerprint = compute_fingerprint(amps)
-    cal_id = make_calibration_id(args.subject_id, args.room_id, args.posture)
+    # Same timestamp format make_calibration_id generates internally;
+    # passing it in keeps the ID and the record field identical.
+    captured_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S%fZ")
+    cal_id = make_calibration_id(
+        args.subject_id, args.room_id, args.posture, captured_at
+    )
 
     cal = Calibration(
         calibration_id=cal_id,
         subject_id=args.subject_id,
         room_id=args.room_id,
         posture=args.posture,
-        captured_at=utc_now_iso(),
+        captured_at=captured_at,
         duration_seconds=actual_dur,
         calibration_vector=cal_vec.tolist(),
         fingerprint=fingerprint.tolist(),

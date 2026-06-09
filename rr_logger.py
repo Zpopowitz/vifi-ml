@@ -115,13 +115,27 @@ class _ForceToRR:
         self.maxlen = max(8, int(_FORCE_BUFFER_SECONDS * self.fs))
         self.buf: Deque[float] = deque(maxlen=self.maxlen)
 
-    def update(self, force_n: float) -> float:
+    def update(self, force_n: Optional[float]) -> float:
         if force_n is None or math.isnan(force_n):
             return float("nan")
         self.buf.append(float(force_n))
         if len(self.buf) < max(8, self.maxlen // 2):
             return float("nan")
         return self._estimate()
+
+    @staticmethod
+    def _parabolic_shift(a: float, b: float, c: float) -> float:
+        """Fractional-bin peak refinement, mirroring the guards in
+        `preprocess._parabolic_interp`: an inverted or degenerate
+        parabola (denom >= -1e-12, i.e. the center bin is not a strict
+        local max) would point the refined peak AWAY from the actual
+        max, so keep the bin center. The shift is clamped to one bin so
+        a band-edge neighbor taller than the peak cannot overshoot."""
+        denom = a - 2.0 * b + c
+        if denom >= -1e-12:
+            return 0.0
+        shift = 0.5 * (a - c) / denom
+        return float(min(1.0, max(-1.0, shift)))
 
     def _estimate(self) -> float:
         try:
@@ -142,9 +156,9 @@ class _ForceToRR:
         peak_local = int(np.argmax(spec[band]))
         peak = idxs[peak_local]
         if 0 < peak < len(spec) - 1:
-            a, b, c = spec[peak - 1], spec[peak], spec[peak + 1]
-            denom = a - 2 * b + c
-            shift = 0.5 * (a - c) / denom if denom != 0 else 0.0
+            shift = self._parabolic_shift(
+                float(spec[peak - 1]), float(spec[peak]), float(spec[peak + 1])
+            )
         else:
             shift = 0.0
         f_hz = freqs[peak] + shift * (freqs[1] - freqs[0])

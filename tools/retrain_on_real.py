@@ -44,6 +44,7 @@ from config import (  # noqa: E402
 from preprocess import (  # noqa: E402
     FEATURE_NAMES,
     FEATURE_SET_VERSION,
+    build_envelope_from_amps,
     extract_features,
 )
 from tools.first_capture_report import (  # noqa: E402
@@ -99,12 +100,10 @@ def build_feature_matrix(
         resampled = np.empty((grid.size, win_amps.shape[1]), dtype=np.float32)
         for s in range(win_amps.shape[1]):
             resampled[:, s] = np.interp(grid, win_ts, win_amps[:, s])
-        x = resampled - np.mean(resampled, axis=0, keepdims=True)
-        variances = np.var(x, axis=0)
-        k = min(8, x.shape[1])
-        picked = x[:, np.argsort(variances)[-k:]]
-        std = np.std(picked, axis=0, keepdims=True) + 1e-9
-        envelope = np.mean(picked / std, axis=1).astype(np.float32)
+        # Canonical envelope (variance-rank top-K + optional PCA
+        # suppression) — training MUST share the serving recipe or the
+        # model and the OOD detector are fit in a skewed feature space.
+        envelope = build_envelope_from_amps(resampled)
 
         feats.append(extract_features(envelope, fs=fs_resample))
         labels.append(interpolate_hr(hr_unix, hr_bpm, t + window_s / 2))
@@ -122,6 +121,55 @@ def build_feature_matrix(
     return feats_arr, labels_arr
 
 
+def split_sessions(
+    X_parts: list[np.ndarray],
+    y_parts: list[np.ndarray],
+    val_frac: float,
+    seed: int,
+    val_sessions: list[int] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[int], list[int]]:
+    """Session-boundary train/val holdout.
+
+    Whole sessions go to train or val — never windows from one session
+    to both sides. With 50%-overlapping windows, a window-level random
+    split leaks nearly every val window's content into train, making the
+    printed val MAE systematically optimistic; this matches the LOSO
+    protocol instead.
+
+    `val_sessions` (0-based indices into the --pair order) pins the
+    holdout explicitly; otherwise ~`val_frac` of the sessions (at least
+    1, at most N-1) are chosen deterministically from `seed`.
+
+    Returns (X_tr, y_tr, X_va, y_va, train_session_idxs, val_session_idxs).
+    """
+    n_sessions = len(X_parts)
+    if n_sessions < 2:
+        raise ValueError(
+            "session-level holdout needs >= 2 sessions (got "
+            f"{n_sessions}); a single session cannot provide an honest "
+            "val set — capture another session or evaluate with LOSO"
+        )
+    if val_sessions is not None:
+        val_idx = sorted(set(val_sessions))
+        bad = [i for i in val_idx if not 0 <= i < n_sessions]
+        if bad:
+            raise ValueError(
+                f"--val-session indices {bad} out of range [0, {n_sessions - 1}]"
+            )
+        if len(val_idx) >= n_sessions:
+            raise ValueError("at least one session must remain in train")
+    else:
+        n_val = min(max(1, round(val_frac * n_sessions)), n_sessions - 1)
+        rng = np.random.default_rng(seed)
+        val_idx = sorted(rng.choice(n_sessions, size=n_val, replace=False).tolist())
+    train_idx = [i for i in range(n_sessions) if i not in val_idx]
+    X_tr = np.vstack([X_parts[i] for i in train_idx])
+    y_tr = np.concatenate([y_parts[i] for i in train_idx])
+    X_va = np.vstack([X_parts[i] for i in val_idx])
+    y_va = np.concatenate([y_parts[i] for i in val_idx])
+    return X_tr, y_tr, X_va, y_va, train_idx, val_idx
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -136,7 +184,21 @@ def main() -> None:
     p.add_argument("--window", type=float, default=10.0)
     p.add_argument("--stride", type=float, default=5.0)
     p.add_argument("--fs", type=float, default=100.0)
-    p.add_argument("--val-frac", type=float, default=0.2)
+    p.add_argument(
+        "--val-frac",
+        type=float,
+        default=0.2,
+        help="fraction of SESSIONS held out for validation (>= 1 session)",
+    )
+    p.add_argument(
+        "--val-session",
+        action="append",
+        type=int,
+        metavar="IDX",
+        help="0-based index of a --pair session to hold out for validation "
+        "(repeatable). Default: ~val-frac of the sessions, chosen "
+        "deterministically from the seed.",
+    )
     p.add_argument("--model-dir", type=Path, default=Path("models_real"))
     p.add_argument(
         "--no-versioned",
@@ -191,18 +253,27 @@ def main() -> None:
         X_parts.append(X)
         y_parts.append(y)
 
-    X = np.vstack(X_parts)
-    y = np.concatenate(y_parts)
-    print(f"[=] total: {X.shape[0]} windows across {len(args.pair)} sessions")
+    total = sum(x.shape[0] for x in X_parts)
+    print(f"[=] total: {total} windows across {len(args.pair)} sessions")
 
-    from sklearn.model_selection import train_test_split
     from xgboost import XGBRegressor
 
-    X_tr, X_va, y_tr, y_va = train_test_split(
-        X,
-        y,
-        test_size=args.val_frac,
-        random_state=args.seed,
+    try:
+        X_tr, y_tr, X_va, y_va, train_idx, val_idx = split_sessions(
+            X_parts,
+            y_parts,
+            val_frac=args.val_frac,
+            seed=args.seed,
+            val_sessions=args.val_session,
+        )
+    except ValueError as exc:
+        sys.exit(f"error: {exc}")
+    for i, (cap, _log) in enumerate(args.pair):
+        side = "VAL" if i in val_idx else "train"
+        print(f"[=] session {i}: {side:5s}  {cap} ({X_parts[i].shape[0]} windows)")
+    print(
+        f"[=] session holdout: {len(train_idx)} train / {len(val_idx)} val "
+        f"sessions ({X_tr.shape[0]} / {X_va.shape[0]} windows)"
     )
     model = XGBRegressor(
         n_estimators=400,
@@ -237,6 +308,9 @@ def main() -> None:
         "calibration_mode": args.calibration_mode,
         "calibration_seconds": args.calibration_seconds,
         "seed": args.seed,
+        "split": "session_holdout",
+        "train_sessions": [str(args.pair[i][0]) for i in train_idx],
+        "val_sessions": [str(args.pair[i][0]) for i in val_idx],
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
         # Multipath A1 hyperparams (PCA subspace decomposition).

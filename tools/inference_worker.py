@@ -33,7 +33,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Deque, Optional
+from typing import Deque, Optional, Protocol
 
 import numpy as np
 
@@ -117,6 +117,17 @@ def _resample(
     return out
 
 
+class _HRModel(Protocol):
+    """Prediction surface the worker needs from the HR model.
+
+    `xgboost.XGBRegressor` satisfies this structurally; a Protocol keeps
+    xgboost lazily imported (only inside `_load_model`) so the module
+    stays importable without the heavyweight dependency.
+    """
+
+    def predict(self, X: np.ndarray) -> np.ndarray: ...
+
+
 @dataclass
 class _ModelBundle:
     """Loaded HR model for the inference worker.
@@ -126,7 +137,7 @@ class _ModelBundle:
     the HR predictor in `loop`.
     """
 
-    hr_model: object
+    hr_model: _HRModel
     hr_ratio_idx: Optional[int]
 
 
@@ -457,25 +468,59 @@ def loop(
             and now - last_rr_predict >= rr_stride_s
         ):
             last_rr_predict = now
-            _publish_rr(
-                bus,
-                rr_topic,
-                patient_id,
-                rr_window,
-                rr_tracker,
-                fs_resample,
-                rr_window_s,
-                rr_first_ts,
-                metrics,
-            )
+            try:
+                _publish_rr(
+                    bus,
+                    rr_topic,
+                    patient_id,
+                    rr_window,
+                    rr_tracker,
+                    fs_resample,
+                    rr_window_s,
+                    rr_first_ts,
+                    metrics,
+                )
+            except Exception:
+                # One bad RR window must not kill the worker (and with it
+                # the HR stream). Log, count, move on; the next stride
+                # gets a different window.
+                log.exception(
+                    "RR stride failed; containing (rr_window n_packets=%d)",
+                    len(rr_window),
+                )
+                if metrics is not None and "errors_total" in metrics:
+                    metrics["errors_total"].labels(patient_id).inc()
 
         if now - last_predict < stride_s:
             continue
-        if metrics is not None:
-            with metrics["prediction_duration_seconds"].labels(patient_id).time():
+        try:
+            if metrics is not None:
+                with metrics["prediction_duration_seconds"].labels(patient_id).time():
+                    pred = run_once(window, fs_resample, window_s, bundle)
+            else:
                 pred = run_once(window, fs_resample, window_s, bundle)
-        else:
-            pred = run_once(window, fs_resample, window_s, bundle)
+        except Exception:
+            span_s = (
+                window._buf[-1].ts_unix - window._buf[0].ts_unix if len(window) else 0.0
+            )
+            log.exception(
+                "HR stride failed; containing (n_packets=%d span_s=%.1f "
+                "pending_acks=%d)",
+                len(window),
+                span_s,
+                len(pending_acks),
+            )
+            if metrics is not None and "errors_total" in metrics:
+                metrics["errors_total"].labels(patient_id).inc()
+            # ACK the packets that fed this window. They are already in
+            # the rolling buffer, so a crash-and-redeliver would rebuild
+            # the exact same poison window and raise again forever; the
+            # only way out is forward, on fresh packets.
+            for msg_id in pending_acks:
+                bus.ack(CONSUMER_GROUP, in_topic, msg_id)
+            pending_acks.clear()
+            last_predict = now
+            continue
         if pred is None:
             if metrics is not None:
                 metrics["windows_too_short_total"].labels(patient_id).inc()

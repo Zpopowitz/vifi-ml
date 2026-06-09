@@ -66,10 +66,14 @@ def test_score_supports_1d_and_2d():
 
     one = X[0]
     s1 = det.score(one)
+    # Contract (eval 2026-06-09, item 25): 1-D input returns an
+    # np.float64 scalar (which is also a Python float), not an ndarray.
+    assert isinstance(s1, np.float64)
     assert isinstance(s1, float)
 
     batch = X[:5]
     s2 = det.score(batch)
+    assert isinstance(s2, np.ndarray)
     assert s2.shape == (5,)
     assert s2[0] == pytest.approx(s1, rel=1e-5)
 
@@ -112,3 +116,15 @@ def test_is_ood_returns_boolean_per_sample():
     flags = det.is_ood(ood)
     assert hasattr(flags, "__len__") and len(flags) == 5
     assert all(bool(f) for f in flags)
+
+
+def test_is_ood_returns_scalar_bool_for_1d_input():
+    rng = np.random.default_rng(7)
+    X = _gaussian_features(rng, 300, 9)
+    det = MahalanobisDetector.fit(X)
+    in_dist = det.is_ood(np.zeros(9, dtype=np.float32))  # at the mean
+    out_dist = det.is_ood(np.full(9, 10.0, dtype=np.float32))
+    assert isinstance(in_dist, np.bool_)
+    assert isinstance(out_dist, np.bool_)
+    assert bool(in_dist) is False
+    assert bool(out_dist) is True
