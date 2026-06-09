@@ -37,7 +37,11 @@ from radar.hr_selector import (
     candidate_feature_matrix,
     viterbi_decode,
 )
-from tools.spi_debug.radar_train_hr_selector import LABEL_TOL_BPM, _windows
+from tools.spi_debug.radar_train_hr_selector import (
+    LABEL_TOL_BPM,
+    _windows,
+    training_rows,
+)
 
 TRACK_CSV = "docs/eval/radar_hr_tracking.csv"
 
@@ -54,12 +58,12 @@ def _mae(values: list[float]) -> float:
     return float(np.mean(values)) if values else float("nan")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="real-data HR accuracy tracker")
     ap.add_argument(
         "--no-append", action="store_true", help="print only; do not write the CSV row"
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     caps = included_captures()
     if not caps:
@@ -89,20 +93,9 @@ def main() -> None:
         from xgboost import XGBClassifier  # noqa: PLC0415
 
         for held in per_subj:
-            x, y, groups, truths = [], [], [], []
-            for s, wins in per_subj.items():
-                if s == held:
-                    continue
-                for cands, truth in wins:
-                    x.append(candidate_feature_matrix(cands))
-                    y.extend(
-                        1 if abs(c.freq_bpm - truth) <= LABEL_TOL_BPM else 0
-                        for c in cands
-                    )
-                    groups.extend([s] * len(cands))
-                    truths.extend([truth] * len(cands))
-            x = np.vstack(x)
-            y = np.asarray(y)
+            x, y, groups, truths = training_rows(
+                per_subj, held, label_tol_bpm=LABEL_TOL_BPM
+            )
             if y.sum() == 0 or y.sum() == y.size:
                 continue
             clf = XGBClassifier(

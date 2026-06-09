@@ -140,7 +140,14 @@ HR_BIN_EDGES_BPM = (0.0, 90.0, 120.0, 150.0, float("inf"))
 
 
 def _hr_bin(bpm: float) -> int:
-    """Index of the HR_BIN_EDGES_BPM bin containing `bpm` (clamped at the ends)."""
+    """Index of the HR_BIN_EDGES_BPM bin containing `bpm` (clamped at the ends).
+
+    Raises ValueError on non-finite input: a NaN truth would otherwise fall
+    through every `lo <= bpm < hi` comparison and silently land in the
+    elevated bin, corrupting the bin-balanced training weights.
+    """
+    if not np.isfinite(bpm):
+        raise ValueError(f"non-finite HR truth: {bpm!r}")
     for i in range(len(HR_BIN_EDGES_BPM) - 1):
         if HR_BIN_EDGES_BPM[i] <= bpm < HR_BIN_EDGES_BPM[i + 1]:
             return i
@@ -201,17 +208,29 @@ def viterbi_decode(
     moving from frequency f to f' is |f - f'| / continuity_bpm, so the heartbeat
     (which drifts slowly) is favored over a fixed artifact the emission scores
     highly. Returns the chosen bpm per window.
+
+    A window with zero candidates has no frequency to choose: it decodes to
+    NaN and the continuity penalty bridges directly between the surrounding
+    non-empty windows, so one quiet window does not break the whole track.
     """
     n_windows = len(per_window_freqs)
     if n_windows == 0:
         return []
+    non_empty = [
+        t for t in range(n_windows) if np.asarray(per_window_freqs[t]).size > 0
+    ]
+    track = [float("nan")] * n_windows
+    if not non_empty:
+        return track
     eps = 1e-9
     inv_cont = 1.0 / max(continuity_bpm, 1e-6)
 
-    prev_cost = np.log(np.asarray(per_window_scores[0], dtype=np.float64) + eps)
+    prev_cost = np.log(
+        np.asarray(per_window_scores[non_empty[0]], dtype=np.float64) + eps
+    )
     backptr: list[np.ndarray] = []
-    for t in range(1, n_windows):
-        f_prev = np.asarray(per_window_freqs[t - 1], dtype=np.float64)
+    for t_prev, t in zip(non_empty[:-1], non_empty[1:]):
+        f_prev = np.asarray(per_window_freqs[t_prev], dtype=np.float64)
         f_cur = np.asarray(per_window_freqs[t], dtype=np.float64)
         s_cur = np.log(np.asarray(per_window_scores[t], dtype=np.float64) + eps)
         cur_cost = np.empty(f_cur.size, dtype=np.float64)
@@ -224,10 +243,9 @@ def viterbi_decode(
         backptr.append(bp)
         prev_cost = cur_cost
 
-    track = [0.0] * n_windows
     j = int(np.argmax(prev_cost))
-    track[n_windows - 1] = float(per_window_freqs[n_windows - 1][j])
-    for t in range(n_windows - 1, 0, -1):
-        j = int(backptr[t - 1][j])
-        track[t - 1] = float(per_window_freqs[t - 1][j])
+    track[non_empty[-1]] = float(per_window_freqs[non_empty[-1]][j])
+    for i in range(len(non_empty) - 1, 0, -1):
+        j = int(backptr[i - 1][j])
+        track[non_empty[i - 1]] = float(per_window_freqs[non_empty[i - 1]][j])
     return track

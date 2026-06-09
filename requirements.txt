@@ -26,3 +26,6 @@ redis==8.0.0        ; extra == "bus"
 # Hardware loggers (optional; only needed when capturing real data).
 bleak==0.22.3       ; extra == "capture"
 godirect==1.2.1     ; extra == "capture"
+# Radar raw-ADC capture over FTDI SPI. Required on the Pi for the live
+# radar collector (--source ftdi) and the bench capture tooling.
+pyftdi==0.57.2      ; extra == "capture"

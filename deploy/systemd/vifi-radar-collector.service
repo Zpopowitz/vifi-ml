@@ -9,10 +9,15 @@ Type=simple
 User=zpopowitz
 WorkingDirectory=/home/zpopowitz/vifi-ml
 EnvironmentFile=/etc/vifi/live.env
-# --source usb is the production path. The collector NEVER runs --source synth
-# in a systemd unit -- synth is reserved for pytest + dev (see the
-# "no fake numbers" rule documented in feedback-no-synthetic-model).
-ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.radar_collector --source usb --bus --patient-id ${VIFI_PATIENT_ID} --duration 0
+# --source ftdi is the production path: raw ADC complex IQ over the
+# C232HM-DDHSL-0 / FT232H SPI cable (docs/radar_spi_firmware/APPLIED_EDITS.md).
+# The DACM-based DSP requires IQ; the XDS110 USB TLV stream (--source usb) is
+# post-FFT magnitude only and can never produce a valid HR. Override the cable
+# with VIFI_RADAR_FTDI_URL in /etc/vifi/live.env if more than one FT232H is
+# attached. The collector NEVER runs --source synth in a systemd unit -- synth
+# is reserved for pytest + dev (see the "no fake numbers" rule documented in
+# feedback-no-synthetic-model).
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.radar_collector --source ftdi --bus --patient-id ${VIFI_PATIENT_ID} --duration 0
 Restart=always
 RestartSec=3
 MemoryMax=512M
