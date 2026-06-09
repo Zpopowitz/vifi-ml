@@ -186,6 +186,15 @@ def test_app_boots_with_no_model(tmp_path):
     assert body["model_loaded"] is False
 
 
+def test_health_reports_degraded_when_model_missing(tmp_path):
+    """Monitors key on `status`, not `model_loaded` (eval item 22):
+    a missing/unloadable model must read "degraded", never "ok"."""
+    client = _client_without_model(tmp_path)
+    body = client.get("/health").json()
+    assert body["model_loaded"] is False
+    assert body["status"] == "degraded"
+
+
 def test_predict_503_when_no_model(tmp_path):
     client = _client_without_model(tmp_path)
     r = client.post(

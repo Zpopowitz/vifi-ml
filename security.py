@@ -8,7 +8,8 @@ file.
 Settings (env-driven so secrets never enter committed config):
 
     VIFI_AUTH_MODE          : "none" (dev only) | "api_key" (production)
-                              default: "none"
+                              default: "api_key" (fail-closed; dev must
+                              explicitly set "none")
     VIFI_API_KEYS           : comma-separated allowed API keys
                               required when AUTH_MODE=api_key
     VIFI_API_KEYS_FILE      : path to a JSON file of key metadata
@@ -25,7 +26,10 @@ Settings (env-driven so secrets never enter committed config):
 Public endpoints (NO auth required):
     GET  /health, /readyz   -- liveness for orchestrator probes
     GET  /roadmap           -- product surface metadata, no PHI
-    GET  /                  -- root banner
+    GET  /                  -- root banner / dashboard SPA
+    static assets           -- dashboard css/js/fonts/icons by extension
+                               (the login overlay must be able to render
+                               before the user has presented a key)
 
 Why middleware (not per-route): every new endpoint added by mistake
 should be auth-required by default. Opt-in public endpoints listed
@@ -38,6 +42,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import uuid
@@ -74,15 +79,27 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/v1/health",
         "/api/v1/readyz",
         "/api/v1/roadmap",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
     }
 )
 
+# Dashboard static assets the SPA needs before the user can authenticate:
+# the login overlay is rendered by index.html + these files. Extension
+# allowlist (not a prefix rule) because the SPA mount serves styles.css,
+# js/* and fonts/* from the root catch-all -- there is no common prefix
+# that wouldn't also swallow API paths. None of these types carry PHI;
+# vitals only ever flow through authenticated JSON/WebSocket responses.
+_STATIC_ASSET_EXTENSIONS: frozenset[str] = frozenset(
+    {".css", ".js", ".woff2", ".woff", ".ico", ".svg", ".png", ".map", ".html"}
+)
+
+
+def _is_static_asset(normalized_path: str) -> bool:
+    lower = normalized_path.lower()
+    return any(lower.endswith(ext) for ext in _STATIC_ASSET_EXTENSIONS)
+
 
 def get_auth_mode() -> AuthMode:
-    raw = os.environ.get("VIFI_AUTH_MODE", "none").lower()
+    raw = os.environ.get("VIFI_AUTH_MODE", "api_key").lower()
     try:
         return AuthMode(raw)
     except ValueError:
@@ -416,7 +433,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         normalized = _normalize_path(request.url.path)
-        if normalized in PUBLIC_PATHS:
+        if normalized in PUBLIC_PATHS or _is_static_asset(normalized):
             return await call_next(request)
         try:
             require_api_key(request)
@@ -428,11 +445,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# X-Request-Id is caller-controlled input echoed into a response header
+# and log lines; without sanitization it is a header-injection / log-
+# forgery vector.
+_REQUEST_ID_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
+_REQUEST_ID_MAX_LEN = 64
+
+
+def _sanitize_request_id(raw: Optional[str]) -> str:
+    if raw:
+        rid = _REQUEST_ID_UNSAFE.sub("", raw)[:_REQUEST_ID_MAX_LEN]
+        if rid:
+            return rid
+    return uuid.uuid4().hex[:16]
+
+
 class RequestIdMiddleware(BaseHTTPMiddleware):
     """Attach a request-id to every request."""
 
     async def dispatch(self, request: Request, call_next):
-        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+        rid = _sanitize_request_id(request.headers.get("x-request-id"))
         request.state.request_id = rid
         response = await call_next(request)
         response.headers["x-request-id"] = rid

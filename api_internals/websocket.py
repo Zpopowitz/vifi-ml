@@ -20,11 +20,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from api import MODEL_VERSION
 from security import authorize_websocket
+
+# patient_id is interpolated into bus stream names (Redis keys in prod);
+# without an allowlist a caller could subscribe to arbitrary streams.
+_PATIENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 def register_stream_route(app: FastAPI) -> None:
@@ -52,6 +57,9 @@ def register_stream_route(app: FastAPI) -> None:
         if not await authorize_websocket(websocket, required_scope="read:hr"):
             return
         patient_id = websocket.query_params.get("patient_id", "default")
+        if not _PATIENT_ID_RE.fullmatch(patient_id):
+            await websocket.close(code=1008, reason="invalid_patient_id")
+            return
         bus = bus_from_env()
         # Subscribe to every (HR and RR, predicted and reference)
         # topic for the patient. Adding new vital streams later is

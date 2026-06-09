@@ -209,3 +209,71 @@ def test_stream_default_patient_id_when_omitted(client, shared_bus):
     with client.websocket_connect("/api/v1/stream") as ws:
         hello = ws.receive_json()
         assert hello["patient_id"] == "default"
+
+
+# ---------------------------------------------------------------------------
+# patient_id validation (eval item 19): the raw query param is
+# interpolated into bus stream names, so it must be allowlisted.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "alice.dlq",  # dot lets a caller reach foreign/DLQ streams
+        "a/../b",  # path-style traversal
+        "bad id",  # whitespace
+        "x" * 65,  # over the 64-char cap
+        "*",  # redis glob
+    ],
+)
+def test_stream_rejects_invalid_patient_id(client, shared_bus, bad_id):
+    from urllib.parse import quote
+
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect(f"/api/v1/stream?patient_id={quote(bad_id)}") as ws:
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            ws.receive_json()
+    assert excinfo.value.code == 1008
+
+
+def test_stream_accepts_allowlisted_patient_id(client, shared_bus):
+    with client.websocket_connect("/api/v1/stream?patient_id=room-1_bedA") as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello"
+        assert hello["patient_id"] == "room-1_bedA"
+
+
+# ---------------------------------------------------------------------------
+# Disconnect cleanup (eval item 31): every browser refresh is a
+# disconnect; the handler's bus connection must be closed (finally
+# block) or subscriptions accumulate silently.
+# ---------------------------------------------------------------------------
+
+
+class _CloseCountingBus(InMemoryBus):
+    def __init__(self):
+        super().__init__()
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+        super().close()
+
+
+def test_stream_disconnect_closes_bus_subscription(tmp_path):
+    from api import create_app
+
+    bus = _CloseCountingBus()
+    with patch("modules.bus.bus_from_env", return_value=bus):
+        client = TestClient(create_app(model_dir=tmp_path / "no_model"))
+        with client.websocket_connect("/api/v1/stream?patient_id=alice") as ws:
+            assert ws.receive_json()["type"] == "hello"
+            assert bus.close_calls == 0
+        # Context exit = client disconnect. The handler's finally block
+        # must release the bus; without it every refresh leaks one
+        # subscription loop.
+        assert _wait_for(
+            lambda: bus.close_calls >= 1
+        ), "bus.close() was not called after client disconnect"

@@ -130,6 +130,75 @@ def test_none_auth_mode_skips_scope_check(monkeypatch):
     assert r.status_code not in (401, 403), r.text
 
 
+def test_v1_aliases_enforce_same_scopes_as_unversioned(monkeypatch, tmp_path):
+    """Regression (eval item 5): the /api/v1 alias loop used to copy
+    path + handler but drop route dependencies, so a restricted key
+    could hit /api/v1/predict and /api/v1/identify regardless of its
+    scopes. The alias must deny exactly like the unversioned route."""
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(
+        json.dumps({"rr_key": {"name": "rr_only", "scopes": ["read:rr"]}})
+    )
+    app = _fresh_api_with_env(
+        monkeypatch,
+        {
+            "VIFI_AUTH_MODE": "api_key",
+            "VIFI_API_KEYS_FILE": str(keys_file),
+            "VIFI_AUDIT_CHAIN_KEY": "x" * 64,
+            "VIFI_AUDIT_ENCRYPTION_KEY": "0" * 32
+            + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        },
+    )
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer rr_key"}
+
+    for path in ("/predict", "/api/v1/predict"):
+        r = client.post(
+            path, headers=headers, json={"iq_real": [], "iq_imag": [], "fs": 100.0}
+        )
+        assert r.status_code == 403, f"{path} -> {r.status_code}: {r.text}"
+        assert "missing_scope:read:hr" in r.text
+
+    for path in ("/identify", "/api/v1/identify"):
+        r = client.post(path, headers=headers, json={"capture_text": "x"})
+        assert r.status_code == 403, f"{path} -> {r.status_code}: {r.text}"
+        assert "missing_scope:read:identity" in r.text
+
+
+def test_rooms_requires_read_rooms_scope(monkeypatch, tmp_path):
+    """Eval item 20: /api/v1/rooms enumerates every monitored patient
+    id + last activity. It must be gated on read:rooms, not just on
+    holding any valid key."""
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(
+        json.dumps(
+            {
+                "hr_key": {"name": "hr_only", "scopes": ["read:hr"]},
+                "rooms_key": {"name": "census", "scopes": ["read:rooms"]},
+            }
+        )
+    )
+    app = _fresh_api_with_env(
+        monkeypatch,
+        {
+            "VIFI_AUTH_MODE": "api_key",
+            "VIFI_API_KEYS_FILE": str(keys_file),
+            "VIFI_AUDIT_CHAIN_KEY": "x" * 64,
+            "VIFI_AUDIT_ENCRYPTION_KEY": "0" * 32
+            + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        },
+    )
+    client = TestClient(app)
+
+    r = client.get("/api/v1/rooms", headers={"Authorization": "Bearer hr_key"})
+    assert r.status_code == 403, r.text
+    assert "missing_scope:read:rooms" in r.text
+
+    r = client.get("/api/v1/rooms", headers={"Authorization": "Bearer rooms_key"})
+    assert r.status_code == 200, r.text
+    assert "rooms" in r.json()
+
+
 def test_get_scopes_for_key_resolves_known_and_unknown(monkeypatch, tmp_path):
     keys_file = tmp_path / "keys.json"
     keys_file.write_text(

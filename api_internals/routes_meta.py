@@ -47,6 +47,9 @@ def register_meta_routes(
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
+        """Liveness + model state. status is "ok" only when the bundle is
+        actually loaded; "degraded" otherwise, so monitors keying on
+        status (not model_loaded) see a missing/broken model."""
         loaded = False
         feature_names: list[str] = []
         hr_tol = 0.0
@@ -64,7 +67,7 @@ def register_meta_routes(
                 meta = {"error": exc.detail}
 
         return HealthResponse(
-            status="ok",
+            status="ok" if loaded else "degraded",
             model_version=MODEL_VERSION,
             hr_tol_bpm=hr_tol,
             rr_tol_bpm=rr_tol,
