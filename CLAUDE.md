@@ -189,7 +189,7 @@ Used by `/health`. Matches the CI gauntlet in `feedback_ci_gauntlet`.
 - typecheck: `mypy pseudonymize.py config.py __version__.py`
 - lint: `ruff check . && ruff format --check .`
 - test: `pytest -m "not e2e"`
-- deadcode: `vulture . --min-confidence 80 --exclude .venv,data,models,models_real,build,hr_net`
+- deadcode: `vulture . .vulture_whitelist.py --min-confidence 80 --exclude .venv,data,models,models_real,build,hr_net` (known false positives live in `.vulture_whitelist.py`)
 - shell: `shellcheck *.sh tools/*.sh`
 
 `hr_net/` is excluded from deadcode because that pipeline is shelved pending diverse HR data (see `project_hr_data_bottleneck`).

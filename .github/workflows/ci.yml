@@ -243,7 +243,13 @@ jobs:
           image-ref: vifi-ml:ci
           format: table
           severity: CRITICAL,HIGH
-          exit-code: '0'           # advisory until baseline is clean
+          # Blocking: a HIGH/CRITICAL CVE with an available fix fails CI.
+          # Unfixed CVEs (no patched package exists yet) are excluded so
+          # the gate stays actionable; acknowledged findings go in
+          # .trivyignore with a justification + expiry.
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: .trivyignore
 
   e2e:
     name: End-to-end (compose smoke)

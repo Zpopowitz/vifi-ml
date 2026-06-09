@@ -43,12 +43,18 @@ on_pi() { ! grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; }
 # ---- 1. Ensure local .env exists with all SP7 secrets ----
 if [[ "$ROTATE" == 1 ]]; then
   echo "[gen]  rotating all secrets (--rotate-all)"
-  $DRY_RUN && echo "[dry-run] would: ./tools/setup_keys.sh --force" || \
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "[dry-run] would: ./tools/setup_keys.sh --force"
+  else
     ./tools/setup_keys.sh --force
+  fi
 elif [[ ! -f "$ENV_FILE" ]]; then
   echo "[gen]  $ENV_FILE missing; generating fresh secrets"
-  $DRY_RUN && echo "[dry-run] would: ./tools/setup_keys.sh" || \
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "[dry-run] would: ./tools/setup_keys.sh"
+  else
     ./tools/setup_keys.sh
+  fi
 else
   echo "[ok]   $ENV_FILE exists; using existing secrets"
 fi

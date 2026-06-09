@@ -42,7 +42,14 @@ class InMemoryBus:
         self._topics: dict[str, list[Message]] = {}
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
-        self._seq_within_ms: dict[int, int] = {}
+        # Intra-ms sequence state: O(1), replaces an unbounded
+        # ts_ms -> seq dict that grew forever in long-running
+        # processes (I-2026-06-09 item 30). Only the newest
+        # timestamp needs a counter; see publish() for the
+        # stale-timestamp uniqueness argument.
+        self._last_ts = -1
+        self._next_seq = 0
+        self._publish_count = 0
         self._max_per_topic = int(max_messages_per_topic)
         # Consumer-group state.
         # _groups[(topic, group)] = last_delivered_id
@@ -58,8 +65,22 @@ class InMemoryBus:
     ) -> str:
         ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
         with self._cond:
-            seq = self._seq_within_ms.get(ts, 0)
-            self._seq_within_ms[ts] = seq + 1
+            self._publish_count += 1
+            if ts > self._last_ts:
+                self._last_ts = ts
+                self._next_seq = 0
+            if ts == self._last_ts:
+                seq = self._next_seq
+                self._next_seq += 1
+            else:
+                # Stale timestamp (explicit ts_ms in the past, or a
+                # wall-clock step backwards). Draw the sequence from
+                # the global publish counter: it strictly increases
+                # and always exceeds every per-ms sequence previously
+                # issued for this timestamp, so (ts, seq) stays unique
+                # and later-published messages still sort later within
+                # the same ms.
+                seq = self._publish_count
             msg_id = f"{ts}-{seq}"
             msg = Message(topic=topic, msg_id=msg_id, ts_ms=ts, payload=payload)
             bucket = self._topics.setdefault(topic, [])
@@ -132,7 +153,9 @@ class InMemoryBus:
     def close(self) -> None:
         with self._cond:
             self._topics.clear()
-            self._seq_within_ms.clear()
+            self._last_ts = -1
+            self._next_seq = 0
+            self._publish_count = 0
             self._groups.clear()
             self._pending.clear()
             self._delivery.clear()
