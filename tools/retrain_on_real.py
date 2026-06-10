@@ -284,6 +284,9 @@ def main() -> None:
         objective="reg:squarederror",
         tree_method="hist",
         random_state=args.seed,
+        # Same early stopping as tools/train_quantile_models.py; without it
+        # the serving model always grows all 400 trees on tiny datasets.
+        early_stopping_rounds=50,
     )
     model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
     pred = model.predict(X_va)

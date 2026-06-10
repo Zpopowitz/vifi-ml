@@ -470,12 +470,12 @@ def main() -> None:
     p.add_argument(
         "--source",
         choices=["usb", "ftdi", "synth"],
-        default="usb",
+        default="ftdi",
         help="frame source: 'ftdi' for raw ADC IQ over a C232HM-DDHSL-0 "
-        "USB-SPI cable to J2 (the vitals production path; requires "
+        "USB-SPI cable to J2 (default; the vitals production path; requires "
         "SPI_ADC_DATA_STREAMING=1 firmware + `adcLogging 2` sent over the "
         "UART first), 'usb' for the IWRL6432BOOST TLV stream over XDS110 "
-        "UART (default; MAGNITUDE-ONLY, unsuitable for HR), or 'synth' "
+        "UART (MAGNITUDE-ONLY, unsuitable for HR, debug only), or 'synth' "
         "for radar.synth_capture (test-only; never in production)",
     )
     p.add_argument(

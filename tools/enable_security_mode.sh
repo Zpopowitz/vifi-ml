@@ -188,10 +188,12 @@ done
 sudo systemctl restart \$SVCS
 echo "[ok] restarted: \$SVCS"
 
-# Wait + verify: dashboard /health WITHOUT the key should now 401.
+# Wait + verify: an auth-gated endpoint WITHOUT the key should now 401.
+# (/health is intentionally public and always returns 200, so it cannot
+# prove auth is on; /api/v1/rooms requires a key + read:rooms scope.)
 sleep 3
-http=\$(curl -sS -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo 000)
-echo "[verify] /health unauthenticated -> HTTP \$http  (expect 401)"
+http=\$(curl -sS -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/rooms || echo 000)
+echo "[verify] /api/v1/rooms unauthenticated -> HTTP \$http  (expect 401)"
 REMOTE_EOF
 )
 
