@@ -29,6 +29,9 @@ few are imported by other code. For broader codebase navigation see
 | `radar_collector.py` | Publishes IWRL6432BOOST frames to `radar.raw.<pid>`. `--source ftdi` is the production path: raw ADC complex IQ over the FT232H SPI cable (`VIFI_RADAR_FTDI_URL` / `--ftdi-url` pick the device; needs `pyftdi`, pinned under the `capture` extra). `--source usb` (XDS110 TLV stream) is magnitude-only, unsuitable for HR, and warns loudly at startup. `--source synth` for tests (never in production per the "no fake numbers" rule). |
 | `radar_inference_worker.py` | Subscribes to `radar.raw.<pid>`, runs the `radar/` DSP, publishes to the same `hr.predicted.<pid>` + `rr.predicted.<pid>` topics the CSI worker uses. |
 | `radar_bringup.sh` | Sensor bring-up for the unattended live stack: `pre` = software NRST (pyocd via the XDS110) + arm, `post` = sensorStart after the collector is reading. Wired into `vifi-radar-collector.service` as ExecStartPre/ExecStartPost so a crash-restart self-heals from a fresh board boot. Cfg: `VIFI_RADAR_CFG` (default `deploy/radar/MotionDetect.cfg`). |
+| `capture_labeled.sh` | Pi-side rest-capture flow (arm, keep-chirps collector on core 3, sensorStart, parallel H10 + RR readers). Invoked by `capture.py` / `radar_capture_session.sh`; SP7-aware (resolves the authed bus URL from `/etc/vifi/live.env`). `KEEP_CHIRPS=0` opts out, `RR=0` disables the belt. |
+| `radar_arm.sh` | Pi-side pre-arm for elevated captures: arms the board + starts the keep-chirps collector, sensor stays stopped (subject exercises, then `go_capture.sh` fires). SP7-aware. |
+| `go_capture.sh` | Pi-side elevated-capture trigger: sensorStart + parallel H10/RR read for the given duration. Run the INSTANT the subject sits. SP7-aware. |
 
 ## Live stack (SP1) install + operate
 

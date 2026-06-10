@@ -8,6 +8,11 @@ DUR="${1:-90}"
 H10="${2:-24:AC:AC:11:97:DB}"
 cd /home/zpopowitz/vifi-ml || exit 1
 
+# SP7 bus-URL resolution; inlined (scp'd to /tmp standalone). No redis-cli
+# here, so only the loggers' VIFI_BUS_URL needs the authenticated URL.
+BUS_URL=$(sudo -n grep '^VIFI_BUS_URL=' /etc/vifi/live.env 2>/dev/null | cut -d= -f2-)
+[ -z "$BUS_URL" ] && BUS_URL="redis://localhost:6379/0"
+
 echo "=== SENSORSTART $(date +%s) ===" >> /tmp/sync.log
 .venv/bin/python -m tools.radar_kickstart_adc --sensor-start-only >> /tmp/sync.log 2>&1
 
@@ -18,12 +23,12 @@ rm -f /tmp/hr_pi.csv /tmp/rr_pi.csv /tmp/rr_pi.csv.meta.json
 # strapped + powered BEFORE go_capture fires (no time for a cold BLE scan).
 RR_PID=""
 if [ "${RR:-1}" = "1" ]; then
-  VIFI_BUS_URL=redis://localhost:6379/0 taskset -c 1 nice -n 10 .venv/bin/python rr_logger.py \
+  VIFI_BUS_URL="$BUS_URL" taskset -c 1 nice -n 10 .venv/bin/python rr_logger.py \
       --duration "$DUR" --name-contains GDX-RB --out /tmp/rr_pi.csv >> /tmp/sync.log 2>&1 &
   RR_PID=$!
 fi
 echo "=== H10 READ START $(date +%s) ===" >> /tmp/sync.log
-VIFI_BUS_URL=redis://localhost:6379/0 taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
+VIFI_BUS_URL="$BUS_URL" taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
     --address "$H10" --duration "$DUR" --out /tmp/hr_pi.csv >> /tmp/sync.log 2>&1
 [ -n "$RR_PID" ] && wait "$RR_PID" 2>/dev/null
 echo "=== SYNC CAPTURE DONE ===" >> /tmp/sync.log

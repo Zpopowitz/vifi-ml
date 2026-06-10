@@ -11,6 +11,28 @@ DUR="${1:-60}"
 H10="${2:-24:AC:AC:11:97:DB}"
 cd /home/zpopowitz/vifi-ml || exit 1
 
+# SP7 (security mode ON, 2026-06-10): the runtime bus URL with the redis
+# password lives in root-only /etc/vifi/live.env; the capture user has
+# passwordless sudo on the bench. Empty -> pre-SP7 bench, unauthenticated
+# localhost redis.
+BUS_URL=$(sudo -n grep '^VIFI_BUS_URL=' /etc/vifi/live.env 2>/dev/null | cut -d= -f2-)
+[ -z "$BUS_URL" ] && BUS_URL="redis://localhost:6379/0"
+# redis-cli auth: the password is the part of the URL userinfo after ':'
+# (redis://[user]:pass@host/...). REDISCLI_AUTH keeps it off argv/ps.
+case "$BUS_URL" in
+  *://*@*)
+    USERINFO="${BUS_URL#*://}"; USERINFO="${USERINFO%%@*}"
+    case "$USERINFO" in
+      *:*) REDISCLI_AUTH="${USERINFO#*:}"; export REDISCLI_AUTH ;;
+    esac
+    ;;
+esac
+
+# Keep-chirps is the dataset default (TDM confirmed 2026-06-10: slots are
+# TX-alternating ABAB; per-frame averaging loses ~41% coherent amplitude and
+# the 6-virtual-antenna azimuth info). Opt out with KEEP_CHIRPS=0.
+KEEP_CHIRPS="${KEEP_CHIRPS:-1}"
+
 pkill -9 -f tools.radar_collector 2>/dev/null
 pkill -9 -f hr_logger 2>/dev/null
 sleep 1
@@ -30,7 +52,7 @@ rm -f /tmp/vifi_run.log
 # Pin the collector to a dedicated core (3). Its SPI_BUSY poll is a busy-wait
 # that pegs a core; without isolation the H10 BLE read starves it and the frame
 # rate collapses 20fps -> ~2fps after ~60s (observed 2026-05-29).
-VIFI_BUS_URL=redis://localhost:6379/0 nohup taskset -c 3 .venv/bin/python -m tools.radar_collector \
+VIFI_BUS_URL="$BUS_URL" VIFI_RADAR_KEEP_CHIRPS="$KEEP_CHIRPS" nohup taskset -c 3 .venv/bin/python -m tools.radar_collector \
     --source ftdi --bus --patient-id founder > /tmp/vifi_run.log 2>&1 &
 sleep 6
 
@@ -49,12 +71,12 @@ rm -f /tmp/hr_pi.csv /tmp/rr_pi.csv /tmp/rr_pi.csv.meta.json
 # Disable with RR=0 (e.g. hardware smoke tests). H10 below is the load-bearing label.
 RR_PID=""
 if [ "${RR:-1}" = "1" ]; then
-  VIFI_BUS_URL=redis://localhost:6379/0 taskset -c 1 nice -n 10 .venv/bin/python rr_logger.py \
+  VIFI_BUS_URL="$BUS_URL" taskset -c 1 nice -n 10 .venv/bin/python rr_logger.py \
       --duration "$DUR" --name-contains GDX-RB --out /tmp/rr_pi.csv >> /tmp/sync.log 2>&1 &
   RR_PID=$!
 fi
 # Pin the H10 BLE reader off the collector's core (core 0, low priority).
-VIFI_BUS_URL=redis://localhost:6379/0 taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
+VIFI_BUS_URL="$BUS_URL" taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
     --address "$H10" --duration "$DUR" --out /tmp/hr_pi.csv >> /tmp/sync.log 2>&1
 echo "=== H10 READ DONE $(date +%s) ===" >> /tmp/sync.log
 # The belt started ~with the H10 and ran the same DUR, so it finishes near-now.

@@ -224,3 +224,13 @@ inspect what's diverged.
 
 All of those land in full SP7. The plumbing is in the codebase; this
 doc is the bridge from "implemented" to "actually flipped on."
+
+## Bench-only posture exceptions (REVERT BEFORE ANY THIRD-PARTY DEPLOY)
+
+- **Passwordless sudo for the dev box** (granted 2026-06-10 for
+  unattended bench operation): `/etc/sudoers.d/010-zpopowitz-nopasswd`.
+  With it, the dev box's SSH key alone is root on the Pi. Acceptable on
+  the founder's bench; never in a pilot home.
+  Revert: `sudo rm /etc/sudoers.d/010-zpopowitz-nopasswd`.
+- The pilot checklist is: revert the sudoers drop-in, move to scoped
+  file-based API keys, enable TLS, then ship.

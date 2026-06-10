@@ -51,6 +51,26 @@ PI_PYOCD = ".venv/bin/pyocd"  # XDS110 hardware-reset (one-time 60-xds110 udev r
 PI_TMP = "/tmp"  # nosec B108
 H10_MAC = "24:AC:AC:11:97:DB"
 CFG_PATH = "/home/zpopowitz/MotionDetect.cfg"
+# SP7 (security mode ON 2026-06-10): the authenticated bus URL lives in
+# root-only /etc/vifi/live.env on the Pi; the capture user has passwordless
+# sudo. Prefix for ssh'd shell commands that call redis-cli: resolves BUS_URL
+# (falling back to the pre-SP7 unauthenticated localhost URL) and exports
+# REDISCLI_AUTH from the URL password so the secret stays off argv.
+PI_REDIS_ENV = (
+    "BUS_URL=$(sudo -n grep '^VIFI_BUS_URL=' /etc/vifi/live.env 2>/dev/null"
+    " | cut -d= -f2-); "
+    '[ -z "$BUS_URL" ] && BUS_URL=redis://localhost:6379/0; '
+    'case "$BUS_URL" in *://*@*) ui="${BUS_URL#*://}"; ui="${ui%%@*}"; '
+    'case "$ui" in *:*) export REDISCLI_AUTH="${ui#*:}";; esac;; esac; '
+)
+# Same resolution for remote_py snippets (python on the Pi).
+PI_BUS_URL_PY = (
+    "import subprocess\n"
+    "_env = subprocess.run(['sudo', '-n', 'grep', '^VIFI_BUS_URL=',"
+    " '/etc/vifi/live.env'], capture_output=True, text=True).stdout.strip()\n"
+    "BUS_URL = _env.split('=', 1)[1] if '=' in _env"
+    " else 'redis://localhost:6379/0'\n"
+)
 EXPECT_ADC_PER_FRAME = "6144"  # 4 chirps x 3 RX x 256 x 2 (20 fps HR)
 MIN_FPS = 17.0
 BOARD_POLL_S = 90  # max wait for a guided manual NRST
@@ -161,10 +181,10 @@ def preflight(rr: bool) -> None:
         )
     log("  FTDI: SPI claimable")
 
-    code, out = ssh("redis-cli ping || echo FAIL")
+    code, out = ssh(PI_REDIS_ENV + "redis-cli ping || echo FAIL")
     if "PONG" not in out:
         ssh("sudo systemctl restart redis-server")
-        code, out = ssh("redis-cli ping || echo FAIL")
+        code, out = ssh(PI_REDIS_ENV + "redis-cli ping || echo FAIL")
         if "PONG" not in out:
             raise Fail("redis down on the Pi and restart failed.")
     log("  redis: PONG")
@@ -286,7 +306,7 @@ def wait_for_board(reason: str, auto_reset: bool = True) -> None:
 # --------------------------------------------------------------------------- #
 # 4. Capture (reuse the proven Pi-side script)
 # --------------------------------------------------------------------------- #
-def run_capture(duration: int, rr: bool) -> None:
+def run_capture(duration: int, rr: bool, keep_chirps: bool) -> None:
     code, _ = _run(
         ["scp", "-q", "tools/capture_labeled.sh", f"{PI}:/tmp/capture_labeled.sh"],
         timeout=20,
@@ -294,8 +314,9 @@ def run_capture(duration: int, rr: bool) -> None:
     if code != 0:
         raise Fail("could not scp capture_labeled.sh to the Pi.")
     rr_env = "" if rr else "RR=0 "
+    kc_env = "" if keep_chirps else "KEEP_CHIRPS=0 "
     ssh(
-        f"{rr_env}nohup bash /tmp/capture_labeled.sh {duration} '{H10_MAC}' "
+        f"{rr_env}{kc_env}nohup bash /tmp/capture_labeled.sh {duration} '{H10_MAC}' "
         f">/dev/null 2>&1 & echo launched"
     )
     log(f"  capturing {duration}s (arm -> collector -> sensorStart -> H10+RR)...")
@@ -315,7 +336,9 @@ def run_capture(duration: int, rr: bool) -> None:
         raise Fail("ARM FAILED on the Pi (board lost its fresh boot mid-run).")
 
 
-def run_elevated_capture(duration: int, rr: bool, countdown: int) -> None:
+def run_elevated_capture(
+    duration: int, rr: bool, countdown: int, keep_chirps: bool
+) -> None:
     """Post-exercise capture via the pre-arm flow (radar_arm.sh + go_capture.sh).
 
     The rest flow (run_capture) has a ~15 s bring-up before the H10 read starts,
@@ -334,7 +357,10 @@ def run_elevated_capture(duration: int, rr: bool, countdown: int) -> None:
             raise Fail(f"could not scp {s} to the Pi.")
 
     # Pre-arm (the slow part) on the fresh boot; radar_arm truncates sync.log.
-    ssh("nohup bash /tmp/radar_arm.sh >/dev/null 2>&1 & echo launched")
+    # The collector lives in radar_arm.sh, so keep-chirps plumbs in here, not
+    # into go_capture.sh.
+    kc_env = "" if keep_chirps else "KEEP_CHIRPS=0 "
+    ssh(f"{kc_env}nohup bash /tmp/radar_arm.sh >/dev/null 2>&1 & echo launched")
     deadline = time.monotonic() + 45
     armed = False
     while time.monotonic() < deadline:
@@ -392,14 +418,13 @@ def run_elevated_capture(duration: int, rr: bool, countdown: int) -> None:
 
 def dump_and_pull(out: Path, rr: bool) -> dict:
     dumped = remote_py(
-        "import redis, pickle\n"
-        "r = redis.from_url('redis://localhost:6379/0')\n"
+        "import redis, pickle\n" + PI_BUS_URL_PY + "r = redis.from_url(BUS_URL)\n"
         "rows = [(e.decode(), {k.decode(): v for k, v in f.items()}) "
         "for e, f in r.xrange('radar.raw.founder')]\n"
         "pickle.dump(rows, open('/tmp/radar_cap.pkl','wb'))\n"
         "print(len(rows))\n"
     )
-    log(f"  dumped {dumped} radar frames")
+    log(f"  dumped {dumped} radar bus entries")
     if not scp_pull(f"{PI_TMP}/radar_cap.pkl", out / "radar_cap.pkl"):
         raise Fail("radar pull failed.")
     if not scp_pull(f"{PI_TMP}/hr_pi.csv", out / "hr_h10.csv"):
@@ -423,18 +448,30 @@ def verify(out: Path) -> dict:
         v = f.get(k, f.get(k.encode()))
         return v.decode() if isinstance(v, bytes) else v
 
-    ts = sorted(float(json.loads(field(f, "json"))["ts_unix"]) for _, f in entries)
+    payloads = [json.loads(field(f, "json")) for _, f in entries]
+
+    # Keep-chirps pickles hold chirps_per_frame slot-tagged entries per radar
+    # frame, all sharing the frame's ts_unix. The fps gate is in FRAME terms
+    # either way, so collapse to unique frame timestamps before rating.
+    keep_chirps = any("chirp_slot" in p for p in payloads)
+    if keep_chirps:
+        chirps_per_frame = (
+            max(int(p["chirp_slot"]) for p in payloads if "chirp_slot" in p) + 1
+        )
+        ts = sorted({float(p["ts_unix"]) for p in payloads})
+    else:
+        chirps_per_frame = 1
+        ts = sorted(float(p["ts_unix"]) for p in payloads)
     span = ts[-1] - ts[0] if len(ts) > 1 else 0.0
     fps = (len(ts) - 1) / span if span else 0.0
 
-    def cube(f):
-        p = json.loads(field(f, "json"))
+    def cube(p):
         return np.asarray(p["adc_real"]) + 1j * np.asarray(p["adc_imag"])
 
-    sample = np.stack([cube(f) for _, f in entries[: min(200, len(entries))]])
+    sample = np.stack([cube(p) for p in payloads[: min(200, len(payloads))]])
     adc_std = float(sample.real.std())
     adc_uniq = int(np.unique(sample.real).size)
-    shape = cube(entries[0][1]).shape
+    shape = cube(payloads[0]).shape
 
     import pandas as pd  # noqa: PLC0415
 
@@ -457,6 +494,9 @@ def verify(out: Path) -> dict:
     res = {
         "fps": round(fps, 1),
         "fps_ok": fps >= MIN_FPS,
+        "n_frames": len(ts),
+        "keep_chirps": keep_chirps,
+        "chirps_per_frame": chirps_per_frame,  # saved bus entries per frame
         "adc_shape": str(shape),
         "adc_std": round(adc_std, 3),
         "adc_ok": adc_std > 1 and adc_uniq > 50,
@@ -534,6 +574,11 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "body": body,
         "h10_rows": n_hr,
         "rr_rows": n_rr,
+        # Pickle format markers (also inside "verify"; lifted top-level so
+        # loaders can branch without digging): keep_chirps pickles carry
+        # chirps_per_frame slot-tagged entries per frame (radar/capture_io.py).
+        "keep_chirps": ver.get("keep_chirps", False),
+        "chirps_per_frame": ver.get("chirps_per_frame", 1),
         "git_commit": git.strip() if code == 0 else "unknown",  # dev orchestrator HEAD
         "pi_commit": pi_sha,  # the Pi code that actually produced the raw
         "pi_dirty": pi_dirty,  # True = Pi tracked tree had uncommitted edits at capture
@@ -586,6 +631,17 @@ def main() -> int:
     )
     ap.add_argument("--notes", default="")
     ap.add_argument("--no-rr", dest="rr", action="store_false")
+    ap.add_argument(
+        "--keep-chirps",
+        dest="keep_chirps",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="publish all 4 chirps per frame, chirp_slot-tagged (DATASET "
+        "DEFAULT: TDM confirmed 2026-06-10, slots are TX-alternating ABAB "
+        "with a ~108 deg offset; per-frame averaging loses ~41%% coherent "
+        "amplitude and the 6-virtual-antenna azimuth info). "
+        "--no-keep-chirps restores the legacy averaged format.",
+    )
     ap.add_argument("--retries", type=int, default=RETRIES)
     ap.add_argument(
         "--preflight-only",
@@ -643,9 +699,11 @@ def main() -> int:
         try:
             log(f"[4/6] capture (attempt {attempt})")
             if args.elevated:
-                run_elevated_capture(args.duration, args.rr, args.countdown)
+                run_elevated_capture(
+                    args.duration, args.rr, args.countdown, args.keep_chirps
+                )
             else:
-                run_capture(args.duration, args.rr)
+                run_capture(args.duration, args.rr, args.keep_chirps)
             log("[5/6] pull + verify")
             stats = dump_and_pull(out, args.rr)
             n_hr = max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)

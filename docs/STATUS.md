@@ -10,6 +10,24 @@ catches), see `docs/AUDIT_PLAN.md`.
 
 ## Last updated
 
+2026-06-10. SP7 security FLIPPED ON (api_key auth, HMAC pseudonyms with
+salt, encrypted audit, redis requirepass; key in the dev-box `.env`;
+revert = `VIFI_AUTH_MODE=none` in `/etc/vifi/live.env` + restart). Bench
+NOPASSWD sudo granted to the dev box (bench-only posture; revert
+`/etc/sudoers.d/010-zpopowitz-nopasswd` before any third-party deploy).
+A Pi power-cut corrupted the redis AOF tail (16-min boot replay + crash
+loop; repaired via `redis-check-aof --fix`, 772 bytes lost, audit JSONL
+unaffected): redis durability posture change is queued (transport bus
+does not need AOF; durability lives in the fsync'd audit JSONL).
+TDM CONFIRMED on the bench: the chirp profile's 4 chirps/frame alternate
+TX (ABAB, ~108 deg stable offset): per-frame averaging was losing
+~4.6 dB and the 6-virtual-antenna azimuth array. Dataset captures now
+run keep-chirps (platform re-freeze v2 in RADAR_DATASET_PROTOCOL.md);
+offline tools read pickles via `radar.capture_io`. 100 fps tested and
+falsified (firmware frame budget); 20 fps keep-chirps is the frozen
+platform. Capture flow is SP7-aware (resolves the authed bus URL from
+live.env via passwordless sudo).
+
 2026-06-09. Eval-findings hardening pass (branch
 `fix/eval-findings-2026-06-09`; all 33 findings in
 `docs/eval/2026-06-09-codebase-evaluation.md`). Security defaults are now

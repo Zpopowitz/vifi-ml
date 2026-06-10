@@ -277,8 +277,14 @@ class SpiFtdiReader:
             log.warning("%s -- skipping frame", e)
             return
         ts = time.time()
-        for samples in samples_list:
-            yield Chirp(ts_unix=ts, chirp_idx=self._chirp_idx, samples=samples)
+        keep_slots = len(samples_list) > 1
+        for slot, samples in enumerate(samples_list):
+            yield Chirp(
+                ts_unix=ts,
+                chirp_idx=self._chirp_idx,
+                samples=samples,
+                chirp_slot=slot if keep_slots else None,
+            )
             self._chirp_idx += 1
 
     def __iter__(self) -> Iterator["Chirp"]:
