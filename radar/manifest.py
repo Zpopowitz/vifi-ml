@@ -19,7 +19,13 @@ from pathlib import Path
 
 # The per-capture files that define the dataset state. meta.json carries
 # provenance; the raw + labels are the actual training/eval inputs.
-MANIFEST_FILES = ("radar_cap.pkl", "hr_h10.csv", "hr_ecg.csv", "rr_log.csv", "meta.json")
+MANIFEST_FILES = (
+    "radar_cap.pkl",
+    "hr_h10.csv",
+    "hr_ecg.csv",
+    "rr_log.csv",
+    "meta.json",
+)
 
 
 def file_sha256(path: str | Path, _chunk: int = 1 << 20) -> str:
@@ -35,9 +41,7 @@ def _key(capture_dir: Path, fname: str) -> str:
     return f"{capture_dir.parent.name}/{capture_dir.name}/{fname}"
 
 
-def dataset_manifest(
-    capture_dirs, files: tuple[str, ...] = MANIFEST_FILES
-) -> dict:
+def dataset_manifest(capture_dirs, files: tuple[str, ...] = MANIFEST_FILES) -> dict:
     """Build a reproducible manifest over the given capture directories.
 
     Returns ``{"n_files", "n_captures", "digest", "files": [{path, sha256,
