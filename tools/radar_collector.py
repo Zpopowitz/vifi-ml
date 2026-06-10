@@ -84,6 +84,12 @@ class Chirp:
     samples: (
         np.ndarray
     )  # complex, shape (samples_per_chirp,) or (samples_per_chirp, n_rx)
+    # Position within the firmware frame (0..chirps_per_frame-1) when the
+    # FTDI reader runs with averaging disabled (--keep-chirps). None in
+    # the averaged/live mode. With both TX enabled (channelCfg TX mask 3)
+    # the slots alternate transmit antenna, so slot identity is what lets
+    # offline analysis recover the TDM virtual array (azimuth).
+    chirp_slot: Optional[int] = None
 
 
 class FrameSource(Protocol):
@@ -393,16 +399,19 @@ class _BusPublisher:
         """Publish one chirp. Returns True on success, False if the bus threw
         (so the caller's throughput count reflects real publishes only)."""
         try:
+            payload = {
+                "ts_unix": chirp.ts_unix,
+                "patient_id": self.patient_id,
+                "chirp_idx": int(chirp.chirp_idx),
+                "n_samples": int(samples_per_chirp),
+                "adc_real": chirp.samples.real.astype(float).tolist(),
+                "adc_imag": chirp.samples.imag.astype(float).tolist(),
+            }
+            if chirp.chirp_slot is not None:
+                payload["chirp_slot"] = int(chirp.chirp_slot)
             self.bus.publish(
                 self.topic,
-                {
-                    "ts_unix": chirp.ts_unix,
-                    "patient_id": self.patient_id,
-                    "chirp_idx": int(chirp.chirp_idx),
-                    "n_samples": int(samples_per_chirp),
-                    "adc_real": chirp.samples.real.astype(float).tolist(),
-                    "adc_imag": chirp.samples.imag.astype(float).tolist(),
-                },
+                payload,
                 ts_ms=int(chirp.ts_unix * 1000),
             )
             self._published += 1
@@ -505,6 +514,17 @@ def main() -> None:
         "ftdi://ftdi:232h/1 (the first FT232H on the host -- the same "
         "default the capture tooling uses).",
     )
+    p.add_argument(
+        "--keep-chirps",
+        action="store_true",
+        default=os.environ.get("VIFI_RADAR_KEEP_CHIRPS", "") == "1",
+        help="ftdi only: publish every chirp in each frame instead of the "
+        "coherent per-frame average. Slots alternate TX under TDM, so this "
+        "preserves the virtual-array (azimuth) information for offline "
+        "analysis and dataset captures. Slow-time is NOT uniform in this "
+        "mode; do not feed it to the live HR worker. Default: "
+        "$VIFI_RADAR_KEEP_CHIRPS=1, else off.",
+    )
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument(
         "--duration",
@@ -578,13 +598,24 @@ def main() -> None:
     elif args.source == "ftdi":
         from radar.ftdi_spi import FtdiSpiConfig, SpiFtdiReader  # noqa: PLC0415
 
-        ftdi_cfg = FtdiSpiConfig(ftdi_url=args.ftdi_url)
+        ftdi_cfg = FtdiSpiConfig(
+            ftdi_url=args.ftdi_url,
+            average_chirps_per_frame=not args.keep_chirps,
+        )
         log.info(
             "ftdi source: url=%s adc_bytes/frame=%d chirps/frame=%d",
             args.ftdi_url,
             ftdi_cfg.adc_bytes_per_frame,
             ftdi_cfg.chirps_per_frame,
         )
+        if args.keep_chirps:
+            log.warning(
+                "--keep-chirps: publishing all %d chirps per frame "
+                "(chirp_slot tagged, slow-time NOT uniform). Raw-analysis / "
+                "dataset mode; the live HR worker must not consume this "
+                "stream.",
+                ftdi_cfg.chirps_per_frame,
+            )
         source = SpiFtdiReader(config=ftdi_cfg)
     else:
         port = args.port or os.environ.get("VIFI_RADAR_PORT")
