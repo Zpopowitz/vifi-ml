@@ -26,6 +26,7 @@ import numpy as np
 from radar.config import RadarConfig
 from radar.dataset import included_captures
 from radar.hr_selector import (
+    balanced_sample_weights,
     candidate_feature_matrix,
     extract_candidates,
     viterbi_decode,
@@ -127,7 +128,7 @@ def main() -> None:
     err = {k: [] for k in ("tallest", "learned", "learned+viterbi", "oracle")}
     for held in per_cap:
         # Train on every OTHER capture.
-        x_tr, y_tr = [], []
+        x_tr, y_tr, groups, truths = [], [], [], []
         for cap, wins in per_cap.items():
             if cap == held:
                 continue
@@ -138,6 +139,8 @@ def main() -> None:
                 ]
                 x_tr.append(feats)
                 y_tr.extend(labels)
+                groups.extend([cap] * len(cands))
+                truths.extend([truth] * len(cands))
         x_tr = np.vstack(x_tr)
         y_tr = np.asarray(y_tr)
         if y_tr.sum() == 0 or y_tr.sum() == y_tr.size:
@@ -145,7 +148,9 @@ def main() -> None:
         clf = XGBClassifier(
             n_estimators=60, max_depth=3, learning_rate=0.1, eval_metric="logloss"
         )
-        clf.fit(x_tr, y_tr)
+        # Inverse-frequency CAPTURE + HR-bin weighting (the per-subject analogue
+        # is in radar_track_accuracy.py, the company gate).
+        clf.fit(x_tr, y_tr, sample_weight=balanced_sample_weights(groups, truths))
 
         # Predict on the held-out capture.
         held_freqs, held_scores = [], []
