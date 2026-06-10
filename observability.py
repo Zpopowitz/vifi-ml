@@ -249,6 +249,13 @@ def install_worker_metrics(default_port: int = 8001):
             ["patient_id"],
             registry=registry,
         ),
+        "errors_total": Counter(
+            "vifi_inference_errors_total",
+            "Per-stride exceptions contained by the worker crash guard "
+            "(the stride is skipped, the worker keeps running)",
+            ["patient_id"],
+            registry=registry,
+        ),
         "prediction_duration_seconds": Histogram(
             "vifi_inference_prediction_duration_seconds",
             "Wall-clock time spent in run_once()",

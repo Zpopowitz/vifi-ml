@@ -232,9 +232,12 @@ Verify:
 
 ## 5.5. Bring up the sensor (software reset, arm, start)
 
-The collector service only LISTENS on the SPI bus; the sensor itself
-must be armed and started once per boot, in this order (bench-proven
-2026-06-09):
+AUTOMATED as of the unattended-bringup change: `vifi-radar-collector.service`
+runs `tools/radar_bringup.sh pre` (reset + arm) before the collector and
+`tools/radar_bringup.sh post` (sensorStart) after it, so a service start or
+crash-restart self-heals from a fresh board boot with no human steps. The
+manual sequence below is the same thing, kept for bench debugging
+(bench-proven 2026-06-09):
 
 ```bash
 ssh pi

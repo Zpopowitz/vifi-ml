@@ -368,6 +368,19 @@ class _BusPublisher:
         if bus is None:
             self.bus = bus_from_env()
             self._owns_bus = True
+            # An InMemoryBus here means VIFI_BUS_URL is unset/non-redis:
+            # every frame goes to process-local memory no other process
+            # can read. Legal for tests, almost certainly a misconfig in
+            # a real run (cost a bench session on 2026-06-09).
+            from modules.bus.memory import InMemoryBus  # noqa: PLC0415
+
+            if isinstance(self.bus, InMemoryBus):
+                log.warning(
+                    "--bus resolved to the process-local InMemoryBus "
+                    "(VIFI_BUS_URL unset or not redis://...): published "
+                    "frames are INVISIBLE to other processes. Set "
+                    "VIFI_BUS_URL=redis://localhost:6379/0 for a real run."
+                )
         else:
             self.bus = bus
             self._owns_bus = False  # caller manages lifecycle (tests)

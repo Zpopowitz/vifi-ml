@@ -481,6 +481,8 @@ def run_worker(
             log.exception(
                 "scoring failed for this window; skipping the stride and continuing"
             )
+            if metrics is not None and "errors_total" in metrics:
+                metrics["errors_total"].labels(patient_id).inc()
             last_predict = now
             continue
 
@@ -614,6 +616,8 @@ def run_worker(
                             ).inc()
         except Exception:
             log.exception("publish failed for this stride; vitals dropped, continuing")
+            if metrics is not None and "errors_total" in metrics:
+                metrics["errors_total"].labels(patient_id).inc()
 
 
 # ---------------------------------------------------------------------------

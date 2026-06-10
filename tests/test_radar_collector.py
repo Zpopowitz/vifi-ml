@@ -232,3 +232,25 @@ def test_ftdi_source_skips_malformed_frame_and_continues():
     chirps = list(src)
     assert len(chirps) == 1
     assert chirps[0].samples.shape == (cfg.n_adc_samples, cfg.n_rx)
+
+
+def test_bus_publisher_warns_when_env_resolves_to_inmemory_bus(monkeypatch, caplog):
+    """An unset VIFI_BUS_URL silently swallowed 200 frames on the bench
+    (2026-06-09): the publisher must warn loudly when --bus is invisible."""
+    import logging
+
+    monkeypatch.delenv("VIFI_BUS_URL", raising=False)
+    with caplog.at_level(logging.WARNING):
+        publisher = _BusPublisher(patient_id="envpat")
+    publisher.bus.close()
+    assert any("InMemoryBus" in r.message for r in caplog.records)
+
+
+def test_bus_publisher_no_warning_with_injected_bus(caplog):
+    import logging
+
+    bus = InMemoryBus()
+    with caplog.at_level(logging.WARNING):
+        _BusPublisher(patient_id="injpat", bus=bus)
+    bus.close()
+    assert not any("InMemoryBus" in r.message for r in caplog.records)

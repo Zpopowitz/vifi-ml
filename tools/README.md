@@ -28,6 +28,7 @@ few are imported by other code. For broader codebase navigation see
 |---|---|
 | `radar_collector.py` | Publishes IWRL6432BOOST frames to `radar.raw.<pid>`. `--source ftdi` is the production path: raw ADC complex IQ over the FT232H SPI cable (`VIFI_RADAR_FTDI_URL` / `--ftdi-url` pick the device; needs `pyftdi`, pinned under the `capture` extra). `--source usb` (XDS110 TLV stream) is magnitude-only, unsuitable for HR, and warns loudly at startup. `--source synth` for tests (never in production per the "no fake numbers" rule). |
 | `radar_inference_worker.py` | Subscribes to `radar.raw.<pid>`, runs the `radar/` DSP, publishes to the same `hr.predicted.<pid>` + `rr.predicted.<pid>` topics the CSI worker uses. |
+| `radar_bringup.sh` | Sensor bring-up for the unattended live stack: `pre` = software NRST (pyocd via the XDS110) + arm, `post` = sensorStart after the collector is reading. Wired into `vifi-radar-collector.service` as ExecStartPre/ExecStartPost so a crash-restart self-heals from a fresh board boot. Cfg: `VIFI_RADAR_CFG` (default `deploy/radar/MotionDetect.cfg`). |
 
 ## Live stack (SP1) install + operate
 

@@ -17,7 +17,12 @@ EnvironmentFile=/etc/vifi/live.env
 # attached. The collector NEVER runs --source synth in a systemd unit -- synth
 # is reserved for pytest + dev (see the "no fake numbers" rule documented in
 # feedback-no-synthetic-model).
+# Unattended bring-up (docs/RADAR_STARTUP.md 5.5): software NRST + arm
+# BEFORE the collector opens the FTDI, sensorStart AFTER it is reading.
+# A crash-restart re-runs the whole sequence from a fresh board boot.
+ExecStartPre=/home/zpopowitz/vifi-ml/tools/radar_bringup.sh pre
 ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.radar_collector --source ftdi --bus --patient-id ${VIFI_PATIENT_ID} --duration 0
+ExecStartPost=/home/zpopowitz/vifi-ml/tools/radar_bringup.sh post
 Restart=always
 RestartSec=3
 MemoryMax=512M

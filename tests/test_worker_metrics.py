@@ -55,6 +55,7 @@ def test_install_worker_metrics_creates_expected_counters(monkeypatch):
         "predictions_total",
         "windows_too_short_total",
         "dlq_total",
+        "errors_total",
         "prediction_duration_seconds",
         "window_packets",
     }
