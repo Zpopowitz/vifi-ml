@@ -954,8 +954,10 @@ def main() -> int:
     out = Path(f"data/captures/radar_dataset/{args.subject}/{args.label}")
 
     # Dirty-tree guard: provenance must point at a real commit (the Pi-side
-    # scripts are scp'd from THIS working tree at capture time).
-    dirty, dirty_lines = dev_tree_dirty()
+    # scripts are scp'd from THIS working tree at capture time). Only gates an
+    # actual capture -- --reset-only / --preflight-only produce no provenance.
+    produces_capture = not (args.reset_only or args.preflight_only)
+    dirty, dirty_lines = (dev_tree_dirty() if produces_capture else (False, ""))
     if dirty and not args.allow_dirty:
         log(
             "\nFAIL: uncommitted tracked changes in this repo -- capture.py scp's "
