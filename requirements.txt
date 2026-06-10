@@ -29,3 +29,6 @@ godirect==1.2.1     ; extra == "capture"
 # Radar raw-ADC capture over FTDI SPI. Required on the Pi for the live
 # radar collector (--source ftdi) and the bench capture tooling.
 pyftdi==0.57.2      ; extra == "capture"
+# Software NRST through the XDS110 CMSIS-DAP probe (radar bring-up:
+# tools/radar_bringup.sh + tools/capture.py reset_board).
+pyocd==0.44.1       ; extra == "capture"

@@ -751,3 +751,61 @@ def test_worker_survives_poison_window_then_publishes_next_good_window(caplog):
     history = bus.history(hr_predicted(patient))
     assert len(history) >= 1, "good window after a poison window must publish"
     assert abs(history[-1].payload["hr_bpm"] - 72.0) <= 6.0
+
+
+class _FakeMetric:
+    def __init__(self):
+        self.count = 0
+
+    def labels(self, *_args):
+        return self
+
+    def inc(self):
+        self.count += 1
+
+    def time(self):
+        import contextlib
+
+        return contextlib.nullcontext()
+
+
+def test_poison_window_increments_errors_total_metric():
+    """The crash guard must be observable: a contained scoring failure
+    increments errors_total so an operator can alert on it."""
+    bus = InMemoryBus()
+    patient = "poison-metrics"
+    config = RadarConfig()
+    publisher = _BusPublisher(patient_id=patient, bus=bus)
+    bad = np.full(config.samples_per_chirp, np.inf, dtype=np.complex128)
+    t0 = time.time()
+    from tools.radar_collector import Chirp  # noqa: PLC0415
+
+    for i in range(300):
+        publisher.publish(
+            Chirp(ts_unix=t0 + i * 0.01, chirp_idx=i, samples=bad),
+            samples_per_chirp=config.samples_per_chirp,
+        )
+
+    metrics = {
+        "packets_total": _FakeMetric(),
+        "predictions_total": _FakeMetric(),
+        "windows_too_short_total": _FakeMetric(),
+        "dlq_total": _FakeMetric(),
+        "errors_total": _FakeMetric(),
+        "prediction_duration_seconds": _FakeMetric(),
+        "window_packets": _FakeMetric(),
+    }
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=False,
+        from_id=EARLIEST,
+        consumer_name="test-worker-poison-metrics",
+        metrics=metrics,
+        max_iterations=1,
+    )
+    assert metrics["errors_total"].count >= 1
