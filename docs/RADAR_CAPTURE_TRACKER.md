@@ -63,6 +63,28 @@ all `dataset_include=true`. `rest_1` is the former `dataset_20260603/founder_res
 (150 s, at floor), migrated. Signal-presence gate passed (oracle 6.77 bpm pooled,
 0.57 bpm on stable rest at 90 s windows; tallest baseline 43.98).
 
+## Consent + re-contact ledger (WP7)
+
+One row per recruited subject, recorded **at recruitment**, before any data is
+seen. PII (the name-to-code link, signed forms) lives OFF-repo per
+`docs/DATA_SOP.md`; this ledger holds only the pseudonymous code + permissions,
+so a future "one more capture" is an ask, not a re-recruitment.
+
+- **consent_version**: which `docs/consent/TEMPLATE.md` version they signed.
+- **publish_ok**: did they opt in to publication/sharing (consent Use #3)?
+- **recontact_ok** + **channel**: may we ask again, and how (email/phone/...).
+  The channel VALUE (the actual address) is PII and lives in the off-repo link,
+  not here -- this column records only that a channel exists.
+- **vault**: sealed-vault membership (WP4). Recommended cadence N=4, decided at
+  recruitment, never trained on, evaluated only at pre-declared milestones.
+
+| # | subject_id | consent_version | publish_ok | recontact_ok | channel | vault | notes |
+|---|---|---|---|---|---|---|---|
+| 1 | founder | (fill) | (fill) | yes | (off-repo) | no | self |
+| 2 | | | | | | | |
+| 3 | | | | | | | |
+| 4 | | | | | | tentative N=4 | |
+
 ## Gate log (after ~10-12 subjects)
 
 - error-vs-subjects slope (worst + median per-subject MAE): _TBD_
