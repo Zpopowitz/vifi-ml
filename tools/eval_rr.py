@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from preprocess import extract_features  # noqa: E402
+from preprocess import _parabolic_interp, extract_features  # noqa: E402
 from rr_dsp import estimate_rr_series  # noqa: E402
 from tools.first_capture_report import (  # noqa: E402
     _detect_packet_rate,
@@ -69,13 +69,10 @@ def rr_from_signal(x: np.ndarray, fs: float, band: tuple[float, float]) -> float
         return float("nan")
     idxs = np.where(mask)[0]
     peak = int(idxs[int(np.argmax(spec[mask]))])
-    if 0 < peak < len(spec) - 1:
-        a, b, c = spec[peak - 1], spec[peak], spec[peak + 1]
-        denom = a - 2 * b + c
-        shift = 0.5 * (a - c) / denom if denom != 0 else 0.0
-    else:
-        shift = 0.0
-    f_hz = freqs[peak] + shift * (freqs[1] - freqs[0])
+    # Canonical guarded refinement (rejects inverted parabolas, clamps to
+    # neighbor bins); the inline version here used to share rr_logger's
+    # unguarded-shift bug, which skewed truth labels on noisy windows.
+    f_hz = _parabolic_interp(spec, peak, freqs[1] - freqs[0], freqs[peak])
     return float(f_hz * 60.0) if f_hz > 0 else float("nan")
 
 

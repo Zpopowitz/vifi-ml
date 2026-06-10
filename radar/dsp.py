@@ -27,6 +27,7 @@ Public API:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,6 +35,8 @@ from scipy.signal.windows import hann
 
 from radar.config import CARDIAC_BAND_HZ, RadarConfig
 from radar.vitals import cardiac_signal
+
+log = logging.getLogger("vifi.radar.dsp")
 
 
 @dataclass
@@ -60,6 +63,10 @@ class DspInfo:
     median_other_energy: float = 0.0
     """Median post-MTI energy across all non-chest bins. Approximates
     the noise + residual-clutter floor for the presence comparison."""
+    circle_fit_ok: bool = True
+    """False when the Kasa circle fit was degenerate (radius_sq <= 0,
+    expected at low SNR / empty windows) and the radius was forced to 0.
+    Downstream quality gating can use this to discount the window."""
 
 
 def range_fft(adc: np.ndarray, window: str = "hann") -> np.ndarray:
@@ -271,7 +278,16 @@ def kasa_circle_fit(iq: np.ndarray) -> tuple[complex, float]:
     d_coef, e_coef, f_coef = sol
     cx, cy = -d_coef / 2.0, -e_coef / 2.0
     radius_sq = cx**2 + cy**2 - f_coef
-    radius = float(np.sqrt(radius_sq)) if radius_sq > 0 else 0.0
+    if radius_sq > 0:
+        radius = float(np.sqrt(radius_sq))
+    else:
+        # Degenerate fit (expected at low SNR / all-zero IQ); radius 0 is the
+        # sentinel DspInfo.circle_fit_ok keys off.
+        log.debug(
+            "degenerate circle fit: radius_sq=%g <= 0, returning radius 0",
+            radius_sq,
+        )
+        radius = 0.0
     return complex(cx, cy), radius
 
 
@@ -342,6 +358,57 @@ def _cardiac_peakiness(displacement: np.ndarray, fs: float) -> float:
     return float(np.max(band_mag) / (np.median(band_mag) + 1e-12))
 
 
+@dataclass
+class _RxSelection:
+    """The winning antenna of `_select_best_rx_full`, with the DSP results
+    already computed while scoring it (so `extract_displacement` does not
+    repeat the bin-track + circle-fit + DACM work on the winner)."""
+
+    profile: np.ndarray
+    rx_index: int
+    bin_track: np.ndarray
+    displacement: np.ndarray
+    circle_center: complex
+    circle_radius: float
+
+
+def _select_best_rx_full(
+    clean_profile_3d: np.ndarray,
+    config: RadarConfig,
+    gate_m: tuple[float, float] = (0.2, 2.0),
+) -> _RxSelection:
+    """Score every RX by cardiac phase-quality; return the winner with its
+    already-computed bin track, displacement, and circle fit."""
+    p = np.asarray(clean_profile_3d)
+    if p.ndim != 3:
+        raise ValueError("select_best_rx expects 3-D (n_chirps, n_bins, n_rx)")
+    fs = config.frame_rate_hz
+    best: _RxSelection | None = None
+    best_score = -np.inf
+    for r in range(p.shape[2]):
+        prof = p[..., r]
+        bin_track = track_range_bin(prof, config, gate_m=gate_m)
+        disp, center, radius = displacement_from_iq(chest_iq(prof, bin_track), config)
+        # Score the harmonic-notched CARDIAC signal, not raw displacement:
+        # breathing harmonics fall in the cardiac band (the ~80 bpm artifact
+        # in the real captures) and would otherwise select the antenna with
+        # the loudest breathing harmonic instead of the loudest heartbeat.
+        cardiac, _ = cardiac_signal(disp, fs)
+        score = _cardiac_peakiness(cardiac, fs)
+        if score > best_score:
+            best_score = score
+            best = _RxSelection(
+                profile=prof,
+                rx_index=r,
+                bin_track=bin_track,
+                displacement=disp,
+                circle_center=center,
+                circle_radius=radius,
+            )
+    assert best is not None  # p.shape[2] >= 1 by the ndim check above
+    return best
+
+
 def select_best_rx(
     clean_profile_3d: np.ndarray,
     config: RadarConfig,
@@ -363,26 +430,8 @@ def select_best_rx(
     combining) is also why the good antenna's flipping between captures stops
     mattering: we re-pick every window.
     """
-    p = np.asarray(clean_profile_3d)
-    if p.ndim != 3:
-        raise ValueError("select_best_rx expects 3-D (n_chirps, n_bins, n_rx)")
-    fs = config.frame_rate_hz
-    best_idx = 0
-    best_score = -np.inf
-    for r in range(p.shape[2]):
-        prof = p[..., r]
-        bin_track = track_range_bin(prof, config, gate_m=gate_m)
-        disp, _, _ = displacement_from_iq(chest_iq(prof, bin_track), config)
-        # Score the harmonic-notched CARDIAC signal, not raw displacement:
-        # breathing harmonics fall in the cardiac band (the ~80 bpm artifact
-        # in the real captures) and would otherwise select the antenna with
-        # the loudest breathing harmonic instead of the loudest heartbeat.
-        cardiac, _ = cardiac_signal(disp, fs)
-        score = _cardiac_peakiness(cardiac, fs)
-        if score > best_score:
-            best_score = score
-            best_idx = r
-    return p[..., best_idx], best_idx
+    sel = _select_best_rx_full(clean_profile_3d, config, gate_m=gate_m)
+    return sel.profile, sel.rx_index
 
 
 def extract_displacement(
@@ -407,25 +456,43 @@ def extract_displacement(
       - ``"mrc"``: legacy equal-weight combine (`mrc_combine`), retained
         only as a comparison baseline; falsified as an accuracy win.
     """
+    adc = np.asarray(adc)
+    if adc.size and not np.any(adc.imag):
+        # Magnitude-only input (e.g. the USB TLV range-profile path) carries
+        # no phase; DACM still produces a plausible-looking displacement from
+        # it, which is worse than nothing. Never let this failure be silent.
+        log.warning(
+            "ADC window is purely real (all imaginary parts zero): DACM phase "
+            "extraction is invalid for magnitude-only input and any HR/RR "
+            "derived from this window is meaningless. Feed complex IQ "
+            "(the FTDI SPI raw-ADC path)."
+        )
     profile = range_fft(adc)
     clean = remove_clutter(profile, method=clutter_method)
-    if clean.ndim == 3:
-        if rx_select == "auto":
-            clean, _ = select_best_rx(clean, config, gate_m=gate_m)
-        elif rx_select == "mrc":
-            clean = mrc_combine(clean)
-        elif isinstance(rx_select, int) and not isinstance(rx_select, bool):
-            if not 0 <= rx_select < clean.shape[2]:
-                raise ValueError(
-                    f"rx_select index {rx_select} out of range "
-                    f"for {clean.shape[2]} RX channels"
-                )
-            clean = clean[..., rx_select]
-        else:
-            raise ValueError(f"invalid rx_select: {rx_select!r}")
-    bin_track = track_range_bin(clean, config, gate_m=gate_m)
-    iq = chest_iq(clean, bin_track)
-    disp, center, radius = displacement_from_iq(iq, config)
+    if clean.ndim == 3 and rx_select == "auto":
+        # The winner's bin track / displacement / circle fit were already
+        # computed while scoring the antennas; reuse them instead of
+        # recomputing the whole chain on the selected profile.
+        sel = _select_best_rx_full(clean, config, gate_m=gate_m)
+        clean = sel.profile
+        bin_track = sel.bin_track
+        disp, center, radius = sel.displacement, sel.circle_center, sel.circle_radius
+    else:
+        if clean.ndim == 3:
+            if rx_select == "mrc":
+                clean = mrc_combine(clean)
+            elif isinstance(rx_select, int) and not isinstance(rx_select, bool):
+                if not 0 <= rx_select < clean.shape[2]:
+                    raise ValueError(
+                        f"rx_select index {rx_select} out of range "
+                        f"for {clean.shape[2]} RX channels"
+                    )
+                clean = clean[..., rx_select]
+            else:
+                raise ValueError(f"invalid rx_select: {rx_select!r}")
+        bin_track = track_range_bin(clean, config, gate_m=gate_m)
+        iq = chest_iq(clean, bin_track)
+        disp, center, radius = displacement_from_iq(iq, config)
 
     # Presence-detection inputs: post-MTI energy at the tracked chest bin
     # vs the median energy across all OTHER bins. A real body produces
@@ -449,5 +516,6 @@ def extract_displacement(
         clutter_method=clutter_method,
         chest_energy=chest_e,
         median_other_energy=other_e,
+        circle_fit_ok=radius > 0.0,
     )
     return disp, info

@@ -138,7 +138,7 @@ Required before any push. Memory: [[feedback-ci-gauntlet]].
 | Polar H10 logger | `hr_logger.py` |
 | Vernier Go Direct belt + RR DSP | `rr_logger.py`, `rr_dsp.py` |
 | Radar DSP pipeline | `radar/` (`config.py`, `dsp.py`, `pipeline.py`, `vitals.py`, `synth.py`, `eval.py`) |
-| Radar collector (USB → bus) | `tools/radar_collector.py` |
+| Radar collector (FTDI SPI IQ → bus; `--source usb` is magnitude-only TLV debugging) | `tools/radar_collector.py` |
 | Radar inference worker (bus → vitals) | `tools/radar_inference_worker.py` |
 | CSI inference worker (bus → vitals) | `tools/inference_worker.py` |
 | Capture orchestrator | `tools/run_paired_session.py` |

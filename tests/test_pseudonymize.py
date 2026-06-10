@@ -72,9 +72,11 @@ def test_short_salt_rejected(monkeypatch):
         p.pseudonymize("alice")
 
 
-def test_dev_fallback_when_no_salt(monkeypatch):
+def test_dev_fallback_requires_explicit_opt_out(monkeypatch):
+    """The pseudo-dev:<id> fallback only exists behind an explicit
+    VIFI_REQUIRE_PSEUDO=false (dev-only opt-out)."""
     monkeypatch.delenv("VIFI_PSEUDO_SALT", raising=False)
-    monkeypatch.delenv("VIFI_REQUIRE_PSEUDO", raising=False)
+    monkeypatch.setenv("VIFI_REQUIRE_PSEUDO", "false")
     p = _import()
     out = p.pseudonymize("alice")
     assert out == "pseudo-dev:alice"
@@ -83,6 +85,16 @@ def test_dev_fallback_when_no_salt(monkeypatch):
 def test_require_pseudo_raises_without_salt(monkeypatch):
     monkeypatch.delenv("VIFI_PSEUDO_SALT", raising=False)
     monkeypatch.setenv("VIFI_REQUIRE_PSEUDO", "true")
+    p = _import()
+    with pytest.raises(RuntimeError, match="Refusing to write"):
+        p.pseudonymize("alice")
+
+
+def test_default_is_fail_closed_without_salt(monkeypatch):
+    """With no env at all (lost env file), pseudonymize must raise --
+    never emit pseudo-dev:<real_id> by default (eval item 4)."""
+    monkeypatch.delenv("VIFI_PSEUDO_SALT", raising=False)
+    monkeypatch.delenv("VIFI_REQUIRE_PSEUDO", raising=False)
     p = _import()
     with pytest.raises(RuntimeError, match="Refusing to write"):
         p.pseudonymize("alice")

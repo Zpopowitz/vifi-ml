@@ -23,6 +23,11 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # The message bus extra (Redis Streams) is optional in requirements.txt;
 # install it explicitly here so the API + workers can talk to Redis.
 RUN pip install --no-cache-dir --prefix=/install "redis==5.0.8"
+# Patch known-vulnerable build-chain packages that land in /install as
+# transitive deps (jaraco.context CVE-2026-23949, wheel CVE-2026-24049);
+# the Trivy CI gate blocks on them.
+RUN pip install --no-cache-dir --prefix=/install --upgrade \
+        "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 COPY data_gen.py preprocess.py train.py ./
 # train.py + preprocess.py now import from these too — must be present
@@ -43,13 +48,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `upgrade` first: the digest-pinned base is frozen in time, so Debian
+# security fixes (e.g. libcap2/gnutls deb13u updates) never arrive
+# unless applied at build. The Trivy CI gate blocks on fixable
+# HIGH/CRITICAL CVEs, which keeps this honest.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         libgomp1 curl \
     && rm -rf /var/lib/apt/lists/* \
     # Pinned UID/GID (I112) for predictable file ownership on
     # bind-mounted volumes and across hosts.
     && groupadd --gid 10001 vifi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash vifi
+
+# The base image ships pip + setuptools with known CVEs; the vulnerable
+# jaraco.context 5.3.0 + wheel 0.45.1 live inside setuptools/_vendor,
+# which only a setuptools upgrade replaces (standalone upgrades of those
+# packages cannot touch the vendored copies).
+RUN python -m pip install --no-cache-dir --upgrade \
+        "pip>=26.1" "setuptools>=80" "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models

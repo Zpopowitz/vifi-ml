@@ -110,28 +110,29 @@ class MahalanobisDetector:
             tail_probability=float(tail_probability),
         )
 
-    def score(self, features: np.ndarray) -> np.ndarray:
+    def score(self, features: np.ndarray) -> np.float64 | np.ndarray:
         """Return squared Mahalanobis distance per row.
 
-        Accepts either a 1-D vector (returns a scalar 0-D array) or a
-        2-D (N, F) matrix (returns an (N,) array).
+        Accepts either a 1-D vector (returns an np.float64 scalar, which
+        is also a Python float) or a 2-D (N, F) matrix (returns an (N,)
+        array).
         """
         if features.ndim == 1:
             x = features.astype(np.float64) - self.mean.astype(np.float64)
-            return float(x @ self.inv_covariance.astype(np.float64) @ x)
+            return np.float64(x @ self.inv_covariance.astype(np.float64) @ x)
         if features.ndim == 2:
             x = features.astype(np.float64) - self.mean.astype(np.float64)
             # Equivalent to einsum('ni,ij,nj->n', x, inv, x) but more readable.
             tmp = x @ self.inv_covariance.astype(np.float64)
-            return np.einsum("ni,ni->n", tmp, x).astype(np.float64)
+            return np.asarray(np.einsum("ni,ni->n", tmp, x), dtype=np.float64)
         raise ValueError(f"features must be 1-D or 2-D, got {features.shape}")
 
-    def is_ood(self, features: np.ndarray) -> np.ndarray | bool:
-        """True when squared distance exceeds the chi-square threshold."""
-        d2 = self.score(features)
-        if isinstance(d2, float):
-            return d2 > self.threshold
-        return d2 > self.threshold
+    def is_ood(self, features: np.ndarray) -> np.bool_ | np.ndarray:
+        """True when squared distance exceeds the chi-square threshold.
+
+        Scalar np.bool_ for a 1-D input, boolean (N,) array for 2-D.
+        """
+        return self.score(features) > self.threshold
 
     def to_dict(self) -> dict[str, Any]:
         return {

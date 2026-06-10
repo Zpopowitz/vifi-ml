@@ -73,6 +73,32 @@ def _truth_in(h10: np.ndarray, t0: float, t1: float) -> float:
     return float(np.mean(h10[m, 1])) if m.any() else float("nan")
 
 
+def training_rows(
+    per_group: dict[str, list], held: str, label_tol_bpm: float = LABEL_TOL_BPM
+) -> tuple[np.ndarray, np.ndarray, list, list]:
+    """Per-candidate training rows for one fold: every group except `held`.
+
+    Returns `(x, y, groups, truths)` with one row per candidate;
+    `x.shape[0] == y.size == len(groups) == len(truths)` always holds, even
+    when a window contributes zero candidates (its feature matrix is (0, n)
+    and it extends nothing into the parallel lists). `per_group` maps the
+    balancing key (subject for LOSO, capture for LOCO) to that group's
+    `(candidates, truth_bpm)` windows.
+    """
+    x_parts, y, groups, truths = [], [], [], []
+    for key, wins in per_group.items():
+        if key == held:
+            continue
+        for cands, truth in wins:
+            x_parts.append(candidate_feature_matrix(cands))
+            y.extend(
+                1 if abs(c.freq_bpm - truth) <= label_tol_bpm else 0 for c in cands
+            )
+            groups.extend([key] * len(cands))
+            truths.extend([truth] * len(cands))
+    return np.vstack(x_parts), np.asarray(y), groups, truths
+
+
 def _windows(cap_dir: str):
     """Yield per-window (candidates, truth_bpm) for one capture."""
     cube, ts, h10 = _load(cap_dir)
@@ -95,8 +121,9 @@ def _windows(cap_dir: str):
             yield cands, truth
 
 
-def main() -> None:
-    root = sys.argv[1] if len(sys.argv) > 1 else None
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    root = args[0] if args else None
     caps = included_captures(root)
     if not caps:
         print("no captures with dataset_include=true (legacy/quarantined excluded)")
@@ -128,21 +155,7 @@ def main() -> None:
     err = {k: [] for k in ("tallest", "learned", "learned+viterbi", "oracle")}
     for held in per_cap:
         # Train on every OTHER capture.
-        x_tr, y_tr, groups, truths = [], [], [], []
-        for cap, wins in per_cap.items():
-            if cap == held:
-                continue
-            for cands, truth in wins:
-                feats = candidate_feature_matrix(cands)
-                labels = [
-                    1 if abs(c.freq_bpm - truth) <= LABEL_TOL_BPM else 0 for c in cands
-                ]
-                x_tr.append(feats)
-                y_tr.extend(labels)
-                groups.extend([cap] * len(cands))
-                truths.extend([truth] * len(cands))
-        x_tr = np.vstack(x_tr)
-        y_tr = np.asarray(y_tr)
+        x_tr, y_tr, groups, truths = training_rows(per_cap, held)
         if y_tr.sum() == 0 or y_tr.sum() == y_tr.size:
             continue  # degenerate fold (no positive/negative example)
         clf = XGBClassifier(

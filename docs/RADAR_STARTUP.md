@@ -16,6 +16,14 @@
 >   currently data-bound at ~10-11 bpm MAE. See
 >   `docs/RADAR_HR_FINDINGS_2026-05-29.md`.
 > - Keep the pipeline **single-RX** (see the multi-RX note in section 2).
+> - **The live collector now runs `--source ftdi`** (raw ADC complex IQ
+>   over the FT232H SPI cable), not `--source usb`: the USB TLV stream
+>   is magnitude-only (no phase), so the DACM DSP cannot extract HR from
+>   it and the inference worker drops every frame. `VIFI_RADAR_FTDI_URL`
+>   selects the FTDI device (only needed with more than one attached);
+>   `VIFI_RADAR_PORT` now matters only for `--source usb` TLV debugging.
+>   `pyftdi` must be in the Pi venv (pinned under the `capture` extra in
+>   `requirements.txt`). Sections 3-5 below predate this.
 
 What to do the day the TI IWRL6432BOOST shows up. End state: HR / RR /
 respiration drawing on the live dashboard, on the exact same widgets that
@@ -181,21 +189,28 @@ From WSL:
 This is idempotent. It re-syncs the repo, installs `redis-server`
 (no-op since SP1 already did this), and additionally drops in:
 
-- `vifi-radar-collector.service` — runs `tools.radar_collector --source usb`
-- `vifi-radar-inference.service` — runs `tools.radar_inference_worker`
+- `vifi-radar-collector.service`: runs `tools.radar_collector --source ftdi`
+  (raw ADC complex IQ over the FT232H SPI cable; needs `pyftdi` in the
+  Pi venv)
+- `vifi-radar-inference.service`: runs `tools.radar_inference_worker`
 
-Both `enable --now`. Until you set `VIFI_RADAR_PORT`, the collector will
-fail loudly ("port required") and `Restart=always` will keep retrying. That
-is normal until step 5.
+Both `enable --now`. Until the FTDI cable is connected (and `pyftdi`
+installed), the collector will fail loudly and `Restart=always` will keep
+retrying. That is normal until step 5.
 
-## 5. Point the collector at your by-id path
+## 5. Point the collector at the FTDI cable
 
-Edit `/etc/vifi/live.env` on the Pi (sudo):
+The default `--source ftdi` URL (`ftdi://ftdi:232h/1`) picks the first
+FT232H on the host, so with a single cable plugged in there is nothing
+to configure: restart the collector and it comes up. If more than one
+FTDI device is attached, pin the URL in `/etc/vifi/live.env` (sudo):
 
 ```bash
 ssh pi
 sudo vi /etc/vifi/live.env
-# add:
+# add (only if more than one FTDI device is attached):
+# VIFI_RADAR_FTDI_URL=ftdi://ftdi:232h/1
+# VIFI_RADAR_PORT is only used by --source usb (TLV debugging, not vitals):
 # VIFI_RADAR_PORT=/dev/serial/by-id/usb-Texas_Instruments_XDS110_...
 sudo systemctl restart vifi-radar-collector
 ```
@@ -215,6 +230,37 @@ Verify:
 #   dashboard /health        200
 ```
 
+## 5.5. Bring up the sensor (software reset, arm, start)
+
+The collector service only LISTENS on the SPI bus; the sensor itself
+must be armed and started once per boot, in this order (bench-proven
+2026-06-09):
+
+```bash
+ssh pi
+# 1. Software NRST. The XDS110 exposes CMSIS-DAP, so pyocd toggles the
+#    hardware reset line; no physical button press, no jumper wires.
+#    Proven NRST-equivalent: a second `adcLogging` after this reset does
+#    NOT EDMA-double-alloc crash, which only a real reset allows.
+~/vifi-ml/.venv/bin/pyocd reset --method hw --target cortex_m
+sleep 3
+# 2. Arm (cfg + adcLogging 2, sensor stays stopped). Expect
+#    adcDataPerFrame=6144 in the response.
+cd ~/vifi-ml && .venv/bin/python tools/radar_kickstart_adc.py \
+    --cfg /home/zpopowitz/MotionDetect.cfg
+# 3. Make sure the collector is reading (it must be, BEFORE sensorStart,
+#    or the M4 blocks on the MCSPI transfer):
+systemctl is-active vifi-radar-collector
+# 4. Start chirping:
+.venv/bin/python tools/radar_kickstart_adc.py --sensor-start-only
+```
+
+`pyocd` installs with `pip install pyocd` into the venv (no sudo, no
+udev changes needed on the current Pi image). Endurance on this path:
+28 consecutive minutes at a flat 20 fps with zero degradation
+(2026-06-09 bench validation); the old "SPI degrades after a few
+minutes" failure did not reproduce on the FTDI collector.
+
 ## 6. Watch the bus fill
 
 In one terminal:
@@ -223,9 +269,10 @@ In one terminal:
 ssh pi 'watch -n 1 "for t in csi.raw.founder radar.raw.founder hr.predicted.founder rr.predicted.founder; do printf \"  %-30s xlen=%s\n\" \"\$t\" \"\$(redis-cli xlen \"\$t\")\"; done"'
 ```
 
-You should see `radar.raw.founder` climbing at the configured frame rate
-(~100 chirps/s) and `hr.predicted.founder` climbing every ~2 s as the
-worker emits predictions on its stride.
+You should see `radar.raw.founder` climbing at the SPI HR-profile frame
+rate (20 entries/s, one `(256, 3)` IQ cube per frame; the radar worker
+needs `VIFI_RADAR_FRAME_RATE_HZ=20` to match) and `hr.predicted.founder`
+climbing every ~3 s as the worker emits predictions on its stride.
 
 ## 7. Open the dashboard
 
@@ -263,7 +310,7 @@ ssh pi sudo reboot
 | Symptom | Fix |
 |---|---|
 | `ls /dev/serial/by-id/` shows nothing | Reseat the USB, try a different cable. The board's status LED indicates power; if off, the barrel jack is unseated. |
-| `vifi-radar-collector` flaps `activating` ↔ `auto-restart` | The collector raised NotImplementedError or the device path is wrong. `journalctl -u vifi-radar-collector -n 50 --no-pager`. Either the TLV parser is still a skeleton (do step 3) or `VIFI_RADAR_PORT` is unset / wrong (re-do step 5). |
+| `vifi-radar-collector` flaps `activating` ↔ `auto-restart` | `journalctl -u vifi-radar-collector -n 50 --no-pager`. With `--source ftdi` (the unit default): the FT232H cable is unplugged, `pyftdi` is missing from the Pi venv, or `VIFI_RADAR_FTDI_URL` points at the wrong device (re-do step 5). With `--source usb` (debugging only): the TLV parser is still a skeleton (do step 3) or `VIFI_RADAR_PORT` is unset / wrong. |
 | Bus xlen climbs but the dashboard shows nothing | `vifi-radar-inference` is crash-looping or window-suppressing every prediction. `./tools/live_stack.sh logs` and look for `windows_too_short_total` or coverage-driven suppression. |
 | `radar.raw.<pid>.dlq` is growing | The collector is publishing malformed frames -- the TLV parser drifted. Compare against your fixture and re-pin. |
 | HR / HRV numbers look implausible (e.g., stuck at 70 bpm exactly) | Subject moving more than the motion gate tolerates. `radar.process` will return NaN under gross motion and the worker suppresses publish. Have the subject sit still for ≥10 s; if HR still looks off, dump `bus.history(radar.raw.<pid>)` and verify the synth-vs-real ADC distributions match the test fixtures. |

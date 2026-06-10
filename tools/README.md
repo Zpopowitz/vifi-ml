@@ -26,7 +26,7 @@ few are imported by other code. For broader codebase navigation see
 
 | Script | Purpose |
 |---|---|
-| `radar_collector.py` | Reads chirps from the IWRL6432BOOST data UART, publishes per-chirp to `radar.raw.<pid>`. `--source synth` for tests (never in production per the "no fake numbers" rule). |
+| `radar_collector.py` | Publishes IWRL6432BOOST frames to `radar.raw.<pid>`. `--source ftdi` is the production path: raw ADC complex IQ over the FT232H SPI cable (`VIFI_RADAR_FTDI_URL` / `--ftdi-url` pick the device; needs `pyftdi`, pinned under the `capture` extra). `--source usb` (XDS110 TLV stream) is magnitude-only, unsuitable for HR, and warns loudly at startup. `--source synth` for tests (never in production per the "no fake numbers" rule). |
 | `radar_inference_worker.py` | Subscribes to `radar.raw.<pid>`, runs the `radar/` DSP, publishes to the same `hr.predicted.<pid>` + `rr.predicted.<pid>` topics the CSI worker uses. |
 
 ## Live stack (SP1) install + operate
@@ -40,7 +40,7 @@ few are imported by other code. For broader codebase navigation see
 
 | Script | Purpose |
 |---|---|
-| `retrain_on_real.py` | Train the real serving model from one or more paired captures. Writes versioned `models_real/<sha>/` and updates the `current` symlink. |
+| `retrain_on_real.py` | Train the real serving model from paired captures. Holds out whole sessions for validation (seeded, or pin with `--val-session IDX`) and refuses single-session runs; `metadata.json` records `split` / `train_sessions` / `val_sessions`. Writes versioned `models_real/<sha>/` and updates the `current` symlink. |
 | `train_quantile_models.py` | Train low/high quantile XGBoost regressors for the confidence-interval (CI) suppression path. |
 | `model_swap.py` | List / inspect / rollback the active model in `models_real/`. Resolves `current` symlink. |
 
@@ -57,6 +57,7 @@ and `feedback-no-synthetic-model` memory.)
 | `eval_loso.py` | Leave-one-session-out evaluation on a set of paired captures. |
 | `eval_harness.py` | Pluggable evaluation backend for individual experiments. |
 | `eval_rr.py` | Respiration-specific eval (Vernier ground truth). |
+| `recompute_rr_labels.py` | Recompute RR labels offline from raw v2 `force_n` data (after the `rr_logger` parabolic-interp fix). Writes `rr_labels_recomputed_v2.csv` + provenance sidecar alongside the originals, never overwrites; `--compare-legacy` quantifies the drift the fix removed. |
 | `first_capture_report.py` | Auto-report after a capture: MAE vs Polar, OOD suppression, calibration mode, first-10-windows detail table. |
 | `analyze_session.py` | Per-session stats + HR/RR-over-time plot. |
 | `analyze_corpus.py` | Whole-corpus rollup: per-session table + corpus-level mean HR/RR + writes `corpus_summary.csv`. |
@@ -79,14 +80,14 @@ and `feedback-no-synthetic-model` memory.)
 | `audit_query.py` | Filter / decrypt audit entries by date, subject, event type. |
 | `audit_health.py` | Audit-subscriber liveness check. Cron-friendly. |
 | `audit_retention.py` | HIPAA-default 6-year retention sweep. |
-| `audit_verify.py` | Verify the HMAC chain integrity end-to-end. |
+| `audit_verify.py` | Verify the HMAC chain integrity end-to-end. Auto-loads the chain-state store (`chain_state.sqlite`) and FAILS on trailing truncation; without the store it verifies by replay only and warns about reduced guarantees. |
 
 ## Security
 
 | Script | Purpose |
 |---|---|
 | `setup_keys.sh` | Generate the SP7 secrets (`VIFI_API_KEYS`, `VIFI_PSEUDO_SALT`, `VIFI_AUDIT_*`, `VIFI_REDIS_PASSWORD`). Per-secret `--rotate`. |
-| `enable_security_mode.sh` | Flip the stack from bench (`VIFI_AUTH_MODE=none`) to production. Idempotent. Writes secrets to `/etc/vifi/live.env`, sets Redis password, restarts services, verifies `/health` 401s without the key. |
+| `enable_security_mode.sh` | Flip the stack from bench (`VIFI_AUTH_MODE=none`) to production. Idempotent. Writes secrets to `/etc/vifi/live.env`, sets Redis password, restarts services, then probes auth-gated `/api/v1/rooms` unauthenticated and expects 401. |
 
 ## Metadata + dev hygiene
 

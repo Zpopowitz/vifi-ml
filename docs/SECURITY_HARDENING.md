@@ -4,6 +4,19 @@ What the live stack looks like under the production security posture, why
 each control matters, and the exact commands to flip from SP1 bench mode
 (`VIFI_AUTH_MODE=none`) to production mode.
 
+**The code defaults are fail-closed (2026-06-09).** Hardening no longer
+flips defaults; it provisions real secrets. Unset, `VIFI_AUTH_MODE`
+defaults to `api_key` and the API refuses to boot without keys (dev must
+explicitly set `VIFI_AUTH_MODE=none`); `VIFI_REQUIRE_PSEUDO` defaults to
+`true`, so with no `VIFI_PSEUDO_SALT` and no explicit opt-out,
+pseudonymization raises instead of writing `pseudo-dev:<id>` to the
+audit log; `VIFI_EXPOSE_DOCS` defaults to `false`, and `/docs`, `/redoc`,
+`/openapi.json` require a valid key in `api_key` mode even when enabled;
+worker Prometheus metrics bind `127.0.0.1` unless `VIFI_METRICS_ADDR`
+widens them deliberately. Bench mode exists only because
+`/etc/vifi/live.env` (and `docker-compose.yml` for the laptop stack)
+opt into it explicitly.
+
 Companion to `docs/LIVE_STACK.md`. The full SP7 sub-project (TLS via the
 compose `caddy` profile, secret rotation cadence, audit-chain
 verification CI job) lands later; this doc covers what's enabled by
@@ -24,6 +37,7 @@ Concrete things SP7-partial defends against:
 | Threat | Control |
 |---|---|
 | Random LAN client hits `/predict` / `/api/v1/stream` | API-key gate (`VIFI_AUTH_MODE=api_key` + `X-Api-Key` header) |
+| Full API schema scraped from `/openapi.json` / `/docs` | Hidden by default (`VIFI_EXPOSE_DOCS=false`); key required even when enabled |
 | Anyone with shell access to the Pi reads patient ids | Pseudonymisation salt in audit log (`VIFI_PSEUDO_SALT`) |
 | Compromised audit log doesn't show tampering | HMAC chain key (`VIFI_AUDIT_CHAIN_KEY`) |
 | At-rest audit log is grep-able for plaintext PHI | Fernet at-rest encryption (`VIFI_AUDIT_ENCRYPTION_KEY`) |
@@ -35,10 +49,19 @@ Things SP7-partial does NOT yet defend against (full SP7 will):
   served on HTTP). Enable the compose `caddy` profile for TLS in full SP7.
 - Lost / leaked secrets without forced rotation cadence (manual
   rotation is supported now; SP7 adds enforcement).
-- Authenticated-but-malicious internal client (no per-key scopes
-  enforced in this partial flip; key metadata + scope enforcement is
-  already in the codebase but the simple `VIFI_API_KEYS` env mode
-  grants `"*"` to every key — full SP7 moves to `VIFI_API_KEYS_FILE`).
+- Authenticated-but-malicious internal client (key metadata + scope
+  enforcement is already in the codebase but the simple `VIFI_API_KEYS`
+  env mode grants `"*"` to every key; full SP7 moves to
+  `VIFI_API_KEYS_FILE`). One scope IS enforced route-side today:
+  `/api/v1/rooms` requires `read:rooms`, so file-based keys that should
+  see the patient census need that scope (wildcard env-var keys pass).
+
+Two intentional auth bypasses worth knowing about: `/health`, `/readyz`,
+`/roadmap` and `/` are public liveness/banner endpoints (`PUBLIC_PATHS`
+in `security.py`), and dashboard static assets (css/js/fonts/icons, by
+extension allowlist) skip auth so the login overlay can render before a
+key exists. None of these carry PHI; vitals only flow through
+authenticated JSON/WebSocket responses.
 
 ---
 
@@ -51,7 +74,7 @@ script reads them and writes them to `/etc/vifi/live.env` on the Pi.
 | Env var | Purpose | Rotation impact |
 |---|---|---|
 | `VIFI_API_KEYS` | Comma-separated allowed API keys. Implicit `"*"` scope per key. | Old key invalid immediately; all callers must update. |
-| `VIFI_PSEUDO_SALT` | HMAC salt for pseudonymising patient ids in the audit log. | Old audit records use a different namespace — keep both salts during a migration window. |
+| `VIFI_PSEUDO_SALT` | HMAC salt for pseudonymising patient ids in the audit log. Required by default (`VIFI_REQUIRE_PSEUDO=true`): without a salt, audit writes raise instead of falling back to `pseudo-dev:<id>`. | Old audit records use a different namespace; keep both salts during a migration window. |
 | `VIFI_AUDIT_ENCRYPTION_KEY` | Fernet key for at-rest audit-log encryption. | Old audit files un-decryptable without the old key — archive the old key with the old files. |
 | `VIFI_AUDIT_CHAIN_KEY` | HMAC key for the tamper-evident audit chain. | New chain starts fresh; older chain still verifiable against the old key. |
 | `VIFI_REDIS_PASSWORD` | Redis `requirepass`. Embedded into `VIFI_BUS_URL` so every client picks it up via `EnvironmentFile`. | Bus disconnects briefly; every service has to be restarted with the new password (the helper script does this for you). |
@@ -77,8 +100,9 @@ beyond a restart):
 4. Rebuilds `VIFI_BUS_URL` to include the password.
 5. Restarts the four (or six with radar) vifi services so they pick up
    the new env + new bus URL.
-6. Verifies: `curl http://localhost:8000/health` without the API key
-   now returns **401**.
+6. Runs an unauthenticated probe against `/api/v1/rooms` (auth-gated)
+   and expects **401**. `/health` stays public by design (`PUBLIC_PATHS`
+   in `security.py`), so it cannot prove auth is on.
 
 Dry-run mode shows what would change without writing:
 
@@ -96,12 +120,13 @@ Force a fresh secret set (deprecates ALL prior keys):
 
 ## Day-to-day after enabling
 
-Every API call needs the key:
+Every API call except the public liveness endpoints (`/health`,
+`/readyz`, `/roadmap`, `/`) needs the key:
 
 ```bash
 # From WSL (the API key lives in your local .env's VIFI_API_KEYS):
 KEY=$(grep VIFI_API_KEYS .env | cut -d= -f2 | cut -d, -f1)
-curl -sS -H "X-Api-Key: $KEY" http://vifi-pi-room1.local:8000/health
+curl -sS -H "X-Api-Key: $KEY" http://vifi-pi-room1.local:8000/api/v1/rooms
 ```
 
 The dashboard prompts for the key in its login overlay (already shipped
@@ -155,12 +180,16 @@ Rotation cadence — pick one and stick to it:
 Five checks; run all of them after enabling:
 
 ```bash
-# 1. /health without the key returns 401.
-curl -sS -o /dev/null -w "%{http_code}\n" http://vifi-pi-room1.local:8000/health
+# 1. A protected endpoint without the key returns 401. Do NOT use
+#    /health here: it is intentionally public (liveness probes) and
+#    returns 200 in every auth mode.
+curl -sS -o /dev/null -w "%{http_code}\n" http://vifi-pi-room1.local:8000/api/v1/rooms
 
-# 2. /health WITH the key returns 200.
+# 2. The same endpoint WITH the key returns 200 (env-var keys carry the
+#    wildcard scope, which satisfies the read:rooms requirement;
+#    file-based keys need read:rooms granted explicitly).
 KEY=$(grep VIFI_API_KEYS .env | cut -d= -f2 | cut -d, -f1)
-curl -sS -o /dev/null -w "%{http_code}\n" -H "X-Api-Key: $KEY" http://vifi-pi-room1.local:8000/health
+curl -sS -o /dev/null -w "%{http_code}\n" -H "X-Api-Key: $KEY" http://vifi-pi-room1.local:8000/api/v1/rooms
 
 # 3. Redis is password-protected (anonymous ping fails).
 ssh pi 'redis-cli -e ping'   # expect (error) NOAUTH ...
@@ -186,7 +215,9 @@ inspect what's diverged.
   plaintext today even with auth).
 - Per-key scopes via `VIFI_API_KEYS_FILE` (the simple env-var mode
   grants every key `"*"`; for separation-of-duties you want
-  `read:hr` / `read:identity` / `write:audit` scoped).
+  `read:hr` / `read:identity` / `write:audit` scoped). Route-side
+  enforcement is live (e.g. `/api/v1/rooms` requires `read:rooms`);
+  what's missing is moving the bench to scoped file-based keys.
 - Forced rotation cadence (cron + alerting when a key is N days old).
 - Audit-chain verification CI job (does the chain HMAC verify
   end-to-end at every PR).

@@ -34,6 +34,8 @@ from fastapi import (
 )
 
 from security import (
+    AuthMode,
+    get_auth_mode,
     require_scope,
     validate_config_or_raise,
 )
@@ -68,10 +70,6 @@ from preprocess import (
 MODEL_DIR = Path(os.environ.get("VIFI_REAL_MODEL_DIR", "models_real"))
 MODEL_VERSION = "xgb-1.0"
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
 log = logging.getLogger("vifi.api")
 
 
@@ -672,7 +670,7 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
     # detection; chain without encryption leaves PHI in cleartext on
     # disk). FDA postmarket surveillance expects both. Refuse to
     # boot rather than silently run insecure.
-    if os.environ.get("VIFI_AUTH_MODE", "none").lower() == "api_key":
+    if get_auth_mode() == AuthMode.API_KEY:
         missing = [
             k
             for k in ("VIFI_AUDIT_CHAIN_KEY", "VIFI_AUDIT_ENCRYPTION_KEY")
@@ -714,15 +712,18 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
         version=VIFI_VERSION,
         lifespan=lifespan,
         # Hide /openapi.json + /docs unless explicitly requested
-        # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS.
+        # (I057). Internal devs can opt in via VIFI_EXPOSE_DOCS=true;
+        # default false so the full API schema is never exposed by
+        # accident. Even when enabled, these paths require a valid key
+        # in api_key mode (not in PUBLIC_PATHS).
         docs_url="/docs"
-        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "false").lower() == "true"
         else None,
         redoc_url="/redoc"
-        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "false").lower() == "true"
         else None,
         openapi_url="/openapi.json"
-        if os.environ.get("VIFI_EXPOSE_DOCS", "true").lower() == "true"
+        if os.environ.get("VIFI_EXPOSE_DOCS", "false").lower() == "true"
         else None,
     )
     # Middleware setup lives in api_internals/middleware.py (PR-H2 split).
@@ -806,18 +807,28 @@ def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
     from fastapi.routing import APIRoute  # noqa: E402
 
     _existing_paths = [
-        (route.path, route.endpoint, list(route.methods or []), route.response_model)
+        (
+            route.path,
+            route.endpoint,
+            list(route.methods or []),
+            route.response_model,
+            list(route.dependencies),
+        )
         for route in list(app.routes)
         if isinstance(route, APIRoute)
         and not route.path.startswith("/api/")
         and route.path not in ("/openapi.json", "/docs", "/redoc")
     ]
-    for path, endpoint, methods, response_model in _existing_paths:
+    for path, endpoint, methods, response_model, deps in _existing_paths:
+        # dependencies MUST be forwarded: they carry the require_scope
+        # checks. Without them every /api/v1 alias silently drops
+        # authorization granularity.
         app.add_api_route(
             f"/api/v1{path}",
             endpoint,
             methods=methods,
             response_model=response_model,
+            dependencies=deps,
             name=f"v1_{endpoint.__name__}",
         )
 

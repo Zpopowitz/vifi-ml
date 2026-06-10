@@ -680,3 +680,74 @@ def test_run_once_survives_mixed_rx_shape_window():
     result = run_once(win, cfg, expected_samples_per_chirp=256)
     assert result is not None
     assert result.hr_bpm is not None and abs(result.hr_bpm - 72.0) <= 5.0
+
+
+# ---------------------------------------------------------------------------
+# Per-stride crash containment. One poison window (non-finite samples) must
+# log and continue, never kill the worker; and because frames are ACKed at
+# push time, the poison cannot re-deliver and re-crash the loop -- the next
+# good window publishes normally.
+# ---------------------------------------------------------------------------
+
+
+def test_worker_survives_poison_window_then_publishes_next_good_window(caplog):
+    """A frame batch whose samples contain inf raises ValueError inside
+    radar.process (range_fft rejects non-finite). The worker must contain
+    it (log + continue), and a subsequent run on the same consumer group
+    must not re-read the ACKed poison and must publish HR from good frames."""
+    from tools.radar_inference_worker import log as worker_log  # noqa: PLC0415
+
+    bus = InMemoryBus()
+    patient = "poison"
+    config = RadarConfig()
+
+    # Phase 1: poison frames only -- enough to clear MIN_CHIRPS_FOR_PROCESSING.
+    publisher = _BusPublisher(patient_id=patient, bus=bus)
+    bad = np.full(config.samples_per_chirp, np.inf, dtype=np.complex128)
+    t0 = time.time()
+    from tools.radar_collector import Chirp  # noqa: PLC0415
+
+    for i in range(300):
+        publisher.publish(
+            Chirp(ts_unix=t0 + i * 0.01, chirp_idx=i, samples=bad),
+            samples_per_chirp=config.samples_per_chirp,
+        )
+
+    with caplog.at_level("ERROR", logger=worker_log.name):
+        run_worker(
+            bus=bus,
+            patient_id=patient,
+            window_s=10.0,
+            stride_s=0.1,
+            config=config,
+            publish_apnea=False,
+            publish_presence=False,
+            from_id=EARLIEST,
+            consumer_name="test-worker-poison",
+            max_iterations=1,
+        )
+    # The poison window was contained: logged, no crash, nothing published.
+    assert any("scoring failed" in rec.message for rec in caplog.records)
+    assert bus.history(hr_predicted(patient)) == []
+
+    # Phase 2: good frames arrive. The poison messages were ACKed at push
+    # time, so the same consumer group resumes past them (no re-crash loop)
+    # and the next good window publishes.
+    _publish_synth_frames(
+        bus, patient, config, duration_s=12.0, hr_bpm=72.0, rr_bpm=15.0
+    )
+    run_worker(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.1,
+        config=config,
+        publish_apnea=False,
+        publish_presence=False,
+        from_id=EARLIEST,
+        consumer_name="test-worker-poison",
+        max_iterations=1,
+    )
+    history = bus.history(hr_predicted(patient))
+    assert len(history) >= 1, "good window after a poison window must publish"
+    assert abs(history[-1].payload["hr_bpm"] - 72.0) <= 6.0

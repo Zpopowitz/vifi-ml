@@ -16,7 +16,9 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+
+from security import require_scope
 
 
 def _build_rooms_response() -> dict:
@@ -93,7 +95,10 @@ def register_rooms_route(app: FastAPI) -> None:
     log = logging.getLogger("vifi.api")
     cache: dict = {"ts": 0.0, "value": None}
 
-    @app.get("/api/v1/rooms")
+    # read:rooms is its own scope (not read:hr) because the response
+    # enumerates every monitored patient id + last activity -- a census,
+    # not a vital stream. Wildcard / env-var keys own it implicitly.
+    @app.get("/api/v1/rooms", dependencies=[Depends(require_scope("read:rooms"))])
     def rooms():
         """Patient_ids that have at least one stream on the bus.
 

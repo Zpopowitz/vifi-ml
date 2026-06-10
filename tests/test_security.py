@@ -47,9 +47,23 @@ from security import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-def test_get_auth_mode_defaults_to_none(monkeypatch):
+def test_get_auth_mode_defaults_to_api_key(monkeypatch):
+    """Fail-closed: a Pi that loses its env file (SD reflash, corruption)
+    must boot into api_key mode and then refuse to start with no keys,
+    not serve wide open in a patient's home."""
     monkeypatch.delenv("VIFI_AUTH_MODE", raising=False)
-    assert get_auth_mode() == AuthMode.NONE
+    assert get_auth_mode() == AuthMode.API_KEY
+
+
+def test_unconfigured_env_fails_closed_at_validation(monkeypatch):
+    """With no auth env at all, validate_config_or_raise (called first
+    thing in create_app) must refuse to boot: default mode is api_key
+    and there are no keys."""
+    monkeypatch.delenv("VIFI_AUTH_MODE", raising=False)
+    monkeypatch.delenv("VIFI_API_KEYS", raising=False)
+    monkeypatch.delenv("VIFI_API_KEYS_FILE", raising=False)
+    with pytest.raises(RuntimeError, match="Refusing to boot"):
+        validate_config_or_raise()
 
 
 def test_get_auth_mode_invalid_falls_back_to_api_key(monkeypatch, caplog):
@@ -171,6 +185,29 @@ def test_auth_disabled_in_none_mode(monkeypatch):
         assert c.get("/predict").status_code == 200
 
 
+def test_static_assets_bypass_auth_middleware(monkeypatch):
+    """Dashboard assets must be reachable pre-auth or the login overlay
+    can never render in api_key mode (eval item 6). The middleware lets
+    asset extensions through to routing: here there is no matching
+    route, so 404 (not 401) proves the auth gate stood aside."""
+    monkeypatch.setenv("VIFI_AUTH_MODE", "api_key")
+    monkeypatch.setenv("VIFI_API_KEYS", "secret-1")
+    app = _make_app()
+    with TestClient(app) as c:
+        for path in (
+            "/styles.css",
+            "/js/auth.js",
+            "/fonts/inter-tight.woff2",
+            "/favicon.ico",
+            "/logo.svg",
+        ):
+            assert c.get(path).status_code == 404, path
+        # Non-asset paths are still gated.
+        assert c.get("/predict").status_code == 401
+        # A .json suffix is NOT an asset: API responses are JSON.
+        assert c.get("/openapi.json").status_code == 401
+
+
 def test_api_key_mode_with_no_keys_fails_closed(monkeypatch):
     """Misconfiguration must NOT default to allow."""
     monkeypatch.setenv("VIFI_AUTH_MODE", "api_key")
@@ -196,6 +233,32 @@ def test_request_id_generated_when_missing(monkeypatch):
         r = c.get("/health")
         rid = r.headers.get("x-request-id")
         assert rid and len(rid) == 16
+
+
+def test_sanitize_request_id_strips_crlf_and_garbage():
+    """X-Request-Id is caller input echoed into a response header and
+    log lines -- CRLF or control chars are a header-injection / log-
+    forgery vector (I: eval item 18)."""
+    from security import _sanitize_request_id
+
+    assert _sanitize_request_id("abc\r\nset-cookie: evil=1") == "abcset-cookieevil1"
+    # Cap at 64 chars.
+    assert _sanitize_request_id("a" * 200) == "a" * 64
+    # Entirely garbage -> fresh uuid4 hex, never empty.
+    rid = _sanitize_request_id("\r\n%%$$!!")
+    assert len(rid) == 16
+    assert all(ch in "0123456789abcdef" for ch in rid)
+    # None / empty -> generated too.
+    assert len(_sanitize_request_id(None)) == 16
+    assert len(_sanitize_request_id("")) == 16
+
+
+def test_request_id_header_sanitized_on_the_wire(monkeypatch):
+    monkeypatch.setenv("VIFI_AUTH_MODE", "none")
+    app = _make_app()
+    with TestClient(app) as c:
+        r = c.get("/health", headers={"X-Request-ID": "rid:123.456 injected!"})
+        assert r.headers["x-request-id"] == "rid123456injected"
 
 
 # ---------------------------------------------------------------------------
@@ -470,9 +533,6 @@ def test_public_paths_includes_only_metadata_endpoints():
         "/api/v1/health",
         "/api/v1/readyz",
         "/api/v1/roadmap",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
     }
     assert set(PUBLIC_PATHS) == expected, (
         f"PUBLIC_PATHS changed -- review before merging.\n"

@@ -45,6 +45,9 @@ pi_run() {  # pi_run [--tty] "<command string>"
 
 cmd_status() {
   echo "ViFi live stack — status"
+  # Single quotes are deliberate: $svcs / $svc / $r must expand on the
+  # Pi inside pi_run's remote shell, not here.
+  # shellcheck disable=SC2016
   pi_run '
     svcs="redis-server vifi-dashboard vifi-inference vifi-audit"
     # Radar units are SP2, only installed when setup_live_stack.sh --with-radar
@@ -64,6 +67,9 @@ cmd_status() {
 
 cmd_restart() {
   echo "Restarting the vifi-* services..."
+  # Single quotes are deliberate: $svcs / $r must expand on the Pi
+  # inside pi_run's remote shell, not here.
+  # shellcheck disable=SC2016
   pi_run --tty '
     svcs="vifi-dashboard vifi-inference vifi-audit"
     for r in vifi-radar-collector vifi-radar-inference; do

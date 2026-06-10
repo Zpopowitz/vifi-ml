@@ -191,5 +191,8 @@ here). **Proper validation needs the Vernier Go Direct belt in a paired capture.
 Implementation notes: RR must be a SEPARATE estimate from the HR notch -- a
 correctly-keyed respiration estimate activates the harmonic notch and *hurts* HR
 (the collision, above), so the RR output and the HR f_resp must be decoupled. Add
-a continuity tracker (reuse `rr_dsp.py` pattern, 0.50 brpm MAE on CSI). RR is worth
+a continuity tracker (reuse `rr_dsp.py` pattern; 1.04 brpm MAE on CSI pooled
+across the 4 v2 founder sessions after the 2026-06-09 truth-label fix, 85%
+within the +-2 brpm clinical tolerance at 33% availability; the earlier 0.50
+figure predated the corrected belt-truth refinement). RR is worth
 doing in parallel with the HR dataset/selector work.

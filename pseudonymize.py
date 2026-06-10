@@ -30,13 +30,15 @@ Configuration:
     VIFI_PSEUDO_SALT      : the salt (any non-empty string >= 32 chars)
                             generate with: openssl rand -hex 32
                             REQUIRED in production. If unset and
-                            VIFI_REQUIRE_PSEUDO=true, raises at first
-                            call (fail-closed for prod). If unset and
-                            VIFI_REQUIRE_PSEUDO=false (the default),
-                            falls back to a clearly-marked
-                            "pseudo-dev:<id>" string so dev runs work
-                            without ceremony.
-    VIFI_REQUIRE_PSEUDO   : "true" to require the salt. Default "false".
+                            VIFI_REQUIRE_PSEUDO=true (the default),
+                            raises at first call -- fail-closed, so a
+                            device that loses its env file refuses to
+                            write identifiable data. Dev runs must
+                            explicitly opt out with
+                            VIFI_REQUIRE_PSEUDO=false to get the
+                            clearly-marked "pseudo-dev:<id>" fallback.
+    VIFI_REQUIRE_PSEUDO   : "false" to allow the dev fallback without a
+                            salt. Default "true" (fail-closed).
 
 Usage:
     from pseudonymize import pseudonymize
@@ -76,7 +78,7 @@ def _get_salt() -> Optional[str]:
 
 
 def _require_salt() -> bool:
-    return os.environ.get("VIFI_REQUIRE_PSEUDO", "false").lower() == "true"
+    return os.environ.get("VIFI_REQUIRE_PSEUDO", "true").lower() == "true"
 
 
 def pseudonymize(subject_id: Optional[str]) -> Optional[str]:

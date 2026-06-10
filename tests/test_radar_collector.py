@@ -1,11 +1,11 @@
 """Tests for tools/radar_collector.py.
 
 Covers the synth source's frame shape, the bus publisher's payload shape on
-an in-memory bus, and the run_collector loop bounded by duration. The
-real-board USB source is a documented skeleton and is intentionally not
-unit-tested -- it surfaces NotImplementedError at iteration so an
-accidental --source usb without a board fails loudly. The TLV parser will
-be pinned against a real-board byte fixture on board-day.
+an in-memory bus, the run_collector loop bounded by duration, and the FTDI
+source (the IQ production path) driven by a fake reader feeding known TI
+wire bytes -- no pyftdi, no hardware. The USB TLV parser itself is pinned
+separately against a real-board byte fixture in tests/test_radar_usb_parser.py;
+here we only assert an accidental --source usb without a board fails loudly.
 """
 
 from __future__ import annotations
@@ -112,3 +112,123 @@ def test_usb_source_raises_until_board_arrives():
     # the real parser landing.
     with pytest.raises(Exception):
         next(iter(src))
+
+
+# ---------------------------------------------------------------------------
+# FTDI source (--source ftdi): the IQ production path. Tested with a fake
+# reader feeding known TI wire bytes -- no pyftdi, no hardware. Pins that the
+# source yields complex IQ chirps shaped (samples_per_chirp, n_rx), which is
+# what the inference worker's shape filter and the DACM DSP require.
+# ---------------------------------------------------------------------------
+
+from radar.ftdi_spi import FtdiSpiConfig, SpiFtdiReader  # noqa: E402
+
+
+class _FakeFtdiReader(SpiFtdiReader):
+    """SpiFtdiReader with the hardware layer replaced: __init__ skips pyftdi
+    entirely and _read_one_frame pops pre-built wire bytes. Everything else
+    (frame parse -> Chirp iteration) is the real production code path."""
+
+    def __init__(self, frames: list[bytes], ftdi_config: FtdiSpiConfig) -> None:
+        self._ftdi = ftdi_config
+        self.config = RadarConfig(
+            samples_per_chirp=ftdi_config.n_adc_samples,
+            frame_rate_hz=ftdi_config.frame_rate_hz,
+        )
+        self._chirp_idx = 0
+        self._closed = False
+        self._frames = list(frames)
+
+    def _read_one_frame(self):
+        if not self._frames:
+            self._closed = True
+            return None
+        return self._frames.pop(0)
+
+    def close(self) -> None:
+        self._closed = True
+
+
+def _encode_ti_wire(samples_int16: np.ndarray) -> bytes:
+    """Inverse of radar.ftdi_spi.deframe_adc_int16: big-endian int16 pairs
+    with the two halves of each 32-bit word swapped."""
+    s = np.asarray(samples_int16, dtype=">i2").reshape(-1, 2)
+    return s[:, ::-1].astype(">i2").tobytes()
+
+
+def _tone_frame_bytes(cfg: FtdiSpiConfig) -> bytes:
+    """One frame of wire bytes carrying a fast-time tone on every RX (a tone
+    gives the Hilbert IQ reconstruction a non-trivial imaginary part)."""
+    n = cfg.n_adc_samples
+    tone = (1000.0 * np.cos(2.0 * np.pi * 3.0 * np.arange(n) / n)).astype(np.int64)
+    cube = np.zeros((cfg.chirps_per_frame, cfg.n_rx, n), dtype=np.int64)
+    cube[:, :, :] = tone[None, None, :]
+    return _encode_ti_wire(cube.reshape(-1).astype(np.int16))
+
+
+def test_ftdi_source_yields_complex_iq_chirps_with_rx_axis():
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=1,
+        n_bursts_in_frame=2,
+        average_chirps_per_frame=True,
+    )
+    frames = [_tone_frame_bytes(cfg) for _ in range(3)]
+    src = _FakeFtdiReader(frames, cfg)
+
+    chirps = list(src)
+    # 3 frames, chirps averaged per frame -> one slow-time Chirp per frame.
+    assert len(chirps) == 3
+    assert [c.chirp_idx for c in chirps] == [0, 1, 2]
+    for c in chirps:
+        assert isinstance(c, Chirp)
+        assert c.samples.shape == (cfg.n_adc_samples, cfg.n_rx)
+        assert np.iscomplexobj(c.samples)
+        # Real IQ, not magnitudes-in-the-real-part: the Hilbert analytic
+        # signal of a tone has a non-zero imaginary component.
+        assert np.any(np.abs(c.samples.imag) > 0)
+
+
+def test_ftdi_source_publishes_iq_to_bus_via_run_collector():
+    """End-to-end: fake FTDI reader -> run_collector -> InMemoryBus. The bus
+    payload must carry a non-zero adc_imag, proving complex IQ (not the
+    magnitude-only TLV shape) is what reaches the inference worker."""
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=1,
+        n_bursts_in_frame=1,
+        average_chirps_per_frame=True,
+    )
+    src = _FakeFtdiReader([_tone_frame_bytes(cfg) for _ in range(4)], cfg)
+    bus = InMemoryBus()
+    publisher = _BusPublisher(patient_id="ftdi-pat", bus=bus)
+
+    n = run_collector(src, publisher, duration_s=0.0, quiet=True)
+
+    assert n == 4
+    history = bus.history(radar_raw("ftdi-pat"))
+    assert len(history) == 4
+    payload = history[0].payload
+    real = np.asarray(payload["adc_real"])
+    imag = np.asarray(payload["adc_imag"])
+    assert real.shape == (cfg.n_adc_samples, cfg.n_rx)
+    assert imag.shape == (cfg.n_adc_samples, cfg.n_rx)
+    assert np.any(np.abs(imag) > 0), "FTDI path must deliver IQ, not magnitude"
+
+
+def test_ftdi_source_skips_malformed_frame_and_continues():
+    """A short (wrong byte count) frame is logged and skipped; the following
+    well-formed frame still yields a chirp."""
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=1,
+        n_bursts_in_frame=1,
+        average_chirps_per_frame=True,
+    )
+    src = _FakeFtdiReader([b"\x00" * 8, _tone_frame_bytes(cfg)], cfg)
+    chirps = list(src)
+    assert len(chirps) == 1
+    assert chirps[0].samples.shape == (cfg.n_adc_samples, cfg.n_rx)

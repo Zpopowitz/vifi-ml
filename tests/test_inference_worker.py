@@ -297,6 +297,107 @@ def test_loop_skips_rr_while_window_warming_up():
     assert tracker.calls == 0
 
 
+def test_loop_contains_run_once_crash_and_recovers(monkeypatch):
+    """A stride whose feature extraction blows up (NaN features, SVD
+    non-convergence, ...) must not kill the loop; the next stride over a
+    good window must still publish."""
+    import tools.inference_worker as iw
+
+    bus = InMemoryBus()
+    patient = "eve"
+    _publish_synthetic_csi(bus, patient, n_sub=8)
+
+    calls = {"n": 0}
+    real_run_once = iw.run_once
+
+    def flaky_run_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("extract_features output contains 9 non-finite values")
+        return real_run_once(*args, **kwargs)
+
+    monkeypatch.setattr(iw, "run_once", flaky_run_once)
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_only_bundle(hr=66.0),
+        from_id=EARLIEST,
+        max_iterations=3,
+    )
+
+    assert calls["n"] >= 2, "loop died on the first (raising) stride"
+    preds = bus.read({hr_predicted(patient): EARLIEST}, block_ms=0, count=10)
+    assert preds, "no HR published after the contained crash"
+    assert preds[-1].payload["hr_bpm"] == 66.0
+
+
+def test_poison_window_does_not_leave_packets_pending(monkeypatch):
+    """A window that ALWAYS raises must not strand its packets in the
+    PEL: redelivery would rebuild the identical poison window and
+    re-crash forever on every restart."""
+    import tools.inference_worker as iw
+    from tools.inference_worker import CONSUMER_GROUP
+
+    bus = InMemoryBus()
+    patient = "mallory"
+    _publish_synthetic_csi(bus, patient, n_sub=8)
+
+    def always_raises(*args, **kwargs):
+        raise ValueError("poison window")
+
+    monkeypatch.setattr(iw, "run_once", always_raises)
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_only_bundle(),
+        from_id=EARLIEST,
+        max_iterations=2,
+    )
+
+    assert bus.pending_count(CONSUMER_GROUP, csi_raw(patient)) == 0
+    assert bus.read({hr_predicted(patient): EARLIEST}, block_ms=0) == []
+
+
+def test_loop_contains_rr_tracker_crash_and_keeps_hr_alive():
+    """An RR-path exception (e.g. SVD non-convergence) must not take the
+    HR stream down with it."""
+
+    class _CrashTracker:
+        def update(self, motion: np.ndarray, fs: float | None = None) -> RRReading:
+            raise np.linalg.LinAlgError("SVD did not converge")
+
+    bus = InMemoryBus()
+    patient = "trent"
+    _publish_synthetic_csi(bus, patient, n_packets=101, fs=10.0, n_sub=8)
+
+    loop(
+        bus=bus,
+        patient_id=patient,
+        window_s=10.0,
+        stride_s=0.0,
+        fs_resample=10.0,
+        bundle=_hr_only_bundle(hr=70.0),
+        from_id=EARLIEST,
+        max_iterations=2,
+        rr_tracker=_CrashTracker(),
+        rr_window_s=6.0,
+        rr_stride_s=0.0,
+    )
+
+    preds = bus.read({hr_predicted(patient): EARLIEST}, block_ms=0, count=10)
+    assert preds, "HR stream died because the RR path raised"
+    assert preds[-1].payload["hr_bpm"] == 70.0
+    assert bus.read({rr_predicted(patient): EARLIEST}, block_ms=0) == []
+
+
 def test_loop_drops_malformed_messages_without_crashing():
     bus = InMemoryBus()
     patient = "alice"

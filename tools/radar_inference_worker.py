@@ -466,11 +466,23 @@ def run_worker(
         now = time.time()
         if now - last_predict < stride_s:
             continue
-        if metrics is not None:
-            with metrics["prediction_duration_seconds"].labels(patient_id).time():
+        # Per-stride crash containment: one bad window (non-finite samples,
+        # SVD/lstsq non-convergence, ...) must log and skip, never kill the
+        # worker. Frames are ACKed at push time above, so a poison window
+        # cannot re-deliver and re-crash the loop after a systemd restart;
+        # it simply ages out of the rolling window.
+        try:
+            if metrics is not None:
+                with metrics["prediction_duration_seconds"].labels(patient_id).time():
+                    vitals = run_once(window, config, expected_samples_per_chirp)
+            else:
                 vitals = run_once(window, config, expected_samples_per_chirp)
-        else:
-            vitals = run_once(window, config, expected_samples_per_chirp)
+        except Exception:
+            log.exception(
+                "scoring failed for this window; skipping the stride and continuing"
+            )
+            last_predict = now
+            continue
 
         if vitals is None:
             if metrics is not None:
@@ -478,121 +490,130 @@ def run_worker(
             continue
         last_predict = now
 
-        # Publish HR -- only when we have a real number (None when the
-        # window was unrecoverable or motion-gated).
-        if vitals.hr_bpm is not None:
-            # Spectral-fallback gate: if beat-detection confidence is
-            # below the threshold, the per-beat IBI-derived HRV is not
-            # reliable enough to publish. HR comes from the spectral
-            # estimator (which doesn't depend on per-beat detection)
-            # and is still published; HRV fields are nulled out so
-            # downstream consumers don't treat them as trustworthy.
-            beat_conf = float(vitals.beat_confidence)
-            hrv_trustworthy = beat_conf >= hrv_confidence_threshold
-            bus.publish(
-                hr_topic,
-                {
-                    "ts_unix": now,
-                    "patient_id": patient_id,
-                    "window_start_s": now - window_s,
-                    "window_end_s": now,
-                    "window_s": float(window_s),
-                    "hr_bpm": round(vitals.hr_bpm, 2),
-                    "hr_confidence": round(vitals.coverage, 3),
-                    "n_beats": vitals.n_beats,
-                    "hrv_sdnn_ms": vitals.hrv_sdnn_ms if hrv_trustworthy else None,
-                    "hrv_rmssd_ms": vitals.hrv_rmssd_ms if hrv_trustworthy else None,
-                    "pnn50_pct": vitals.pnn50_pct if hrv_trustworthy else None,
-                    "beat_confidence": round(beat_conf, 3),
-                    "coverage": round(vitals.coverage, 3),
-                    "sensor": "radar",
-                },
-                ts_ms=int(now * 1000),
-            )
-            if metrics is not None:
-                metrics["predictions_total"].labels(patient_id, "hr").inc()
-
-        if rr_topic is not None and vitals.rr_bpm is not None:
-            # Smooth across windows: breathing rate changes slowly, so a
-            # single window's outlier is rate-limited rather than published.
-            smoothed_rr = rr_tracker.update(vitals.rr_bpm)
-            bus.publish(
-                rr_topic,
-                {
-                    "ts_unix": now,
-                    "patient_id": patient_id,
-                    "window_start_s": now - window_s,
-                    "window_end_s": now,
-                    "window_s": float(window_s),
-                    "rr_bpm": round(smoothed_rr, 2),
-                    "rr_confidence": round(vitals.coverage, 3),
-                    "f_resp_hz": round(vitals.f_resp_hz, 4),
-                    "coverage": round(vitals.coverage, 3),
-                    "sensor": "radar",
-                },
-                ts_ms=int(now * 1000),
-            )
-            if metrics is not None:
-                metrics["predictions_total"].labels(patient_id, "rr").inc()
-
-        # Presence + bed-exit state machine. Every successful vitals
-        # window feeds `vitals.present` into the sensor-agnostic state
-        # machine. Transitions (OUT -> IN_BED, IN_BED -> BED_EXIT_ALERT,
-        # ...) publish to presence.events.<pid>. Brief gaps where
-        # run_once returns None (gross motion windows) don't step the
-        # machine, so the state stays put and the time-based thresholds
-        # absorb the gap rather than producing a false bed-exit.
-        if presence_sm is not None and presence_topic is not None:
-            ev = presence_sm.step(ts_unix=now, present=bool(vitals.present))
-            if ev is not None:
+        try:
+            # Publish HR -- only when we have a real number (None when the
+            # window was unrecoverable or motion-gated).
+            if vitals.hr_bpm is not None:
+                # Spectral-fallback gate: if beat-detection confidence is
+                # below the threshold, the per-beat IBI-derived HRV is not
+                # reliable enough to publish. HR comes from the spectral
+                # estimator (which doesn't depend on per-beat detection)
+                # and is still published; HRV fields are nulled out so
+                # downstream consumers don't treat them as trustworthy.
+                beat_conf = float(vitals.beat_confidence)
+                hrv_trustworthy = beat_conf >= hrv_confidence_threshold
                 bus.publish(
-                    presence_topic,
+                    hr_topic,
                     {
                         "ts_unix": now,
                         "patient_id": patient_id,
-                        "state": ev.state,
-                        "prev_state": ev.prev_state,
-                        "since_unix": ev.since_unix,
+                        "window_start_s": now - window_s,
+                        "window_end_s": now,
+                        "window_s": float(window_s),
+                        "hr_bpm": round(vitals.hr_bpm, 2),
+                        "hr_confidence": round(vitals.coverage, 3),
+                        "n_beats": vitals.n_beats,
+                        "hrv_sdnn_ms": vitals.hrv_sdnn_ms if hrv_trustworthy else None,
+                        "hrv_rmssd_ms": vitals.hrv_rmssd_ms
+                        if hrv_trustworthy
+                        else None,
+                        "pnn50_pct": vitals.pnn50_pct if hrv_trustworthy else None,
+                        "beat_confidence": round(beat_conf, 3),
+                        "coverage": round(vitals.coverage, 3),
                         "sensor": "radar",
                     },
                     ts_ms=int(now * 1000),
                 )
                 if metrics is not None:
-                    metrics["predictions_total"].labels(patient_id, "presence").inc()
+                    metrics["predictions_total"].labels(patient_id, "hr").inc()
 
-        # Apnea side-channel: runs on its own (longer) stride so the
-        # 10 s pause minimum is detectable. The apnea window is a
-        # separate _Window with `apnea_window_s` of history, fed by the
-        # same per-chirp push above. Events with absolute timestamps are
-        # deduped against last_apnea_event_end_unix so consecutive
-        # snapshots that re-observe the same pause don't double-publish.
-        if (
-            apnea_window is not None
-            and apnea_topic is not None
-            and (now - last_apnea_check) >= apnea_stride_s
-        ):
-            last_apnea_check = now
-            apnea_snapshot_frames = apnea_window.snapshot()
-            if apnea_snapshot_frames:
-                window_start_unix = apnea_snapshot_frames[0].ts_unix
-                events = apnea_run_once(
-                    apnea_window,
-                    config,
-                    expected_samples_per_chirp,
-                    min_duration_s=apnea_min_duration_s,
+            if rr_topic is not None and vitals.rr_bpm is not None:
+                # Smooth across windows: breathing rate changes slowly, so a
+                # single window's outlier is rate-limited rather than published.
+                smoothed_rr = rr_tracker.update(vitals.rr_bpm)
+                bus.publish(
+                    rr_topic,
+                    {
+                        "ts_unix": now,
+                        "patient_id": patient_id,
+                        "window_start_s": now - window_s,
+                        "window_end_s": now,
+                        "window_s": float(window_s),
+                        "rr_bpm": round(smoothed_rr, 2),
+                        "rr_confidence": round(vitals.coverage, 3),
+                        "f_resp_hz": round(vitals.f_resp_hz, 4),
+                        "coverage": round(vitals.coverage, 3),
+                        "sensor": "radar",
+                    },
+                    ts_ms=int(now * 1000),
                 )
-                if events:
-                    last_apnea_event_end_unix = _publish_apnea_events(
-                        events=events,
-                        bus=bus,
-                        topic=apnea_topic,
-                        patient_id=patient_id,
-                        window_start_unix=window_start_unix,
-                        last_event_end_unix=last_apnea_event_end_unix,
-                        sensor="radar",
+                if metrics is not None:
+                    metrics["predictions_total"].labels(patient_id, "rr").inc()
+
+            # Presence + bed-exit state machine. Every successful vitals
+            # window feeds `vitals.present` into the sensor-agnostic state
+            # machine. Transitions (OUT -> IN_BED, IN_BED -> BED_EXIT_ALERT,
+            # ...) publish to presence.events.<pid>. Brief gaps where
+            # run_once returns None (gross motion windows) don't step the
+            # machine, so the state stays put and the time-based thresholds
+            # absorb the gap rather than producing a false bed-exit.
+            if presence_sm is not None and presence_topic is not None:
+                ev = presence_sm.step(ts_unix=now, present=bool(vitals.present))
+                if ev is not None:
+                    bus.publish(
+                        presence_topic,
+                        {
+                            "ts_unix": now,
+                            "patient_id": patient_id,
+                            "state": ev.state,
+                            "prev_state": ev.prev_state,
+                            "since_unix": ev.since_unix,
+                            "sensor": "radar",
+                        },
+                        ts_ms=int(now * 1000),
                     )
                     if metrics is not None:
-                        metrics["predictions_total"].labels(patient_id, "apnea").inc()
+                        metrics["predictions_total"].labels(
+                            patient_id, "presence"
+                        ).inc()
+
+            # Apnea side-channel: runs on its own (longer) stride so the
+            # 10 s pause minimum is detectable. The apnea window is a
+            # separate _Window with `apnea_window_s` of history, fed by the
+            # same per-chirp push above. Events with absolute timestamps are
+            # deduped against last_apnea_event_end_unix so consecutive
+            # snapshots that re-observe the same pause don't double-publish.
+            if (
+                apnea_window is not None
+                and apnea_topic is not None
+                and (now - last_apnea_check) >= apnea_stride_s
+            ):
+                last_apnea_check = now
+                apnea_snapshot_frames = apnea_window.snapshot()
+                if apnea_snapshot_frames:
+                    window_start_unix = apnea_snapshot_frames[0].ts_unix
+                    events = apnea_run_once(
+                        apnea_window,
+                        config,
+                        expected_samples_per_chirp,
+                        min_duration_s=apnea_min_duration_s,
+                    )
+                    if events:
+                        last_apnea_event_end_unix = _publish_apnea_events(
+                            events=events,
+                            bus=bus,
+                            topic=apnea_topic,
+                            patient_id=patient_id,
+                            window_start_unix=window_start_unix,
+                            last_event_end_unix=last_apnea_event_end_unix,
+                            sensor="radar",
+                        )
+                        if metrics is not None:
+                            metrics["predictions_total"].labels(
+                                patient_id, "apnea"
+                            ).inc()
+        except Exception:
+            log.exception("publish failed for this stride; vitals dropped, continuing")
 
 
 # ---------------------------------------------------------------------------

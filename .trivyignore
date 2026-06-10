@@ -1,0 +1,10 @@
+# Trivy acknowledgment file. CI (.github/workflows/ci.yml, docker-build job)
+# blocks on HIGH/CRITICAL fixable CVEs in the container image.
+#
+# Workflow for accepting a finding instead of fixing it:
+#   1. Add the CVE ID on its own line (e.g. CVE-2026-12345).
+#   2. Above it, add a comment with: why it does not apply or cannot be
+#      fixed yet, who acknowledged it, the date, and a revisit date.
+#   3. Remove the entry as soon as a fixed base image / package lands.
+#
+# An empty file means: no accepted vulnerabilities.

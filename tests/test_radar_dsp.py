@@ -291,3 +291,54 @@ def test_extract_displacement_handles_3d_input() -> None:
     # Should track at least as well as the single-RX baseline, and
     # benefit from the MRC SNR gain.
     assert corr > 0.97
+
+
+def test_extract_displacement_warns_on_purely_real_input(caplog) -> None:
+    """Magnitude-only (all-zero imaginary) input invalidates DACM phase; the
+    chain must say so loudly instead of silently producing plausible numbers.
+    This is the guard against the USB TLV magnitude path ever reaching the
+    vitals DSP unnoticed."""
+    cfg = RadarConfig(samples_per_chirp=64)
+    rng = np.random.default_rng(0)
+    adc = rng.standard_normal((300, 64)).astype(np.complex128)  # imag all zero
+    with caplog.at_level("WARNING", logger="vifi.radar.dsp"):
+        extract_displacement(adc, cfg)
+    assert any(
+        "purely real" in rec.message and "DACM" in rec.message for rec in caplog.records
+    )
+
+
+def test_extract_displacement_no_warning_on_complex_iq(caplog) -> None:
+    cfg = RadarConfig()
+    adc, _ = synth_capture(cfg, duration_s=10.0, seed=0)
+    with caplog.at_level("WARNING", logger="vifi.radar.dsp"):
+        extract_displacement(adc, cfg)
+    assert not any("purely real" in rec.message for rec in caplog.records)
+
+
+def test_circle_fit_degenerate_returns_zero_radius_and_logs(caplog) -> None:
+    """All-identical IQ points make radius_sq <= 0; the fit must return
+    radius 0 AND leave a debug trace instead of failing silently."""
+    iq = np.zeros(16, dtype=np.complex128)
+    with caplog.at_level("DEBUG", logger="vifi.radar.dsp"):
+        _, radius = kasa_circle_fit(iq)
+    assert radius == 0.0
+    assert any("degenerate circle fit" in rec.message for rec in caplog.records)
+
+
+def test_extract_displacement_flags_degenerate_circle_fit() -> None:
+    """An all-zero cube yields a degenerate circle fit; DspInfo.circle_fit_ok
+    must surface that to downstream quality gating."""
+    cfg = RadarConfig(samples_per_chirp=64)
+    adc = np.zeros((300, 64), dtype=np.complex128)
+    _, info = extract_displacement(adc, cfg)
+    assert info.circle_fit_ok is False
+    assert info.circle_radius == 0.0
+
+
+def test_extract_displacement_circle_fit_ok_on_real_arc() -> None:
+    cfg = RadarConfig()
+    adc, _ = synth_capture(cfg, duration_s=10.0, hr_bpm=72, rr_bpm=15, seed=2)
+    _, info = extract_displacement(adc, cfg)
+    assert info.circle_fit_ok is True
+    assert info.circle_radius > 0.0

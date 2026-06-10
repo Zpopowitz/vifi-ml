@@ -203,6 +203,8 @@ def install_worker_metrics(default_port: int = 8001):
     (do an `if metrics is not None` guard).
 
     Port: VIFI_WORKER_METRICS_PORT env, else `default_port`.
+    Bind address: VIFI_METRICS_ADDR env, else 127.0.0.1 (localhost-only
+    by default; patient IDs appear as metric labels).
     """
     if not metrics_enabled():
         return None, None
@@ -263,9 +265,14 @@ def install_worker_metrics(default_port: int = 8001):
         ),
     }
     port = int(os.environ.get("VIFI_WORKER_METRICS_PORT", default_port))
+    # Fail-closed default: bind localhost only. Metric labels carry
+    # patient IDs, so exposing this on 0.0.0.0 lets any LAN client
+    # enumerate patients. Operators widen deliberately via
+    # VIFI_METRICS_ADDR (e.g. for a remote Prometheus scraper).
+    addr = os.environ.get("VIFI_METRICS_ADDR", "127.0.0.1")
     try:
-        start_http_server(port, registry=registry)
-        log.info("worker metrics: serving on :%d/metrics", port)
+        start_http_server(port, addr=addr, registry=registry)
+        log.info("worker metrics: serving on %s:%d/metrics", addr, port)
     except OSError as exc:
-        log.warning("worker metrics port %d already in use: %s", port, exc)
+        log.warning("worker metrics %s:%d unavailable: %s", addr, port, exc)
     return registry, metrics

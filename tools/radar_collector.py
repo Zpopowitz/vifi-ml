@@ -13,10 +13,18 @@ rolling window, runs ``radar.process``, and publishes
 know or care which sensor produced the vitals — that is the SP1
 sensor-agnostic bus contract.
 
-Two frame sources:
+Three frame sources:
 
-  --source usb     real IWRL6432BOOST over /dev/serial/by-id/usb-Texas_*
-                   (default; the production path)
+  --source ftdi    raw ADC IQ over the C232HM-DDHSL-0 USB-SPI cable
+                   (``radar.ftdi_spi.SpiFtdiReader``). THE PRODUCTION
+                   PATH for vitals: the DACM-based DSP needs complex IQ,
+                   and this is the only source that delivers it
+                   (docs/radar_spi_firmware/APPLIED_EDITS.md).
+
+  --source usb     IWRL6432BOOST TLV stream over the XDS110 data UART.
+                   Delivers post-FFT MAGNITUDE range profiles only (TLV
+                   302, no phase) -- unsuitable for HR/RR; retained for
+                   TLV debugging and presence-style diagnostics.
 
   --source synth   wraps ``radar.synth_capture`` to emit chirps at the
                    board's rate. Test-only -- never wired into any
@@ -25,7 +33,7 @@ Two frame sources:
 
 Per the project's "no fake numbers" rule (see feedback-no-synthetic-model
 memory): synth mode exists for integration tests only. It is NEVER the
-serving path. Production deploys always use --source usb.
+serving path. Production deploys always use --source ftdi.
 """
 
 from __future__ import annotations
@@ -169,6 +177,10 @@ class UsbFrameSource:
     -- the per-range-bin uint32 magnitude vector from the rangeproc HWA.
     Each range profile becomes one ``Chirp`` carrying real magnitudes
     packed into the real part of a complex array.
+
+    MAGNITUDE-ONLY: this stream carries no phase, so the DACM-based DSP
+    cannot extract HR/RR from it. Vitals deployments must use the FTDI
+    SPI source instead; main() logs a warning when this source is used.
 
     The Chirp abstraction is the bus contract symmetric with the SP1 CSI
     path; using it for processed range profiles (rather than raw ADC) is
@@ -458,18 +470,27 @@ def main() -> None:
     p.add_argument(
         "--source",
         choices=["usb", "ftdi", "synth"],
-        default="usb",
-        help="frame source: 'usb' for real IWRL6432BOOST TLV stream over "
-        "XDS110 UART (default), 'ftdi' for raw ADC over a C232HM-DDHSL-0 "
-        "USB-SPI cable to J2 (requires SPI_ADC_DATA_STREAMING=1 firmware "
-        "+ `adcLogging 2` sent over the UART first), or 'synth' for "
-        "radar.synth_capture (test-only; never in production)",
+        default="ftdi",
+        help="frame source: 'ftdi' for raw ADC IQ over a C232HM-DDHSL-0 "
+        "USB-SPI cable to J2 (default; the vitals production path; requires "
+        "SPI_ADC_DATA_STREAMING=1 firmware + `adcLogging 2` sent over the "
+        "UART first), 'usb' for the IWRL6432BOOST TLV stream over XDS110 "
+        "UART (MAGNITUDE-ONLY, unsuitable for HR, debug only), or 'synth' "
+        "for radar.synth_capture (test-only; never in production)",
     )
     p.add_argument(
         "--port",
         default=None,
         help="data UART path; defaults to VIFI_RADAR_PORT env or a "
         "by-id stub. Used only when --source=usb.",
+    )
+    p.add_argument(
+        "--ftdi-url",
+        default=os.environ.get("VIFI_RADAR_FTDI_URL", "ftdi://ftdi:232h/1"),
+        help="pyftdi URL of the FT232H SPI cable; used only when "
+        "--source=ftdi. Defaults to $VIFI_RADAR_FTDI_URL or "
+        "ftdi://ftdi:232h/1 (the first FT232H on the host -- the same "
+        "default the capture tooling uses).",
     )
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument(
@@ -544,12 +565,10 @@ def main() -> None:
     elif args.source == "ftdi":
         from radar.ftdi_spi import FtdiSpiConfig, SpiFtdiReader  # noqa: PLC0415
 
-        # FTDI URL: pick the first FT232H by default, or honor an env override.
-        ftdi_url = os.environ.get("VIFI_RADAR_FTDI_URL", "ftdi://ftdi:232h/1")
-        ftdi_cfg = FtdiSpiConfig(ftdi_url=ftdi_url)
+        ftdi_cfg = FtdiSpiConfig(ftdi_url=args.ftdi_url)
         log.info(
             "ftdi source: url=%s adc_bytes/frame=%d chirps/frame=%d",
-            ftdi_url,
+            args.ftdi_url,
             ftdi_cfg.adc_bytes_per_frame,
             ftdi_cfg.chirps_per_frame,
         )
@@ -563,6 +582,11 @@ def main() -> None:
                 "/dev/serial/by-id/usb-Texas_Instruments_*."
             )
         log.info("usb source: port=%s baud=%d", port, args.baud)
+        log.warning(
+            "usb TLV source delivers post-FFT MAGNITUDE range profiles "
+            "(no phase): unsuitable for HR/RR -- the DACM DSP needs "
+            "complex IQ. Use --source ftdi for the vitals production path."
+        )
         source = UsbFrameSource(port=port, baud=args.baud, config=config)
 
     publisher = _BusPublisher(args.patient_id) if args.bus else None

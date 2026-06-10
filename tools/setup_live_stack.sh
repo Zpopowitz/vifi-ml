@@ -146,11 +146,14 @@ sudo systemctl enable --now vifi-dashboard vifi-inference vifi-audit
 
 # ---- 5b. radar units (SP2, opt-in via --with-radar) ----
 # Without --with-radar a CSI-only bench is left exactly as-is. With it, the
-# two radar units land alongside; until the IWRL6432BOOST is plugged in
-# the collector will fail loudly with NotImplementedError / "port not
-# found" and Restart=always will keep retrying. That's expected and
-# harmless -- once the board appears at VIFI_RADAR_PORT, the collector
-# starts publishing frames automatically.
+# two radar units land alongside. The collector runs --source ftdi: raw ADC
+# complex IQ over the C232HM/FT232H SPI cable, the only source the DACM DSP
+# can extract HR from (needs `pip install pyftdi` in the Pi venv). Until the
+# cable is plugged in it fails loudly (pyftdi cannot open the FT232H) and
+# Restart=always keeps retrying -- expected, harmless. Once the cable
+# appears (default URL ftdi://ftdi:232h/1; override with
+# VIFI_RADAR_FTDI_URL in /etc/vifi/live.env), the collector starts
+# publishing IQ chirps automatically.
 SERVICES_TO_CHECK=(redis-server vifi-dashboard vifi-inference vifi-audit)
 if [[ "$WITH_RADAR" == 1 ]]; then
   echo "[install] radar systemd units (SP2) into /etc/systemd/system/"
@@ -199,8 +202,9 @@ if [[ "$CONVERGED" == 1 ]]; then
   echo "       Dashboard: http://$PI_HOSTNAME:8000"
   echo "       Operate it with: ./tools/live_stack.sh {status,restart,logs}"
   if [[ "$WITH_RADAR" == 1 ]]; then
-    echo "       Radar: plug the IWRL6432BOOST into USB, set VIFI_RADAR_PORT"
-    echo "              in /etc/vifi/live.env (the by-id path), then"
+    echo "       Radar: connect the C232HM SPI cable (FTDI raw-ADC IQ path;"
+    echo "              default VIFI_RADAR_FTDI_URL=ftdi://ftdi:232h/1 in"
+    echo "              /etc/vifi/live.env), then"
     echo "              sudo systemctl restart vifi-radar-collector"
     echo "       See docs/RADAR_STARTUP.md for the full board-day runbook."
   fi

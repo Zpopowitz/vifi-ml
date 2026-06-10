@@ -157,12 +157,20 @@ the dropdown to see predicted-vs-reference HR/RR update in real time.
 `/etc/vifi/live.env` (installed from `deploy/systemd/vifi-live.env.example`) is
 read by all four services via `EnvironmentFile`:
 
-| Variable          | Default                    | Purpose                                            |
-|-------------------|----------------------------|----------------------------------------------------|
-| `VIFI_BUS_URL`    | `redis://localhost:6379/0` | Redis the loggers + workers + dashboard share      |
-| `VIFI_PATIENT_ID` | `founder`                  | Namespaces every bus topic; matches `--subject-id` |
-| `VIFI_BUS_MAXLEN` | `120000`                   | Per-stream entry cap (~22 min of 90 Hz CSI)        |
-| `VIFI_AUTH_MODE`  | `none`                     | SP1 bench mode; SP7 flips to `api_key`             |
+| Variable                   | Default                    | Purpose                                            |
+|----------------------------|----------------------------|----------------------------------------------------|
+| `VIFI_BUS_URL`             | `redis://localhost:6379/0` | Redis the loggers + workers + dashboard share      |
+| `VIFI_PATIENT_ID`          | `founder`                  | Namespaces every bus topic; matches `--subject-id` |
+| `VIFI_BUS_MAXLEN`          | `120000`                   | Per-stream entry cap (~22 min of 90 Hz CSI)        |
+| `VIFI_AUTH_MODE`           | `none` (set explicitly)    | SP1 bench mode. The *code* default (unset) is `api_key`, fail-closed: an unconfigured boot refuses to start. SP7 flips this line to `api_key` + keys |
+| `VIFI_RADAR_FTDI_URL`      | `ftdi://ftdi:232h/1`       | FT232H device URL for the radar collector's `--source ftdi`; set only if more than one FTDI device is attached |
+| `VIFI_RADAR_FRAME_RATE_HZ` | `20`                       | Slow-time frame rate the radar DSP assumes (matches the solved SPI capture profile) |
+| `VIFI_METRICS_ADDR`        | `127.0.0.1`                | Worker Prometheus bind address; widen deliberately for a remote scraper (patient-id labels are otherwise LAN-readable) |
+
+`VIFI_REQUIRE_PSEUDO` also defaults to `true` in code: with no
+`VIFI_PSEUDO_SALT` and no explicit `VIFI_REQUIRE_PSEUDO=false`,
+pseudonymization raises instead of writing `pseudo-dev:<id>` to the
+audit log. Set one or the other explicitly on the Pi.
 
 After editing the file, `./tools/live_stack.sh restart` to apply.
 
@@ -172,6 +180,15 @@ shows real numbers or no numbers, never fabricated ones. The real model
 artifacts must be on the Pi before `vifi-inference` will start; sync them with
 `docs/STATUS.md` → "sync from laptop" (or set `VIFI_REAL_MODEL_DIR` if they
 live somewhere other than `models_real/`).
+
+**Radar collector source.** `vifi-radar-collector` runs `--source ftdi`:
+raw ADC complex IQ over the FT232H SPI cable, the only source the
+DACM-based DSP can extract HR from. `--source usb` (the XDS110 TLV
+stream) is magnitude-only, unsuitable for HR, and logs a loud warning at
+startup. `pyftdi` must be installed in the Pi venv (pinned in
+`requirements.txt` under the `capture` extra). While the units are
+installed but the cable is unplugged, the collector fails loudly and
+`Restart=always` retries: expected, harmless.
 
 ---
 
@@ -199,14 +216,21 @@ journalctl -u vifi-inference -n 80 --no-pager
 
 ## Production-hardening checklist (SP7)
 
-SP1 runs the bench in dev mode: `VIFI_AUTH_MODE=none`, Redis bound to
-`127.0.0.1` with no password, no TLS. That is acceptable while every client is
-on the Pi loopback and the dashboard is exposed only on the trusted LAN.
+SP1 runs the bench in dev mode: `/etc/vifi/live.env` sets
+`VIFI_AUTH_MODE=none` **explicitly**, Redis bound to `127.0.0.1` with no
+password, no TLS. That is acceptable while every client is on the Pi
+loopback and the dashboard is exposed only on the trusted LAN. The code
+defaults are fail-closed: with `VIFI_AUTH_MODE` unset the API refuses to
+boot (`api_key` mode, no keys configured), so bench mode is an explicit
+opt-out, never an accident of a missing env file.
 
 The hospital-grade path — every item below is **already implemented in the
 codebase**; SP7 only *enables* it:
 
-- [ ] `VIFI_AUTH_MODE=api_key` + `VIFI_API_KEYS` — dashboard + API require a key.
+- [ ] `VIFI_AUTH_MODE=api_key` + `VIFI_API_KEYS`: dashboard + API require a
+      key. File-based keys (`VIFI_API_KEYS_FILE`) need the `read:rooms`
+      scope for the dashboard's room dropdown (`/api/v1/rooms`); env-var
+      keys carry the wildcard scope and are unaffected.
 - [ ] `VIFI_REDIS_PASSWORD` — Redis `requirepass`; update `VIFI_BUS_URL`.
 - [ ] Front the dashboard with the compose `caddy` service for TLS termination.
 - [ ] `VIFI_AUDIT_ENCRYPTION_KEY` + `VIFI_AUDIT_CHAIN_KEY` — encrypted,

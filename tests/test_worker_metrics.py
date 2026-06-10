@@ -61,6 +61,52 @@ def test_install_worker_metrics_creates_expected_counters(monkeypatch):
     assert expected <= set(metrics)
 
 
+def test_worker_metrics_bind_localhost_by_default(monkeypatch):
+    """Fail-closed default: the metrics HTTP server binds 127.0.0.1
+    unless the operator widens it via VIFI_METRICS_ADDR. Patient IDs
+    are metric labels; 0.0.0.0 would let any LAN client enumerate
+    them."""
+    prometheus_client = pytest.importorskip("prometheus_client")
+    monkeypatch.setenv("VIFI_METRICS_ENABLED", "true")
+    monkeypatch.delenv("VIFI_METRICS_ADDR", raising=False)
+    monkeypatch.setenv("VIFI_WORKER_METRICS_PORT", "0")
+
+    calls: list[tuple[int, str]] = []
+
+    def _fake_start(port, addr="0.0.0.0", registry=None):
+        calls.append((port, addr))
+
+    monkeypatch.setattr(prometheus_client, "start_http_server", _fake_start)
+    if "observability" in sys.modules:
+        del sys.modules["observability"]
+    from observability import install_worker_metrics
+
+    registry, metrics = install_worker_metrics()
+    assert registry is not None and metrics is not None
+    assert calls == [(0, "127.0.0.1")]
+
+
+def test_worker_metrics_bind_addr_env_override(monkeypatch):
+    prometheus_client = pytest.importorskip("prometheus_client")
+    monkeypatch.setenv("VIFI_METRICS_ENABLED", "true")
+    monkeypatch.setenv("VIFI_METRICS_ADDR", "0.0.0.0")
+    monkeypatch.setenv("VIFI_WORKER_METRICS_PORT", "0")
+
+    calls: list[tuple[int, str]] = []
+
+    def _fake_start(port, addr="x", registry=None):
+        calls.append((port, addr))
+
+    monkeypatch.setattr(prometheus_client, "start_http_server", _fake_start)
+    if "observability" in sys.modules:
+        del sys.modules["observability"]
+    from observability import install_worker_metrics
+
+    _registry, metrics = install_worker_metrics()
+    assert metrics is not None
+    assert calls == [(0, "0.0.0.0")]
+
+
 # ---------------------------------------------------------------------------
 # inference_worker.loop with a metrics dict
 # ---------------------------------------------------------------------------

@@ -101,6 +101,43 @@ def test_publish_assigns_monotonic_ids_within_same_ms():
     assert _id_gt(b, a)
 
 
+def test_publish_seq_state_stays_bounded_over_many_timestamps():
+    """Long publishing must not grow per-timestamp bookkeeping without
+    bound (eval 2026-06-09 item 30). The intra-ms sequencer keeps O(1)
+    state: a counter for the newest ms plus a global publish counter."""
+    bus = InMemoryBus(max_messages_per_topic=10)
+    for i in range(5000):
+        bus.publish("t", {"n": i}, ts_ms=1_000_000 + i)
+    # The old implementation kept a ts_ms -> seq dict that would now
+    # hold 5000 entries. The replacement is three integers.
+    assert not hasattr(bus, "_seq_within_ms")
+    assert isinstance(bus._last_ts, int)
+    assert isinstance(bus._next_seq, int)
+    assert isinstance(bus._publish_count, int)
+
+
+def test_publish_ids_stay_unique_and_ordered_with_stale_timestamps():
+    """Out-of-order explicit ts_ms (or a wall-clock step backwards)
+    must still produce unique IDs, and a later publish into the same
+    past ms must sort after the messages already issued for that ms."""
+    bus = InMemoryBus()
+    ids = [
+        bus.publish("t", {"n": 0}, ts_ms=1000),
+        bus.publish("t", {"n": 1}, ts_ms=1000),
+        bus.publish("t", {"n": 2}, ts_ms=2000),
+        bus.publish("t", {"n": 3}, ts_ms=1000),  # stale ms, seen before
+        bus.publish("t", {"n": 4}, ts_ms=1500),  # stale ms, never seen
+        bus.publish("t", {"n": 5}, ts_ms=1000),  # stale again
+    ]
+    assert len(set(ids)) == len(ids)
+    # Later publishes into ms 1000 sort after the original two.
+    assert _id_gt(ids[3], ids[1])
+    assert _id_gt(ids[5], ids[3])
+    # The current-ms fast path is unaffected by the stale detour.
+    nxt = bus.publish("t", {"n": 6}, ts_ms=2000)
+    assert _id_gt(nxt, ids[2])
+
+
 def test_read_from_earliest_returns_history_in_order():
     bus = InMemoryBus()
     bus.publish("t", {"n": 1}, ts_ms=1000)

@@ -4,6 +4,13 @@ For each `audit-YYYY-MM-DDZ.jsonl` in the configured directory, replays
 the chain and reports any mismatch. Used in postmarket surveillance,
 release smoke tests, and (eventually) automated alerting.
 
+When the chain-state store (chain_state.sqlite, next to the JSONL files
+or at VIFI_AUDIT_CHAIN_STATE_DB) is present, each file's replayed tail
+digest + record count are cross-checked against the stored pointer,
+which detects trailing-line truncation that a pure replay cannot.
+Without the store, verification runs in replay-only mode with reduced
+guarantees and says so loudly.
+
 Exit code:
   0 — every file verifies OK or has no chain (e.g., chain disabled at write)
   1 — any file has a chain mismatch (tamper detected)
@@ -26,7 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from audit import verify_chain  # noqa: E402
+from audit import _resolve_chain_state_path, verify_chain  # noqa: E402
+from audit_chain_state import ChainStateStore, open_store  # noqa: E402
 
 log = logging.getLogger("vifi.audit_verify")
 
@@ -58,15 +66,30 @@ def main() -> int:
 
     if args.file is not None:
         files = [args.file]
+        audit_dir = args.file.parent
     else:
         if not args.audit_dir.exists():
             print(f"error: {args.audit_dir} does not exist", file=sys.stderr)
             return 2
         files = sorted(args.audit_dir.glob("audit-*.jsonl"))
+        audit_dir = args.audit_dir
 
+    store_path = _resolve_chain_state_path(audit_dir)
+    if store_path.exists():
+        with open_store(store_path) as store:
+            return _verify_files(files, store)
+    print(
+        f"WARN no chain-state store at {store_path}; verifying by replay only. "
+        "REDUCED GUARANTEES: trailing truncation of a day's log cannot be "
+        "detected without the store."
+    )
+    return _verify_files(files, None)
+
+
+def _verify_files(files: list[Path], store: ChainStateStore | None) -> int:
     failed = 0
     for f in files:
-        ok, msg = verify_chain(f)
+        ok, msg = verify_chain(f, store=store)
         if ok:
             print(f"OK   {f}: {msg}")
         else:

@@ -37,6 +37,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy.signal import detrend
+from scipy.signal.windows import hann
 
 from preprocess import _next_pow2_times_zeropad, _parabolic_interp, bandpass_filter
 
@@ -93,7 +94,9 @@ def _component_spectrum(sig: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndar
     x = bandpass_filter(detrend(np.asarray(sig, dtype=np.float64)), fs, *RESP_FILTER_HZ)
     n = len(x)
     n_fft = _next_pow2_times_zeropad(n)
-    spec = np.abs(np.fft.rfft(x * np.hanning(n), n=n_fft))
+    # Same symmetric Hann as preprocess.extract_features (np.hanning is
+    # numerically identical; one import keeps the two FFT paths aligned).
+    spec = np.abs(np.fft.rfft(x * hann(n), n=n_fft))
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / fs)
     return spec, freqs
 
@@ -130,7 +133,14 @@ def decompose(motion: np.ndarray, max_components: int) -> np.ndarray:
     active = centered[:, centered.std(axis=0) > 1e-9]
     if active.shape[1] < 2:
         return np.empty((motion.shape[0], 0), dtype=np.float64)
-    u, _, _ = np.linalg.svd(active, full_matrices=False)
+    try:
+        u, _, _ = np.linalg.svd(active, full_matrices=False)
+    except np.linalg.LinAlgError as e:
+        # Mirror multipath.subtract_top_components: rare LAPACK
+        # non-convergence degrades to "no components this window" (the
+        # tracker coasts) instead of crashing the inference worker.
+        log.warning("SVD non-convergence in decompose: %s", e)
+        return np.empty((motion.shape[0], 0), dtype=np.float64)
     return u[:, : min(max_components, u.shape[1])]
 
 
