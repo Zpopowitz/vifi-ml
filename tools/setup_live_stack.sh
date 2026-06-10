@@ -107,14 +107,28 @@ if [[ -f "$REDIS_CONF" ]] && grep -q 'vifi-live-stack' "$REDIS_CONF"; then
 else
   echo "[config]  appending the vifi-live-stack block to $REDIS_CONF"
   # Redis honours the last definition of each directive, so an appended
-  # block overrides the package defaults. Loopback-only bind + AOF on.
+  # block overrides the package defaults. Loopback-only bind, AOF OFF:
+  # this redis is TRANSPORT (streams trimmed by VIFI_BUS_MAXLEN), not
+  # storage. Durability lives in the fsync'd audit JSONL; AOF here only
+  # buys multi-GB write-ahead files, SD wear, multi-minute boot replays,
+  # and tail corruption on power cuts (2026-06-10 outage: 16-min boot
+  # replay + crash loop after a power-cycle truncated the AOF).
   sudo tee -a "$REDIS_CONF" >/dev/null <<'REDISCONF'
 
 # === vifi-live-stack (managed by tools/setup_live_stack.sh) ===
 bind 127.0.0.1 -::1
-appendonly yes
+appendonly no
 # === end vifi-live-stack ===
 REDISCONF
+  REDIS_CFG_CHANGED=1
+fi
+
+# Upgrade path: flip an existing managed block from the old AOF-on
+# posture (pre-2026-06-10) without touching anything else in the file.
+if grep -q 'vifi-live-stack' "$REDIS_CONF" && \
+   sed -n '/=== vifi-live-stack/,/=== end vifi-live-stack/p' "$REDIS_CONF" | grep -q '^appendonly yes'; then
+  echo "[config]  flipping managed block to appendonly no (transport posture)"
+  sudo sed -i '/=== vifi-live-stack/,/=== end vifi-live-stack/s/^appendonly yes/appendonly no/' "$REDIS_CONF"
   REDIS_CFG_CHANGED=1
 fi
 
