@@ -81,6 +81,9 @@ jobs:
         # exit 0.
         env:
           VIFI_AUDIT_CHAIN_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          # Pseudonymization is fail-closed by default; give CI a real
+          # salt so the smoke exercises the production HMAC path.
+          VIFI_PSEUDO_SALT: "ci-smoke-only-not-a-secret"
         run: |
           set -euo pipefail
           mkdir -p /tmp/vifi-audit-smoke

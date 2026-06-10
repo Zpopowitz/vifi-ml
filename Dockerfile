@@ -43,13 +43,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `upgrade` first: the digest-pinned base is frozen in time, so Debian
+# security fixes (e.g. libcap2/gnutls deb13u updates) never arrive
+# unless applied at build. The Trivy CI gate blocks on fixable
+# HIGH/CRITICAL CVEs, which keeps this honest.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         libgomp1 curl \
     && rm -rf /var/lib/apt/lists/* \
     # Pinned UID/GID (I112) for predictable file ownership on
     # bind-mounted volumes and across hosts.
     && groupadd --gid 10001 vifi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash vifi
+
+# The base image ships pip + jaraco.context with known CVEs in its
+# system site-packages (the builder-stage pip upgrade only covers the
+# builder, not this stage).
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.1" "jaraco.context>=6.1.0"
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
