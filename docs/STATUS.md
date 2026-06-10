@@ -41,6 +41,23 @@ longer defaults open), install `pyftdi` in the Pi venv (pinned in
 if more than one FTDI device is attached, and add `read:rooms` to any
 file-based dashboard API keys (wildcard env-var keys are unaffected).
 
+Bench-validated same day on real hardware: the FTDI collector streamed
+28 consecutive minutes at a flat 20 fps (full `(256, 3)` complex IQ
+cubes on the bus, live ADC, worker publishing physiological HR the
+whole time); the old few-minute SPI degradation did not reproduce.
+Software NRST is SOLVED: `pyocd reset --method hw` through the XDS110
+(CMSIS-DAP) is a proven reset equivalent (a second `adcLogging` after
+it does not crash), so reset-arm-start is now fully scriptable; see
+`docs/RADAR_STARTUP.md` section 5.5. RR truth labels were re-scored
+after fixing the third copy of the unguarded parabolic-shift bug in
+`tools/eval_rr.py`: tracker MAE is 1.04 brpm pooled over the 4 v2
+founder sessions (85% within +-2 brpm, 33% availability); the earlier
+0.50 figure is retired. Open follow-ups from the bench session: script
+the section-5.5 sequence into the radar collector unit lifecycle
+(ExecStartPre reset+arm, ExecStartPost sensorStart), and make the
+collector warn when `--bus` resolves to the in-memory bus (it silently
+published 200 frames to process-local memory during validation).
+
 2026-05-31. Radar truth pass: board has been running since 2026-05-26,
 SPI capture solved, three paired radar+H10 captures collected. Radar HR is
 data-bound (~10-11 bpm MAE, fix = dataset + learned selector); equal-weight

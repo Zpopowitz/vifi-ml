@@ -230,6 +230,37 @@ Verify:
 #   dashboard /health        200
 ```
 
+## 5.5. Bring up the sensor (software reset, arm, start)
+
+The collector service only LISTENS on the SPI bus; the sensor itself
+must be armed and started once per boot, in this order (bench-proven
+2026-06-09):
+
+```bash
+ssh pi
+# 1. Software NRST. The XDS110 exposes CMSIS-DAP, so pyocd toggles the
+#    hardware reset line; no physical button press, no jumper wires.
+#    Proven NRST-equivalent: a second `adcLogging` after this reset does
+#    NOT EDMA-double-alloc crash, which only a real reset allows.
+~/vifi-ml/.venv/bin/pyocd reset --method hw --target cortex_m
+sleep 3
+# 2. Arm (cfg + adcLogging 2, sensor stays stopped). Expect
+#    adcDataPerFrame=6144 in the response.
+cd ~/vifi-ml && .venv/bin/python tools/radar_kickstart_adc.py \
+    --cfg /home/zpopowitz/MotionDetect.cfg
+# 3. Make sure the collector is reading (it must be, BEFORE sensorStart,
+#    or the M4 blocks on the MCSPI transfer):
+systemctl is-active vifi-radar-collector
+# 4. Start chirping:
+.venv/bin/python tools/radar_kickstart_adc.py --sensor-start-only
+```
+
+`pyocd` installs with `pip install pyocd` into the venv (no sudo, no
+udev changes needed on the current Pi image). Endurance on this path:
+28 consecutive minutes at a flat 20 fps with zero degradation
+(2026-06-09 bench validation); the old "SPI degrades after a few
+minutes" failure did not reproduce on the FTDI collector.
+
 ## 6. Watch the bus fill
 
 In one terminal:
@@ -238,9 +269,10 @@ In one terminal:
 ssh pi 'watch -n 1 "for t in csi.raw.founder radar.raw.founder hr.predicted.founder rr.predicted.founder; do printf \"  %-30s xlen=%s\n\" \"\$t\" \"\$(redis-cli xlen \"\$t\")\"; done"'
 ```
 
-You should see `radar.raw.founder` climbing at the configured frame rate
-(~100 chirps/s) and `hr.predicted.founder` climbing every ~2 s as the
-worker emits predictions on its stride.
+You should see `radar.raw.founder` climbing at the SPI HR-profile frame
+rate (20 entries/s, one `(256, 3)` IQ cube per frame; the radar worker
+needs `VIFI_RADAR_FRAME_RATE_HZ=20` to match) and `hr.predicted.founder`
+climbing every ~3 s as the worker emits predictions on its stride.
 
 ## 7. Open the dashboard
 
