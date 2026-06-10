@@ -65,6 +65,10 @@ SP7_VARS=(
   VIFI_AUTH_MODE
   VIFI_API_KEYS
   VIFI_PSEUDO_SALT
+  # Must ship with the salt: a bench live.env carries an explicit
+  # VIFI_REQUIRE_PSEUDO=false opt-out that would otherwise survive the
+  # flip and fail open again if the salt ever went missing.
+  VIFI_REQUIRE_PSEUDO
   VIFI_AUDIT_ENCRYPTION_KEY
   VIFI_AUDIT_CHAIN_KEY
   VIFI_REDIS_PASSWORD
@@ -148,9 +152,16 @@ ENV_TARGET=/etc/vifi/live.env
 # Pre-flight: env file must exist (setup_live_stack.sh created it).
 [[ -f "\$ENV_TARGET" ]] || { echo "ERROR: \$ENV_TARGET not found; run ./tools/setup_live_stack.sh first." >&2; exit 1; }
 
+# Authenticate sudo up front and prove the env file is readable BEFORE
+# any pipeline that could otherwise truncate it. (A swallowed sudo
+# failure here once produced an empty filter output; only the later cp
+# also failing prevented a gutted live.env.)
+sudo test -r "\$ENV_TARGET"
+
 # Replace any existing VIFI_* security lines in the env file, then append.
+# grep exit 1 (no non-security lines) is legal; exit 2+ is a real error.
 TMP=\$(mktemp)
-sudo grep -Ev '^(VIFI_AUTH_MODE|VIFI_API_KEYS|VIFI_PSEUDO_SALT|VIFI_AUDIT_ENCRYPTION_KEY|VIFI_AUDIT_CHAIN_KEY|VIFI_REDIS_PASSWORD|VIFI_BUS_URL)=' "\$ENV_TARGET" > "\$TMP" || true
+sudo grep -Ev '^(VIFI_AUTH_MODE|VIFI_API_KEYS|VIFI_PSEUDO_SALT|VIFI_REQUIRE_PSEUDO|VIFI_AUDIT_ENCRYPTION_KEY|VIFI_AUDIT_CHAIN_KEY|VIFI_REDIS_PASSWORD|VIFI_BUS_URL)=' "\$ENV_TARGET" > "\$TMP" || [[ \$? -eq 1 ]]
 # Append SP7 block.
 printf '%s' "\$SP7_BLOB" >> "\$TMP"
 # Rebuild VIFI_BUS_URL with embedded Redis password if we have one.
