@@ -666,7 +666,9 @@ def board_serial() -> str:
         "g = glob.glob('/dev/serial/by-id/usb-Texas_Instruments_XDS110*-if00')\n"
         "ser = ''\n"
         "if g:\n"
-        "    m = re.search(r'_([0-9A-Za-z]{6,})-if00$', g[0])\n"
+        # XDS110 by-id link ends ..._CMSIS-DAP_<serial>-if00; the serial is short
+        # (e.g. RI32 on the bench board), so match 3+ alnum anchored to -if00.
+        "    m = re.search(r'_([0-9A-Za-z]{3,})-if00$', g[0])\n"
         "    ser = m.group(1) if m else ''\n"
         "if not ser:\n"
         "    p = subprocess.run(['.venv/bin/pyocd', 'list'],"
