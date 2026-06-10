@@ -15,10 +15,11 @@ peak-energy range bin per frame, and compare slots across frames:
     shows up as a systematic offset; thermal noise averages out)
   - magnitude coherence |corr| between slot series
 
-Verdict heuristics:
-  TDM        : inter-burst phase offset >> intra-burst offset (>= 3x) and
-               both offsets stable (circular std < 0.5 rad)
-  DUPLICATES : all slot pairs within noise of each other
+Verdict heuristics (layout-agnostic: slots are clustered by phase, no
+burst-order assumption):
+  TDM        : two stable phase clusters separated by > 10 deg
+               (bench 2026-06-10: ABAB ordering, 108 deg, jitter 0.3 deg)
+  DUPLICATES : all slots within noise of slot 0
   INCONCLUSIVE otherwise (move the corner reflector / subject, recapture)
 
 Usage (after a keep-chirps run has filled the topic):
@@ -128,23 +129,33 @@ def main() -> None:
             f"circ_std={d['circ_std_rad']:.3f} rad  |mag_corr|={d['mag_corr']:.3f}"
         )
 
-    # Burst layout is [b0c0, b0c1, b1c0, b1c1]: slot 1 shares slot 0's burst
-    # (same TX under TDM); slots 2 and 3 are the other burst.
-    intra = abs(r["rel"].get(1, {}).get("mean_phase_deg", 0.0))
-    inter = max(
-        abs(r["rel"].get(2, {}).get("mean_phase_deg", 0.0)),
-        abs(r["rel"].get(3, {}).get("mean_phase_deg", 0.0)),
-    )
+    # Layout-agnostic clustering: group slots by mean phase offset (slot 0
+    # anchors at 0 deg). Two well-separated stable clusters = two TX phase
+    # centers, whatever the firmware's chirp ordering ([A,B,A,B] on the
+    # bench 2026-06-10, not the [A,A,B,B] a burst reading would suggest).
+    offsets = {0: 0.0}
+    for s, d in r["rel"].items():
+        offsets[s] = d["mean_phase_deg"]
     stds = [d["circ_std_rad"] for d in r["rel"].values()]
     stable = all(s < 0.5 for s in stds)
-    if stable and inter >= 3.0 * max(intra, 1.0) and inter > 5.0:
+
+    anchor = [s for s, o in offsets.items() if abs(o) < 2.0]
+    other = {s: o for s, o in offsets.items() if abs(o) >= 2.0}
+    spread_other = max(other.values()) - min(other.values()) if len(other) > 1 else 0.0
+    separation = min(abs(o) for o in other.values()) if other else 0.0
+
+    if stable and other and separation > 10.0 and spread_other < 5.0:
+        tx_map = {s: ("A" if s in anchor else "B") for s in sorted(offsets)}
         print(
-            "\nVERDICT: TDM. Inter-burst phase offset is systematic and large "
-            "vs intra-burst: the bursts alternate TX. Per-frame averaging "
-            "destroys a 6-virtual-antenna azimuth array; capture datasets "
-            "with --keep-chirps."
+            f"\nVERDICT: TDM. Two stable phase centers "
+            f"{separation:.0f} deg apart: slots cluster as "
+            f"{''.join(tx_map[s] for s in sorted(tx_map))} (TX per slot). "
+            "Per-frame averaging mixes the two centers (vector loss "
+            f"{(1 - abs(np.cos(np.radians(separation / 2)))) * 100:.0f}% of "
+            "coherent amplitude) AND destroys the 6-virtual-antenna azimuth "
+            "array. Capture datasets with --keep-chirps."
         )
-    elif stable and inter < 2.0 and intra < 2.0:
+    elif stable and not other:
         print(
             "\nVERDICT: DUPLICATES. All slots statistically identical: "
             "averaging is lossless, no angle information present."
