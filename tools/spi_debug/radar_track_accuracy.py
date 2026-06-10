@@ -37,6 +37,7 @@ from radar.hr_selector import (
     candidate_feature_matrix,
     viterbi_decode,
 )
+from radar.manifest import dataset_digest
 from tools.spi_debug.radar_train_hr_selector import (
     LABEL_TOL_BPM,
     _windows,
@@ -144,6 +145,9 @@ def main(argv: list[str] | None = None) -> None:
         "mae_learned": round(_mae(err["learned"]), 2),
         "mae_learned_viterbi": round(_mae(err["learned+viterbi"]), 2),
         "mae_oracle": round(_mae(err["oracle"]), 2),
+        # Reproducibility: pin the exact dataset state these numbers scored
+        # (captures are gitignored, so git cannot). See radar.manifest.
+        "dataset_digest": dataset_digest(caps),
     }
     print(
         f"\n{'date':>12} {'subj':>4} {'win':>4} {'tallest':>8} {'learned':>8} {'+vit':>6} {'oracle':>7}"

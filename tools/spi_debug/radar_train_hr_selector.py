@@ -27,6 +27,7 @@ from radar.hr_selector import (
     candidate_feature_matrix,
     viterbi_decode,
 )
+from radar.manifest import dataset_digest
 from radar.windows import iter_windows
 
 FS = 20.0
@@ -150,6 +151,8 @@ def main(argv: list[str] | None = None) -> None:
         "the oracle gap; it is NOT a generalization result. The multi-subject "
         "dataset is the gate (docs/RADAR_DATASET_PROTOCOL.md)."
     )
+    # Reproducibility stamp: the exact dataset state these numbers scored.
+    print(f"dataset_digest={dataset_digest(caps)}")
 
 
 if __name__ == "__main__":

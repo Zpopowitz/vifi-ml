@@ -47,6 +47,7 @@ from preprocess import (  # noqa: E402
     build_envelope_from_amps,
     extract_features,
 )
+from radar.manifest import files_digest  # noqa: E402
 from tools.first_capture_report import (  # noqa: E402
     align_csi_to_unix,
     interpolate_hr,
@@ -314,6 +315,9 @@ def main() -> None:
         "split": "session_holdout",
         "train_sessions": [str(args.pair[i][0]) for i in train_idx],
         "val_sessions": [str(args.pair[i][0]) for i in val_idx],
+        # Reproducibility: digest of the exact capture + HR-log files trained
+        # on, so a served model can be traced back to its dataset state.
+        "dataset_digest": files_digest([str(p) for pair in args.pair for p in pair]),
         "n_train": int(X_tr.shape[0]),
         "n_val": int(X_va.shape[0]),
         # Multipath A1 hyperparams (PCA subspace decomposition).
