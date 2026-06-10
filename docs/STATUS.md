@@ -10,6 +10,37 @@ catches), see `docs/AUDIT_PLAN.md`.
 
 ## Last updated
 
+2026-06-09. Eval-findings hardening pass (branch
+`fix/eval-findings-2026-06-09`; all 33 findings in
+`docs/eval/2026-06-09-codebase-evaluation.md`). Security defaults are now
+fail-closed: `VIFI_AUTH_MODE` defaults to `api_key` (an unconfigured boot
+refuses to start; dev must explicitly set `VIFI_AUTH_MODE=none`),
+`VIFI_REQUIRE_PSEUDO` defaults to `true` (no salt + no explicit opt-out
+means pseudonymize raises instead of writing `pseudo-dev:<id>`),
+`VIFI_EXPOSE_DOCS` defaults to `false` (and `/docs` / `/redoc` /
+`/openapi.json` require a key in `api_key` mode even when enabled),
+`/api/v1/rooms` requires the `read:rooms` scope, and worker Prometheus
+metrics bind `127.0.0.1` (widen deliberately via `VIFI_METRICS_ADDR`).
+Dashboard static assets (css/js/fonts) bypass auth so the login overlay
+renders in `api_key` mode. The radar collector unit now runs `--source
+ftdi` (complex IQ over the FT232H SPI cable; `--source usb` is
+magnitude-only and unsuitable for HR, the collector warns loudly at
+startup). `tools/audit_verify.py` auto-loads `chain_state.sqlite` and
+FAILS on trailing truncation. `tools/retrain_on_real.py` holds out whole
+sessions for validation and refuses single-session runs; the quantile-CI
+trainer (`tools/train_quantile_models.py`) fits its mean + quantile
+models with an eval set + early stopping (50 rounds). New
+`tools/recompute_rr_labels.py` regenerates RR labels from raw v2 force
+data. `/health` reports `degraded` (not `ok`) until the model bundle
+loads.
+
+Deploy follow-ups on the Pi when this branch ships: set `VIFI_AUTH_MODE`
+and `VIFI_REQUIRE_PSEUDO` explicitly in `/etc/vifi/live.env` (the code no
+longer defaults open), install `pyftdi` in the Pi venv (pinned in
+`requirements.txt` under the `capture` extra), set `VIFI_RADAR_FTDI_URL`
+if more than one FTDI device is attached, and add `read:rooms` to any
+file-based dashboard API keys (wildcard env-var keys are unaffected).
+
 2026-05-31. Radar truth pass: board has been running since 2026-05-26,
 SPI capture solved, three paired radar+H10 captures collected. Radar HR is
 data-bound (~10-11 bpm MAE, fix = dataset + learned selector); equal-weight
@@ -257,8 +288,9 @@ The inference worker serves the **real model only** — no synthetic
 fallback. Sync the trained artifacts to the Pi (see "sync from laptop"
 above) before bringing the stack up, or `vifi-inference` will not start.
 
-To also install the SP2 radar units (the IWRL6432BOOST plumbing,
-disabled until the board is plugged in and `VIFI_RADAR_PORT` is set):
+To also install the SP2 radar units (the IWRL6432BOOST plumbing; the
+collector runs `--source ftdi` and crash-loops harmlessly until the
+FT232H SPI cable is plugged in and `pyftdi` is in the Pi venv):
 
 ```bash
 ./tools/setup_live_stack.sh --with-radar
@@ -385,6 +417,10 @@ python tools/retrain_on_real.py \
 ```
 
 Writes to `models_real/<sha>/` and points `models_real/current` at it.
+Needs at least 2 `--pair` sessions: validation holds out whole sessions
+(seeded pick, or pin with `--val-session IDX`), and `metadata.json`
+records `split` / `train_sessions` / `val_sessions`. Single-session runs
+are refused (a window-level split leaks val content into train).
 
 ```bash
 python -m tools.model_swap list models_real
@@ -404,6 +440,11 @@ python -m tools.audit_health --patient-id default --quiet  # for cron
 
 # Audit retention sweep (HIPAA 6-year default, 2200 days)
 python -m tools.audit_retention --max-age-days 2200
+
+# Audit chain verify. Auto-loads the chain-state store
+# (chain_state.sqlite) and FAILS on trailing truncation; without the
+# store it verifies by replay only and warns about reduced guarantees.
+python tools/audit_verify.py
 ```
 
 ### Prometheus metrics (when `VIFI_METRICS_ENABLED=true`)
@@ -412,6 +453,10 @@ python -m tools.audit_retention --max-age-days 2200
 curl http://localhost:8000/metrics       # API request metrics
 curl http://localhost:8001/metrics       # inference_worker pipeline metrics
 ```
+
+The worker metrics server binds `127.0.0.1` by default (patient-id
+labels are not LAN-readable). Set `VIFI_METRICS_ADDR` to widen the bind
+deliberately for a remote Prometheus scraper.
 
 Worker metrics include `vifi_inference_packets_total`,
 `vifi_inference_predictions_total{kind=hr|rr}`,

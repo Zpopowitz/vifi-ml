@@ -46,6 +46,20 @@ synthetic data and you don't want it polluting real captures.
 If `vifi-simulator` shows up, run `docker compose stop simulator
 && docker compose rm -f simulator`.
 
+Compose never hits the fail-closed code defaults:
+`docker-compose.yml` passes explicit dev fallbacks
+(`${VIFI_AUTH_MODE:-none}`, `${VIFI_REQUIRE_PSEUDO:-false}`) when your
+`.env` does not define them, and a `.env` written by
+`./tools/setup_keys.sh` defines both (api_key mode with a generated
+key + salt). Either way the stack boots; nothing extra to configure
+here. The code defaults are fail-closed (`api_key` auth,
+pseudonymization required), so if you ever run pieces *outside*
+compose for a dev session: `api.py` needs `VIFI_AUTH_MODE=none` (or a
+full api_key config) or it refuses to start, and anything that writes
+audit entries (the audit subscriber, the API) needs
+`VIFI_REQUIRE_PSEUDO=false` or a real `VIFI_PSEUDO_SALT`, otherwise
+pseudonymization raises.
+
 ### 2. PowerShell — strap on hardware and start loggers
 
 Strap on the **Polar H10** (lick electrodes first), and the **Vernier
