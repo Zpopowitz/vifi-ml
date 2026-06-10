@@ -333,10 +333,19 @@ profiles exist in `deploy/radar/MotionDetect_{25,30,40,50}fps.cfg` (framePeriodi
 40/33/25/20 ms; identical to the 20 fps base except that one token, locked by
 `tests/test_radar_cfg_variants.py`).
 
-Procedure (binary-search 20 -> 50): for each candidate, NRST + arm + collector +
-sensorStart with the proven runner, watch per-minute fps for 5 min; the winner
-gets a 20-minute keep-chirps soak (worst case: 4x publish rate). Verify
-`VIFI_BUS_MAXLEN` headroom at the chosen rate.
+Procedure -- one command per candidate (`tools/fps_soak.py` does reset + push
+cfg + radar-only stream + per-minute fps verdict + restore the 20 fps base):
+
+```bash
+.venv/bin/python tools/fps_soak.py 50          # 5-min search, highest first
+.venv/bin/python tools/fps_soak.py 40          # step down until one HOLDS
+.venv/bin/python tools/fps_soak.py 40 --soak   # 20-min soak the winner (keep-chirps worst case)
+```
+
+A candidate HOLDS if every minute stays >= 90% of nominal. The harness always
+restores the frozen 20 fps cfg on exit (capture.py's preflight refuses a stale
+rate anyway). Verify `VIFI_BUS_MAXLEN` headroom at the chosen rate (PR #116 set
+12000).
 
 **Result: PENDING (board not on the bench at v3 authoring).** Fill on completion:
 

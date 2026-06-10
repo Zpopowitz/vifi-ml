@@ -513,8 +513,8 @@ Run on the dev box (the dataset master; the Pi is a source, not the vault).
 One-time: pick a destination and put the passphrase in your password manager.
 
 ```bash
-export RESTIC_REPOSITORY="b2:vifi-backup:dataset"   # or s3:/rclone:gdrive:...
-export RESTIC_PASSWORD_FILE="$HOME/.config/vifi/restic.pass"  # NOT in the repo
+# fill in deploy/backup.env.example -> ~/.config/vifi/backup.env, then:
+source ~/.config/vifi/backup.env         # RESTIC_REPOSITORY + key + passphrase file
 ./tools/backup_dataset.sh init           # one-time: create the repo
 ./tools/backup_dataset.sh backup         # snapshot data/ + models_real/ (nightly)
 ./tools/backup_dataset.sh restore-test   # restore one capture + hash-compare

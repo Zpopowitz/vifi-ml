@@ -75,15 +75,20 @@ so a future "one more capture" is an ask, not a re-recruitment.
 - **recontact_ok** + **channel**: may we ask again, and how (email/phone/...).
   The channel VALUE (the actual address) is PII and lives in the off-repo link,
   not here -- this column records only that a channel exists.
-- **vault**: sealed-vault membership (WP4). Recommended cadence N=4, decided at
-  recruitment, never trained on, evaluated only at pre-declared milestones.
+- **vault**: sealed-vault membership (WP4). **Default cadence N=4: subjects 4,
+  8, 12 are vault-sealed** at recruitment, never trained on, evaluated only at
+  pre-declared milestones (first: the 10-subject LOSO report). The founder may
+  override per subject, but the rule is decided BEFORE any data is seen.
 
 | # | subject_id | consent_version | publish_ok | recontact_ok | channel | vault | notes |
 |---|---|---|---|---|---|---|---|
-| 1 | founder | (fill) | (fill) | yes | (off-repo) | no | self |
-| 2 | | | | | | | |
-| 3 | | | | | | | |
-| 4 | | | | | | tentative N=4 | |
+| 1 | founder | v1 | (fill) | yes | (off-repo) | no | self |
+| 2 | | | | | | no | |
+| 3 | | | | | | no | |
+| 4 | | | | | | **VAULT** | sealed (N=4) |
+| ... | | | | | | | |
+| 8 | | | | | | **VAULT** | sealed (N=4) |
+| 12 | | | | | | **VAULT** | sealed (N=4) |
 
 ## Gate log (after ~10-12 subjects)
 
