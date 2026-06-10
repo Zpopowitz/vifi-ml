@@ -23,6 +23,11 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # The message bus extra (Redis Streams) is optional in requirements.txt;
 # install it explicitly here so the API + workers can talk to Redis.
 RUN pip install --no-cache-dir --prefix=/install "redis==5.0.8"
+# Patch known-vulnerable build-chain packages that land in /install as
+# transitive deps (jaraco.context CVE-2026-23949, wheel CVE-2026-24049);
+# the Trivy CI gate blocks on them.
+RUN pip install --no-cache-dir --prefix=/install --upgrade \
+        "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 COPY data_gen.py preprocess.py train.py ./
 # train.py + preprocess.py now import from these too — must be present
@@ -56,10 +61,11 @@ RUN apt-get update && apt-get upgrade -y \
     && groupadd --gid 10001 vifi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash vifi
 
-# The base image ships pip + jaraco.context with known CVEs in its
-# system site-packages (the builder-stage pip upgrade only covers the
-# builder, not this stage).
-RUN python -m pip install --no-cache-dir --upgrade "pip>=26.1" "jaraco.context>=6.1.0"
+# The base image ships pip + jaraco.context + wheel with known CVEs in
+# its system site-packages (the builder-stage pip upgrade only covers
+# the builder, not this stage).
+RUN python -m pip install --no-cache-dir --upgrade \
+        "pip>=26.1" "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
