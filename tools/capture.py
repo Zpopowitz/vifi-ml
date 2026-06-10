@@ -479,7 +479,14 @@ def dump_and_pull(out: Path, rr: bool, expect_hr: bool = True) -> dict:
     if expect_hr and rr and scp_pull(f"{PI_TMP}/rr_pi.csv", out / "rr_log.csv"):
         scp_pull(f"{PI_TMP}/rr_pi.csv.meta.json", out / "rr_log.csv.meta.json")
         n_rr = max(0, sum(1 for _ in (out / "rr_log.csv").open()) - 1)
-    return {"n_rr": n_rr}
+    # Raw ECG (WP2): additive, best-effort -- a strap that refused PMD streaming
+    # simply leaves no file. Never fail the capture on a missing ECG.
+    n_ecg = 0
+    if expect_hr and scp_pull(f"{PI_TMP}/hr_ecg.csv", out / "hr_ecg.csv"):
+        scp_pull(f"{PI_TMP}/hr_ecg.csv.meta.json", out / "hr_ecg.csv.meta.json")
+        n_ecg = max(0, sum(1 for _ in (out / "hr_ecg.csv").open()) - 1)
+        log(f"  ECG: pulled {n_ecg} samples")
+    return {"n_rr": n_rr, "n_ecg": n_ecg}
 
 
 # --------------------------------------------------------------------------- #
@@ -752,6 +759,7 @@ def stamp(
     n_hr: int,
     ver: dict,
     *,
+    n_ecg: int = 0,
     clock: tuple[float | None, bool] = (None, False),
     events: list[dict] | None = None,
     learn: dict | None = None,
@@ -794,6 +802,7 @@ def stamp(
         "body": body,
         "h10_rows": n_hr,
         "rr_rows": n_rr,
+        "ecg_rows": n_ecg,  # raw PMD ECG samples (WP2; 0 = HR-only / absence)
         # WP3 capture-hardening provenance.
         "dev_dirty": dev_dirty,  # True = orchestrator tree had uncommitted edits
         "board_serial": board_ser,  # XDS110 probe serial (board-interleaving)
@@ -1033,6 +1042,7 @@ def main() -> int:
                 stats["n_rr"],
                 n_hr,
                 ver,
+                n_ecg=stats.get("n_ecg", 0),
                 clock=clock,
                 events=events,
                 learn=learn,

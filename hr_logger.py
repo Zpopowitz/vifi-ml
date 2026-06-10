@@ -78,6 +78,78 @@ HR_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
 # for the beat-detection HR pipeline.
 CSV_SCHEMA_VERSION = 2
 
+# --- Polar Measurement Data (PMD) service: raw 130 Hz ECG (WP2) -------------
+# The H10 exposes a proprietary PMD service alongside the standard HR
+# characteristic. Subscribing gives the raw single-lead ECG waveform (the
+# label that lets the radar Stage-2 morphology model reconstruct beats), not
+# just the derived HR/RR the 0x2A37 characteristic carries.
+PMD_CONTROL_UUID = "fb005c81-02e7-f387-1cad-8acd2d8df0c8"
+PMD_DATA_UUID = "fb005c82-02e7-f387-1cad-8acd2d8df0c8"
+ECG_SAMPLE_RATE_HZ = 130  # H10 ECG fixed rate
+ECG_MEASUREMENT_TYPE = 0x00  # PMD type 0 = ECG
+# PMD control-point "start ECG" request: start(0x02) ECG(0x00),
+# sample-rate setting 130 Hz (0x00 0x01 | 0x82 0x00), resolution 14-bit
+# (0x01 0x01 | 0x0E 0x00). Bytes per the Polar BLE SDK PMD spec.
+ECG_START_COMMAND = bytes([0x02, 0x00, 0x00, 0x01, 0x82, 0x00, 0x01, 0x01, 0x0E, 0x00])
+# hr_ecg.csv schema. The host receive time anchors each frame to the wall clock
+# the radar shares; sample_index is the exact monotonic position in the 130 Hz
+# stream, so offline alignment survives BLE batching/jitter.
+ECG_CSV_SCHEMA_VERSION = 1
+
+
+def parse_pmd_ecg(data: bytes) -> tuple[int | None, list[int]]:
+    """Parse one PMD ECG data frame -> (timestamp_ns, samples_uv).
+
+    Frame layout (Polar PMD spec): ``measurement_type(1)`` |
+    ``timestamp(8, uint64 ns, last sample in frame)`` | ``frame_type(1)`` |
+    payload. For ECG the only frame type is 0: the payload is consecutive
+    signed 24-bit little-endian samples in microvolts.
+
+    Returns ``(None, [])`` for a non-ECG frame, an unknown frame type, or a
+    truncated header, so a transient BLE corruption can never raise inside the
+    notification callback and drop the capture.
+    """
+    if len(data) < 10 or data[0] != ECG_MEASUREMENT_TYPE:
+        return None, []
+    timestamp_ns = int.from_bytes(data[1:9], "little")
+    frame_type = data[9]
+    if frame_type != 0:
+        return timestamp_ns, []  # only raw int24 frames are defined for ECG
+    samples: list[int] = []
+    i = 10
+    while i + 3 <= len(data):
+        samples.append(int.from_bytes(data[i : i + 3], "little", signed=True))
+        i += 3
+    return timestamp_ns, samples
+
+
+def _write_ecg_meta_sidecar(
+    csv_path: Path, ble_address: str, started_at_utc: str
+) -> None:
+    """Write hr_ecg.csv.meta.json alongside the ECG CSV."""
+    meta = {
+        "schema_version": ECG_CSV_SCHEMA_VERSION,
+        "device": "Polar H10",
+        "ble_address": ble_address,
+        "stream": "PMD ECG",
+        "sample_rate_hz": ECG_SAMPLE_RATE_HZ,
+        "resolution_bits": 14,
+        "units": "microvolts",
+        "columns": ["host_recv_unix", "sample_index", "ecg_uv"],
+        "started_at_utc": started_at_utc,
+        "notes": (
+            "Raw single-lead ECG from the H10 PMD service at a fixed "
+            f"{ECG_SAMPLE_RATE_HZ} Hz. host_recv_unix is the wall-clock arrival "
+            "time of the frame this sample came in (shared with the radar/RR "
+            "clock); sample_index is the monotonic position in the stream. "
+            "Reconstruct exact sample times as anchor + sample_index / "
+            f"{ECG_SAMPLE_RATE_HZ}, NOT from host_recv_unix (BLE batches frames, "
+            "so many samples share one arrival time)."
+        ),
+    }
+    sidecar = Path(str(csv_path) + ".meta.json")
+    sidecar.write_text(json.dumps(meta, indent=2))
+
 
 def parse_hr_measurement(data: bytes) -> tuple[int, list[float]]:
     """Parse the BLE Heart Rate Measurement characteristic (0x2A37).
@@ -155,6 +227,44 @@ async def scan() -> None:
         print(f"  {d.address}  {d.name or '(unnamed)'}{marker}")
 
 
+class _EcgSink:
+    """Records the raw PMD ECG stream to hr_ecg.csv (one row per sample).
+
+    ECG is ADDITIVE: a strap or firmware that refuses PMD streaming must never
+    abort the HR capture, so a start failure flips ``failed`` and the run
+    continues HR-only. ``index`` is the monotonic sample counter that keeps
+    offline radar/ECG alignment exact despite BLE frame batching.
+    """
+
+    def __init__(self, out_path: Path, address: str, started_at_utc: str) -> None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        self._f = open(out_path, "w", newline="")
+        self._writer = csv.writer(self._f)
+        self._writer.writerow(["host_recv_unix", "sample_index", "ecg_uv"])
+        _write_ecg_meta_sidecar(out_path, address, started_at_utc)
+        self.index = 0
+        self.rows = 0
+        self.started = False
+        self.failed = False
+
+    def on_ecg(self, _characteristic, data: bytearray) -> None:
+        _ts_ns, samples = parse_pmd_ecg(bytes(data))
+        if not samples:
+            return
+        t = time.time()
+        for uv in samples:
+            self._writer.writerow([f"{t:.3f}", self.index, uv])
+            self.index += 1
+        self.rows += len(samples)
+        self._f.flush()
+
+    def close(self) -> None:
+        try:
+            self._f.close()
+        except Exception:
+            pass
+
+
 async def log(
     address: str,
     duration_s: float,
@@ -163,6 +273,7 @@ async def log(
     reconnect_max: int = 20,
     reconnect_wait_s: float = 1.5,
     reconnect_max_wait_s: float = 30.0,
+    ecg_out: Optional[Path] = None,
 ) -> int:
     """Connect to the H10 and log HR readings to CSV for `duration_s` of
     wall-clock time. If Windows BLE drops the connection mid-stream
@@ -183,6 +294,7 @@ async def log(
         reconnect_max,
         reconnect_wait_s,
         reconnect_max_wait_s,
+        ecg_out,
     )
 
 
@@ -194,6 +306,7 @@ async def _log_impl(
     reconnect_max: int,
     reconnect_wait_s: float,
     reconnect_max_wait_s: float = 30.0,
+    ecg_out: Optional[Path] = None,
 ) -> int:
     """Body of log(); pulled out so _require_bleak runs before any
     closures capture the (possibly None) Bleak symbols.
@@ -217,6 +330,9 @@ async def _log_impl(
         writer = csv.writer(f)
         writer.writerow(["timestamp_unix", "hr_bpm", "rr_interval_ms"])
         _write_hr_meta_sidecar(out_path, address, started_at_utc)
+        ecg = (
+            _EcgSink(ecg_out, address, started_at_utc) if ecg_out is not None else None
+        )
 
         def on_hr(_characteristic, data: bytearray) -> None:
             nonlocal total_count, beat_count
@@ -257,6 +373,27 @@ async def _log_impl(
                 async with BleakClient(address, timeout=20.0) as client:
                     print(f"Connected. Logging HR to {out_path}")
                     await client.start_notify(HR_MEASUREMENT_UUID, on_hr)
+                    if ecg is not None and not ecg.failed:
+                        # Additive: start the PMD raw-ECG stream on the same
+                        # client. Re-issued on every (re)connect.
+                        try:
+                            await client.write_gatt_char(
+                                PMD_CONTROL_UUID, ECG_START_COMMAND, response=True
+                            )
+                            await client.start_notify(PMD_DATA_UUID, ecg.on_ecg)
+                            if not ecg.started:
+                                print(
+                                    f"ECG: streaming PMD ECG at {ECG_SAMPLE_RATE_HZ} Hz"
+                                    f" to {ecg_out}"
+                                )
+                                ecg.started = True
+                        except Exception as exc:
+                            ecg.failed = True
+                            print(
+                                f"  [!] ECG start failed ({type(exc).__name__}: {exc});"
+                                " continuing HR-only",
+                                file=sys.stderr,
+                            )
                     # Sleep in 1-second slices so we can react if BleakClient
                     # context manager raises mid-sleep.
                     while time.time() < deadline:
@@ -265,6 +402,11 @@ async def _log_impl(
                         await client.stop_notify(HR_MEASUREMENT_UUID)
                     except Exception:
                         pass  # disconnect already happened; nothing to stop
+                    if ecg is not None and ecg.started:
+                        try:
+                            await client.stop_notify(PMD_DATA_UUID)
+                        except Exception:
+                            pass
                     break  # reached deadline cleanly
             except Exception as exc:
                 # OSError, BleakError, etc. -- assume BLE dropped. Reconnect.
@@ -287,9 +429,13 @@ async def _log_impl(
                 print(f"  reconnecting in {wait_s:.1f}s...")
                 await asyncio.sleep(wait_s)
 
+        if ecg is not None:
+            ecg.close()
+
     elapsed = time.time() - start_wall
+    ecg_note = f", {ecg.rows} ECG samples" if ecg is not None else ""
     print(
-        f"Done. Logged {total_count} HR updates / {beat_count} beats over "
+        f"Done. Logged {total_count} HR updates / {beat_count} beats{ecg_note} over "
         f"{elapsed:.1f}s to {out_path} ({reconnect_count} reconnects)"
     )
     return total_count
@@ -366,6 +512,18 @@ def main() -> None:
     parser.add_argument(
         "--patient-id", default="default", help="patient id for bus topic namespacing"
     )
+    parser.add_argument(
+        "--ecg",
+        action="store_true",
+        help="also record the raw 130 Hz PMD ECG stream (additive; HR-only on "
+        "failure). Writes hr_ecg.csv (default) or --ecg-out.",
+    )
+    parser.add_argument(
+        "--ecg-out",
+        type=Path,
+        default=None,
+        help="ECG output CSV path (implies --ecg; default hr_ecg.csv next to --out)",
+    )
     args = parser.parse_args()
 
     if args.scan:
@@ -375,12 +533,25 @@ def main() -> None:
     if not args.address:
         parser.error("--address required (or use --scan to find it)")
 
+    ecg_out: Optional[Path] = None
+    if args.ecg or args.ecg_out is not None:
+        ecg_out = args.ecg_out or args.out.with_name("hr_ecg.csv")
+        print(f"Recording raw ECG to: {ecg_out}")
+
     publisher: Optional[_BusPublisher] = None
     if args.bus:
         publisher = _BusPublisher(args.patient_id)
         print(f"Publishing to bus topic: {publisher.topic}")
     try:
-        asyncio.run(log(args.address, args.duration, args.out, bus_publisher=publisher))
+        asyncio.run(
+            log(
+                args.address,
+                args.duration,
+                args.out,
+                bus_publisher=publisher,
+                ecg_out=ecg_out,
+            )
+        )
     finally:
         if publisher is not None:
             publisher.close()

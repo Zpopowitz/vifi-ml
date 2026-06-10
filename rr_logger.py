@@ -249,6 +249,84 @@ def _find_resp_sensors(device, want_force: bool):
     return resp_id, (force_id if want_force else None)
 
 
+def force_rate_caps(device, force_id: int) -> dict:
+    """Reported measurement-period limits for the Force sensor -> max rate.
+
+    godirect exposes min/typ/max measurement period + granularity per sensor.
+    Returns the periods (normalized to ms) plus a best-effort max force sample
+    rate in Hz, so the bench can record the GDX-RB's true ceiling (WP2: is
+    >10 Hz actually available, or is 10 Hz already the max?).
+    """
+    s = device.list_sensors()[force_id]
+
+    def _ms(v) -> float:
+        # godirect reports periods inconsistently across firmwares; values above
+        # ~2000 are microseconds, otherwise already milliseconds.
+        v = float(v or 0)
+        return v / 1000.0 if v > 2000 else v
+
+    min_ms = _ms(getattr(s, "min_measurement_period", 0))
+    return {
+        "min_period_ms": round(min_ms, 4),
+        "typ_period_ms": round(_ms(getattr(s, "typ_measurement_period", 0)), 4),
+        "max_period_ms": round(_ms(getattr(s, "max_measurement_period", 0)), 4),
+        "granularity": getattr(s, "measurement_period_granularity", 0),
+        "max_rate_hz": round(1000.0 / min_ms, 1) if min_ms > 0 else None,
+    }
+
+
+def _probe_rate(device_name_filter: Optional[str] = None) -> None:
+    """Connect, print the Force sensor's rate ceiling, and exit (WP2 bench tool).
+
+    Records whether the GDX-RB supports a force rate above the 10 Hz default.
+    The sidecar already stamps the actual period/rate, so any chosen rate is
+    self-describing -- this only surfaces the ceiling so the finding can be
+    written down once.
+    """
+    GoDirect = _require_godirect()
+    gd = GoDirect(use_ble=True, use_usb=False)
+    device = None
+    try:
+        device = gd.get_device(threshold=-100)
+        if device is None:
+            raise RuntimeError("no Go Direct device found within range")
+        if device_name_filter is not None:
+            name = getattr(device, "_name", "")
+            if device_name_filter not in name:
+                raise RuntimeError(f"first device '{name}' != --name-contains filter")
+        if not device.open(auto_start=False):
+            raise RuntimeError(f"failed to open device {device}")
+        _resp_id, force_id = _find_resp_sensors(device, want_force=True)
+        if force_id is None:
+            raise RuntimeError("no Force sensor on this device")
+        caps = force_rate_caps(device, force_id)
+        print("Force sensor measurement-period caps:")
+        for k, v in caps.items():
+            print(f"  {k}: {v}")
+        cur_hz = 1000.0 / DEFAULT_PERIOD_MS
+        print(f"\nrr_logger default: {DEFAULT_PERIOD_MS} ms ({cur_hz:.0f} Hz).")
+        if caps["max_rate_hz"] and caps["max_rate_hz"] > cur_hz + 0.5:
+            print(
+                f"Device supports up to ~{caps['max_rate_hz']} Hz. To use it pass "
+                f"--period-ms {int(round(caps['min_period_ms']))} (the sidecar records "
+                "the actual rate). Note: >10 Hz is >20x Nyquist for the <=0.5 Hz RR "
+                "band, so the label gain is marginal -- weigh it against BLE budget "
+                "shared with the radar SPI + H10."
+            )
+        else:
+            print(
+                "10 Hz is at/above this channel's device max -- record the finding in "
+                "docs/RADAR_DATASET_PROTOCOL.md and close the question."
+            )
+    finally:
+        try:
+            if device is not None:
+                device.close()
+        except Exception:
+            pass
+        gd.quit()
+
+
 def _write_meta_sidecar(
     csv_path: Path,
     device_name: str,
@@ -426,6 +504,11 @@ def main() -> None:
         "--scan", action="store_true", help="list nearby Go Direct devices and exit"
     )
     p.add_argument(
+        "--probe-rate",
+        action="store_true",
+        help="connect, print the Force sensor's max sample rate, and exit (WP2)",
+    )
+    p.add_argument(
         "--duration", type=float, default=120.0, help="recording duration in seconds"
     )
     p.add_argument(
@@ -458,6 +541,10 @@ def main() -> None:
 
     if args.scan:
         _scan_print()
+        return
+
+    if args.probe_rate:
+        _probe_rate(device_name_filter=args.name_contains)
         return
 
     publisher: Optional[_BusPublisher] = None
