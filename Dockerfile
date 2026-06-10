@@ -61,11 +61,12 @@ RUN apt-get update && apt-get upgrade -y \
     && groupadd --gid 10001 vifi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash vifi
 
-# The base image ships pip + jaraco.context + wheel with known CVEs in
-# its system site-packages (the builder-stage pip upgrade only covers
-# the builder, not this stage).
+# The base image ships pip + setuptools with known CVEs; the vulnerable
+# jaraco.context 5.3.0 + wheel 0.45.1 live inside setuptools/_vendor,
+# which only a setuptools upgrade replaces (standalone upgrades of those
+# packages cannot touch the vendored copies).
 RUN python -m pip install --no-cache-dir --upgrade \
-        "pip>=26.1" "jaraco.context>=6.1.0" "wheel>=0.46.2"
+        "pip>=26.1" "setuptools>=80" "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 COPY --from=builder /install /install
 COPY --from=builder /build/models /app/models
