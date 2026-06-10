@@ -39,11 +39,18 @@ Record the firmware hash + git commit per session so the platform is auditable.
     is the data-starved axis (the selector learns peak-disambiguation here, not at
     rest); take the top of the old 2-3 range. The only sanctioned per-subject
     knob is +1 post-exercise for a fit subject -- never trade a post-ex for a rest.
-  - **1 x rr_fast (paced fast breathing AT REST), ~90 s** -- subject seated and
-    STILL, breathing to a metronome ~25-28 /min, NO exercise. Isolates whether
-    radar RR resolves tachypnea **absent body motion** (the clinical case); the
+  - **1 x rr_fast (paced fast + SHALLOW breathing AT REST), ~90 s** -- subject
+    seated and STILL, taking quick SMALL breaths to a metronome ~25-28 /min, NO
+    exercise. Shallow is deliberate: real pathological tachypnea is fast **and
+    low-amplitude** (small chest displacement near the cardiac motion scale --
+    the hard, realistic case the radar must actually resolve). Voluntary fast +
+    DEEP breaths are the easy case AND a hyperventilation / lightheadedness /
+    faint risk, so do NOT coach deep breathing. Isolates whether radar RR
+    resolves tachypnea **absent body motion** (the clinical case); the
     post-exercise RR test is confounded by settling motion (see regime map below).
-    Safe for all tiers (mild; stop if lightheaded). Label `rr_fast`.
+    Mild and safe for all tiers, but stop at any lightheadedness; skip on
+    older / at-risk subjects. Shallow-paced is a PROXY -- the real validation is
+    actual tachypneic patients (no access yet). Label `rr_fast`.
   - H10 paired throughout (the HR label) AND the Vernier Go Direct belt paired
     throughout for RR ground truth -- the only way to validate RR (H10 is HR-only).
     The belt is captured in parallel by default (best-effort: a missing/asleep belt

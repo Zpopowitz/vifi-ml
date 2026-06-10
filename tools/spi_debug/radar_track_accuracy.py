@@ -32,7 +32,11 @@ import os
 import numpy as np
 
 from radar.dataset import included_captures
-from radar.hr_selector import candidate_feature_matrix, viterbi_decode
+from radar.hr_selector import (
+    balanced_sample_weights,
+    candidate_feature_matrix,
+    viterbi_decode,
+)
 from tools.spi_debug.radar_train_hr_selector import LABEL_TOL_BPM, _windows
 
 TRACK_CSV = "docs/eval/radar_hr_tracking.csv"
@@ -85,7 +89,7 @@ def main() -> None:
         from xgboost import XGBClassifier  # noqa: PLC0415
 
         for held in per_subj:
-            x, y = [], []
+            x, y, groups, truths = [], [], [], []
             for s, wins in per_subj.items():
                 if s == held:
                     continue
@@ -95,6 +99,8 @@ def main() -> None:
                         1 if abs(c.freq_bpm - truth) <= LABEL_TOL_BPM else 0
                         for c in cands
                     )
+                    groups.extend([s] * len(cands))
+                    truths.extend([truth] * len(cands))
             x = np.vstack(x)
             y = np.asarray(y)
             if y.sum() == 0 or y.sum() == y.size:
@@ -102,7 +108,10 @@ def main() -> None:
             clf = XGBClassifier(
                 n_estimators=60, max_depth=3, learning_rate=0.1, eval_metric="logloss"
             )
-            clf.fit(x, y)
+            # Inverse-frequency SUBJECT + HR-bin weighting so a subject with more
+            # windows, or the over-represented resting band, doesn't dominate the
+            # cross-subject emission (docs/RADAR_DATASET_PROTOCOL.md).
+            clf.fit(x, y, sample_weight=balanced_sample_weights(groups, truths))
             held_freqs, held_scores = [], []
             for cands, truth in per_subj[held]:
                 feats = candidate_feature_matrix(cands)
