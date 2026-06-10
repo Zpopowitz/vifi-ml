@@ -16,7 +16,7 @@ protocol, worsen single-subject imbalance, and flatter the metric. The founder i
 re-captured fresh, under this protocol, as one subject among many. Nothing prior
 touches train, eval, or SSL.
 
-## Platform (fixed)
+## Platform (fixed; v2 re-freeze 2026-06-10: keep-chirps)
 
 Multi-RX raw-ADC-over-SPI, CPU-pinned collector (core 3), clean **20 fps**, current
 firmware (`vifi_mpd_spi.appimage`). Capture flow: `tools/radar_arm.sh` (pre-arm) +
@@ -24,6 +24,22 @@ firmware (`vifi_mpd_spi.appimage`). Capture flow: `tools/radar_arm.sh` (pre-arm)
 `tools/capture_labeled.sh` for rest. Both H10 and the Vernier belt are read in
 parallel, pinned to cores 0 and 1 respectively (off the collector's core 3).
 Record the firmware hash + git commit per session so the platform is auditable.
+
+**v2 re-freeze (2026-06-10): dataset captures run `--keep-chirps`.** Bench
+facts behind it: the profile's 4 chirps/frame are TX-alternating TDM
+(ABAB; two phase centers a stable ~108 deg apart, 0.3 deg jitter,
+`tools/spi_debug/tdm_phase_check.py`). The old per-frame averaging mixed
+the two TX phase centers, losing ~41% coherent amplitude (~4.6 dB) AND
+the 2TX x 3RX = 6-virtual-antenna azimuth information that
+localize-then-select needs. Keep-chirps preserves all 4 slot-tagged
+chirps per frame: same protocol, same 20 fps, 4x pickle size. Offline
+consumers read captures through `radar.capture_io.load_capture` (handles
+both formats; `frames` is the uniform-slow-time compatibility view,
+`slots` carries the per-TX data). 100 fps was tested 2026-06-10 and
+FAILED (collapses to ~2 fps; the SPI transfer does not fit the 10 ms
+frame budget at the firmware level): higher slow-time rate for Stage-2
+morphology requires firmware timing work, tracked as future engineering,
+and does NOT block this dataset.
 
 ## Per-subject session (identical for every subject, founder included)
 
