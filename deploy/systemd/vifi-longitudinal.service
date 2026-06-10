@@ -1,0 +1,19 @@
+[Unit]
+Description=ViFi nightly longitudinal vitals rollup (predicted topics -> data/longitudinal/YYYY-MM-DD.jsonl.gz)
+Documentation=file:///home/zpopowitz/vifi-ml/docs/PLATFORM_V3_PLAN.md
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=oneshot
+User=zpopowitz
+WorkingDirectory=/home/zpopowitz/vifi-ml
+EnvironmentFile=/etc/vifi/live.env
+# Drains hr.predicted.* / rr.predicted.* / apnea.events.* through a durable
+# consumer group and ACKs, so each prediction is rolled up exactly once. Safe
+# to re-run (no double counting); a crash mid-drain re-delivers the un-ACKed
+# tail on the next run.
+ExecStart=/home/zpopowitz/vifi-ml/.venv/bin/python -m tools.longitudinal_rollup
+Nice=10
+MemoryMax=256M
+SyslogIdentifier=vifi-longitudinal
