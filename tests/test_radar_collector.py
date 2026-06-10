@@ -254,3 +254,62 @@ def test_bus_publisher_no_warning_with_injected_bus(caplog):
         _BusPublisher(patient_id="injpat", bus=bus)
     bus.close()
     assert not any("InMemoryBus" in r.message for r in caplog.records)
+
+
+def test_ftdi_keep_chirps_yields_slot_tagged_chirps():
+    """With averaging off, every chirp in the frame is yielded with its
+    slot identity preserved (the TDM virtual-array requirement: slots
+    alternate TX, so losing slot identity loses azimuth)."""
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=2,
+        n_bursts_in_frame=2,
+        average_chirps_per_frame=False,
+    )
+    frames = [_tone_frame_bytes(cfg) for _ in range(2)]
+    chirps = list(_FakeFtdiReader(frames, cfg))
+
+    assert len(chirps) == 8  # 2 frames x 4 chirps, none collapsed
+    assert [c.chirp_slot for c in chirps] == [0, 1, 2, 3, 0, 1, 2, 3]
+    assert [c.chirp_idx for c in chirps] == list(range(8))
+    for c in chirps:
+        assert c.samples.shape == (cfg.n_adc_samples, cfg.n_rx)
+
+
+def test_ftdi_averaged_mode_has_no_slot_and_payload_omits_it():
+    """Live mode stays byte-identical: averaged chirps carry no slot and
+    the bus payload must not grow a chirp_slot key."""
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=2,
+        n_bursts_in_frame=2,
+        average_chirps_per_frame=True,
+    )
+    src = _FakeFtdiReader([_tone_frame_bytes(cfg)], cfg)
+    bus = InMemoryBus()
+    publisher = _BusPublisher(patient_id="avg-pat", bus=bus)
+    run_collector(src, publisher, duration_s=0.0, quiet=True)
+
+    msgs = bus.history(radar_raw("avg-pat"))
+    assert len(msgs) == 1
+    assert msgs[0].payload.get("chirp_slot") is None
+    assert "chirp_slot" not in msgs[0].payload
+
+
+def test_ftdi_keep_chirps_payload_carries_slot():
+    cfg = FtdiSpiConfig(
+        n_adc_samples=16,
+        n_rx=3,
+        n_chirps_in_burst=2,
+        n_bursts_in_frame=2,
+        average_chirps_per_frame=False,
+    )
+    src = _FakeFtdiReader([_tone_frame_bytes(cfg)], cfg)
+    bus = InMemoryBus()
+    publisher = _BusPublisher(patient_id="slot-pat", bus=bus)
+    run_collector(src, publisher, duration_s=0.0, quiet=True)
+
+    msgs = bus.history(radar_raw("slot-pat"))
+    assert [m.payload["chirp_slot"] for m in msgs] == [0, 1, 2, 3]

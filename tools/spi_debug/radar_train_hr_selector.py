@@ -16,13 +16,13 @@ Usage: PYTHONPATH=. python tools/spi_debug/radar_train_hr_selector.py [dataset_d
 
 from __future__ import annotations
 
-import json
 import os
-import pickle
 import sys
+from pathlib import Path
 
 import numpy as np
 
+from radar.capture_io import load_capture
 from radar.config import RadarConfig
 from radar.dataset import included_captures
 from radar.hr_selector import (
@@ -55,17 +55,12 @@ def _load(d: str):
                 continue
             if rrms > 0:
                 h10.append((t, 60000.0 / rrms))
-    with open(os.path.join(d, "radar_cap.pkl"), "rb") as fh:
-        entries = pickle.load(fh)
-    cubes, ts = [], []
-    for _eid, fields in entries:
-        raw = fields.get("json", fields.get(b"json"))
-        if isinstance(raw, bytes):
-            raw = raw.decode()
-        p = json.loads(raw)
-        cubes.append(np.asarray(p["adc_real"]) + 1j * np.asarray(p["adc_imag"]))
-        ts.append(float(p["ts_unix"]))
-    return np.stack(cubes, 0), np.asarray(ts), np.asarray(h10, dtype=float)
+    # capture_io handles both pickle formats; keep-chirps captures come
+    # back as the uniform-slow-time legacy-average view so training rows
+    # stay comparable across the whole dataset (cap.slots carries the
+    # per-TX data when the angle/SNR work starts).
+    cap = load_capture(Path(d) / "radar_cap.pkl")
+    return cap.frames, cap.ts, np.asarray(h10, dtype=float)
 
 
 def _truth_in(h10: np.ndarray, t0: float, t1: float) -> float:

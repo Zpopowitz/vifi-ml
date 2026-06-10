@@ -14,14 +14,14 @@ Usage: PYTHONPATH=. python tools/spi_debug/dataset_eval.py [dataset_dir]
 """
 
 import csv
-import json
 import os
-import pickle
 import statistics as st
 import sys
+from pathlib import Path
 
 import numpy as np
 
+from radar.capture_io import load_capture
 from radar.config import RadarConfig
 from radar.dataset import included_captures
 from radar.pipeline import process
@@ -47,17 +47,10 @@ def _load(d):
             ts_lo, ts_hi = min(ts_lo, t), max(ts_hi, t)
     truth = st.mean(rr) if rr else float("nan")
 
-    with open(os.path.join(d, "radar_cap.pkl"), "rb") as fh:
-        entries = pickle.load(fh)
-    c, t = [], []
-    for _eid, fields in entries:
-        raw = fields.get("json", fields.get(b"json"))
-        if isinstance(raw, bytes):
-            raw = raw.decode()
-        p = json.loads(raw)
-        c.append(np.asarray(p["adc_real"]) + 1j * np.asarray(p["adc_imag"]))
-        t.append(float(p["ts_unix"]))
-    cube, t = np.stack(c, 0), np.asarray(t)
+    # capture_io handles both pickle formats (keep-chirps captures come
+    # back as the uniform-slow-time legacy-average view).
+    cap = load_capture(Path(d) / "radar_cap.pkl")
+    cube, t = cap.frames, cap.ts
     # Align radar to the H10 read window (shared wall clock).
     m = (t >= ts_lo) & (t <= ts_hi)
     return truth, cube[m], len(rr)
