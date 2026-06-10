@@ -507,6 +507,42 @@ Worker metrics include `vifi_inference_packets_total`,
 ./tools/setup_keys.sh --print                   # preview (no write)
 ```
 
+### Asset durability — encrypted off-site backup (v3 WP5)
+
+Run on the dev box (the dataset master; the Pi is a source, not the vault).
+One-time: pick a destination and put the passphrase in your password manager.
+
+```bash
+# fill in deploy/backup.env.example -> ~/.config/vifi/backup.env, then:
+source ~/.config/vifi/backup.env         # RESTIC_REPOSITORY + key + passphrase file
+./tools/backup_dataset.sh init           # one-time: create the repo
+./tools/backup_dataset.sh backup         # snapshot data/ + models_real/ (nightly)
+./tools/backup_dataset.sh restore-test   # restore one capture + hash-compare
+./tools/backup_dataset.sh snapshots      # list snapshots
+```
+
+`.env` / `live.env` are deliberately excluded; the passphrase lives only in the
+password manager (losing it loses the backup). Schedule `backup` nightly (cron
+or a systemd timer). Full data-handling policy: `docs/DATA_SOP.md`.
+
+### Longitudinal dogfooding rollup (v3 WP6)
+
+The 24/7 stack's predictions evaporate from the bounded Redis stream unless
+rolled up. On the Pi:
+
+```bash
+# one-time: install + enable the nightly timer
+sudo cp deploy/systemd/vifi-longitudinal.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now vifi-longitudinal.timer
+# manual run / inspect
+.venv/bin/python -m tools.longitudinal_rollup
+.venv/bin/python -m tools.plot_longitudinal --days 7   # RR baseline PNG
+```
+
+Leave the radar units running in the founder's room between capture sessions
+(self-healing); the rollup drains `hr/rr.predicted.*` + `apnea.events.*` into
+`data/longitudinal/YYYY-MM-DD.jsonl.gz`, which the WP5 backup then captures.
+
 ---
 
 ## Files most likely to come up

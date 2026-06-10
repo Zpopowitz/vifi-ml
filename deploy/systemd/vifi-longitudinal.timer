@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the ViFi longitudinal vitals rollup nightly
+Documentation=file:///home/zpopowitz/vifi-ml/docs/PLATFORM_V3_PLAN.md
+
+[Timer]
+# 03:10 local daily, after midnight so the prior day is complete. Persistent
+# catches up a missed run (Pi powered off) on next boot.
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

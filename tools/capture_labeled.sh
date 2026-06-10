@@ -33,6 +33,18 @@ esac
 # the 6-virtual-antenna azimuth info). Opt out with KEEP_CHIRPS=0.
 KEEP_CHIRPS="${KEEP_CHIRPS:-1}"
 
+# Absence / empty-room segment: H10_ENABLED=0 runs the radar stream with no
+# straps (no H10, no belt) for DUR seconds, producing labeled absence data. The
+# radar bring-up + timing stay identical to a labeled capture; only the
+# foreground H10 read is swapped for a plain sleep so the stream runs the same
+# wall-clock window.
+H10_ENABLED="${H10_ENABLED:-1}"
+
+# Raw 130 Hz ECG (WP2): the H10 logger also records the PMD ECG waveform to
+# /tmp/hr_ecg.csv. Additive -- a strap that refuses PMD streaming logs loudly
+# and the capture continues HR-only. Disable with ECG=0.
+ECG="${ECG:-1}"
+
 pkill -9 -f tools.radar_collector 2>/dev/null
 pkill -9 -f hr_logger 2>/dev/null
 sleep 1
@@ -64,20 +76,30 @@ sleep 4
 
 echo "=== H10 + RR READ START $(date +%s) ===" >> /tmp/sync.log
 rm -f /tmp/hr_pi.csv /tmp/rr_pi.csv /tmp/rr_pi.csv.meta.json
+rm -f /tmp/hr_ecg.csv /tmp/hr_ecg.csv.meta.json
+ECG_ARGS=""
+[ "$ECG" = "1" ] && ECG_ARGS="--ecg --ecg-out /tmp/hr_ecg.csv"
 # RR ground truth (Vernier GDX-RB belt) runs in PARALLEL with the H10, pinned to
 # core 1 -- off the collector's busy-wait core 3 AND off the H10's core 0 -- so the
 # 20 fps SPI stream never starves. Best-effort: a missing/asleep belt must NOT abort
 # the radar+H10 capture, so it is backgrounded and we never gate on its exit code.
 # Disable with RR=0 (e.g. hardware smoke tests). H10 below is the load-bearing label.
 RR_PID=""
-if [ "${RR:-1}" = "1" ]; then
+if [ "$H10_ENABLED" = "1" ] && [ "${RR:-1}" = "1" ]; then
   VIFI_BUS_URL="$BUS_URL" taskset -c 1 nice -n 10 .venv/bin/python rr_logger.py \
       --duration "$DUR" --name-contains GDX-RB --out /tmp/rr_pi.csv >> /tmp/sync.log 2>&1 &
   RR_PID=$!
 fi
-# Pin the H10 BLE reader off the collector's core (core 0, low priority).
-VIFI_BUS_URL="$BUS_URL" taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
-    --address "$H10" --duration "$DUR" --out /tmp/hr_pi.csv >> /tmp/sync.log 2>&1
+if [ "$H10_ENABLED" = "1" ]; then
+  # Pin the H10 BLE reader off the collector's core (core 0, low priority).
+  # shellcheck disable=SC2086  # ECG_ARGS is an intentional word-split flag list
+  VIFI_BUS_URL="$BUS_URL" taskset -c 0 nice -n 10 .venv/bin/python hr_logger.py \
+      --address "$H10" --duration "$DUR" --out /tmp/hr_pi.csv $ECG_ARGS >> /tmp/sync.log 2>&1
+else
+  # Absence segment: no straps. Let the radar stream run the same window.
+  echo "=== H10 DISABLED (absence / radar-only) -- sleeping $DUR s ===" >> /tmp/sync.log
+  sleep "$DUR"
+fi
 echo "=== H10 READ DONE $(date +%s) ===" >> /tmp/sync.log
 # The belt started ~with the H10 and ran the same DUR, so it finishes near-now.
 [ -n "$RR_PID" ] && wait "$RR_PID" 2>/dev/null

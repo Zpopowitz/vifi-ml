@@ -18,54 +18,23 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 import numpy as np
 
-from radar.capture_io import load_capture
-from radar.config import RadarConfig
 from radar.dataset import included_captures
 from radar.hr_selector import (
     balanced_sample_weights,
     candidate_feature_matrix,
-    extract_candidates,
     viterbi_decode,
 )
-from radar.pipeline import process
-from radar.vitals import cardiac_signal
+from radar.manifest import dataset_digest
+from radar.windows import iter_windows
 
 FS = 20.0
 WIN_S = 20.0
 STRIDE_S = 5.0
 MIN_FRAMES = int(8 * FS)
 LABEL_TOL_BPM = 5.0  # a candidate within this of H10 truth is the positive class
-
-
-def _load(d: str):
-    h10 = []
-    with open(os.path.join(d, "hr_h10.csv")) as f:
-        import csv
-
-        for row in csv.reader(f):
-            if len(row) < 3:
-                continue
-            try:
-                t, _hr, rrms = float(row[0]), float(row[1]), float(row[2])
-            except ValueError:
-                continue
-            if rrms > 0:
-                h10.append((t, 60000.0 / rrms))
-    # capture_io handles both pickle formats; keep-chirps captures come
-    # back as the uniform-slow-time legacy-average view so training rows
-    # stay comparable across the whole dataset (cap.slots carries the
-    # per-TX data when the angle/SNR work starts).
-    cap = load_capture(Path(d) / "radar_cap.pkl")
-    return cap.frames, cap.ts, np.asarray(h10, dtype=float)
-
-
-def _truth_in(h10: np.ndarray, t0: float, t1: float) -> float:
-    m = (h10[:, 0] >= t0) & (h10[:, 0] <= t1)
-    return float(np.mean(h10[m, 1])) if m.any() else float("nan")
 
 
 def training_rows(
@@ -95,25 +64,14 @@ def training_rows(
 
 
 def _windows(cap_dir: str):
-    """Yield per-window (candidates, truth_bpm) for one capture."""
-    cube, ts, h10 = _load(cap_dir)
-    if cube.ndim != 3 or h10.size == 0:
-        return
-    cfg = RadarConfig(n_rx=cube.shape[2] if cube.ndim == 3 else 1, frame_rate_hz=FS)
-    t0 = ts.min()
-    while t0 + WIN_S <= ts.max():
-        sel = (ts >= t0) & (ts < t0 + WIN_S)
-        t0 += STRIDE_S
-        if sel.sum() < MIN_FRAMES:
-            continue
-        truth = _truth_in(h10, ts[sel].min(), ts[sel].max())
-        if not np.isfinite(truth):
-            continue
-        res = process(cube[sel], cfg)  # best-RX auto
-        cardiac, f_resp = res.cardiac, res.f_resp_hz
-        cands = extract_candidates(cardiac, FS, f_resp)
-        if cands:
-            yield cands, truth
+    """Yield per-window (candidates, truth_bpm) for one capture.
+
+    Thin wrapper over the promoted, shared definition in :mod:`radar.windows`
+    so the trainer, the accuracy gate, and the bench learnability QC never fork
+    the windowing. Kept as a re-export because the gate and the synthetic-aug
+    experiment import ``_windows`` from here.
+    """
+    yield from iter_windows(cap_dir, fs=FS, win_s=WIN_S, stride_s=STRIDE_S)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -193,6 +151,8 @@ def main(argv: list[str] | None = None) -> None:
         "the oracle gap; it is NOT a generalization result. The multi-subject "
         "dataset is the gate (docs/RADAR_DATASET_PROTOCOL.md)."
     )
+    # Reproducibility stamp: the exact dataset state these numbers scored.
+    print(f"dataset_digest={dataset_digest(caps)}")
 
 
 if __name__ == "__main__":

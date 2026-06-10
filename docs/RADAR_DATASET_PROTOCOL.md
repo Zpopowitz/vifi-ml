@@ -259,6 +259,106 @@ beat-by-beat (HRV/arrhythmia) are the **research frontier**, not near-term claim
 2. Do continuity/morphology recover elevated HR where single-window spectral fails?
 3. Continuous long-duration (hours) monitoring reliability + false-alarm rate -- unvalidated.
 
+## Protocol v3 (2026-06-10) -- the freeze (WP4)
+
+The "capture once, never again" freeze (`docs/PLATFORM_V3_PLAN.md`). Everything
+below is frozen; the single open value is the WP1 platform rate (next section).
+
+### Frozen platform line
+
+Keep-chirps, multi-RX raw-ADC over FTDI SPI, CPU-pinned collector, current
+firmware (`vifi_mpd_spi.appimage`, `firmware_sha16=d5d49697e40615f1`). Frame
+rate: **PENDING WP1 ceiling search** (see "WP1 frame-rate ceiling" below). Until
+that soak lands, captures run the proven **20 fps** (`MotionDetect.cfg`); v3 does
+not freeze a faster rate without 20-minute soak evidence. All other platform
+facts are unchanged from the v2 re-freeze above (keep-chirps rationale, TDM,
+100 fps falsified).
+
+### Session recipe per subject (priority order)
+
+Cut from the bottom when subject patience runs out; **never cut a rest or the
+elevated below its tier minimum**. Order is by value-at-risk:
+
+1. **2 x rest, 300 s** each (`--breath-hold` on at least one). 300 s doubles
+   windows per sit; the breath-hold adds free apnea labels. H10 + ECG + belt
+   throughout.
+2. **1 x rr_fast, ~90 s** (paced fast + shallow breathing at rest; the
+   still-tachypnea clinical case).
+3. **1 x absence segment, 60 s** (`--absence`: empty room, no straps) -- labeled
+   absence / presence-detection data per session.
+4. **Tier-appropriate elevated** (recovery-sweep framing: the value is the HR
+   descent at rest after the bout; Tier A 3x, B 2x, C none). Cut these FIRST if
+   time runs short -- they are the data-starved axis but also the most
+   perishable to fatigue.
+
+Every labeled capture: H10 **and raw ECG** (`--ecg`, WP2) **and** the Vernier
+belt in parallel; the capture tool stamps clock offset, board serial, and a
+learnability QC (re-seat if candidate-presence < 60%).
+
+### Opportunistic variants (willing subjects only, after the core recipe)
+
+Domain-shift labels, NOT core protocol -- collect only if the subject has
+patience left:
+- one capture at **1.5-2 m** or **20-30 deg off-angle**;
+- one **under a blanket / thick layer** (attenuation robustness).
+
+### Sealed vault policy (pre-registered)
+
+Every **Nth** subject (founder decision; **recommended N=4**) is vault-sealed
+**at recruitment time**, recorded in the tracker's consent ledger before any
+data is seen. Vault subjects are never trained on, never used for iteration, and
+evaluated only at pre-declared milestones (first: the 10-subject LOSO report).
+At the 10-12 target this yields 2-3 held-out bodies the reported number was
+never tuned against.
+
+### Board-interleaving (once spare boards arrive)
+
+Deferred with the spare-board purchase (`docs/PLATFORM_V3_PLAN.md` WP0). When
+boards arrive: alternate boards between captures for >=2 subjects; every capture
+already stamps the XDS110 `board_serial` (WP3), so board-invariance becomes a
+measurable claim instead of a silent confound.
+
+### Recapture ledger (v3 redo)
+
+- **founder**: 2 x rest 300 s (one breath-hold) + rr_fast + absence on v3;
+  elevated optional (already have 3 valid v2 elevated).
+- **subj03**: redo rest_1 on v3 + the owed rest_2 / postex x2 / rr_fast when
+  they return.
+
+## WP1 frame-rate ceiling (bench, GATES the freeze)
+
+The v3 platform rate is the highest frame rate that holds for 5 minutes, soaked
+20 minutes. 100 fps is falsified (firmware budget); 20 fps is proven. Candidate
+profiles exist in `deploy/radar/MotionDetect_{25,30,40,50}fps.cfg` (framePeriodicity
+40/33/25/20 ms; identical to the 20 fps base except that one token, locked by
+`tests/test_radar_cfg_variants.py`).
+
+Procedure -- one command per candidate (`tools/fps_soak.py` does reset + push
+cfg + radar-only stream + per-minute fps verdict + restore the 20 fps base):
+
+```bash
+.venv/bin/python tools/fps_soak.py 50          # 5-min search, highest first
+.venv/bin/python tools/fps_soak.py 40          # step down until one HOLDS
+.venv/bin/python tools/fps_soak.py 40 --soak   # 20-min soak the winner (keep-chirps worst case)
+```
+
+A candidate HOLDS if every minute stays >= 90% of nominal. The harness always
+restores the frozen 20 fps cfg on exit (capture.py's preflight refuses a stale
+rate anyway). Verify `VIFI_BUS_MAXLEN` headroom at the chosen rate (PR #116 set
+12000).
+
+**Result: PENDING (board not on the bench at v3 authoring).** Fill on completion:
+
+| candidate | held 5 min? | 20-min soak fps | notes |
+|---|---|---|---|
+| 25 fps (40 ms) | _TBD_ | _TBD_ | |
+| 30 fps (33 ms) | _TBD_ | _TBD_ | |
+| 40 fps (25 ms) | _TBD_ | _TBD_ | |
+| 50 fps (20 ms) | _TBD_ | _TBD_ | |
+
+**Frozen rate: _TBD_.** If the answer is 20 fps, firmware-stripping for higher
+slow-time is declared mandatory-before-subject-4+ and scheduled explicitly.
+
 ## Status
 
 Subjects: founder (1) COMPLETE 5/5; subj03 in progress (rest_1 in: HR oracle 1.1 bpm
@@ -266,3 +366,10 @@ Subjects: founder (1) COMPLETE 5/5; subj03 in progress (rest_1 in: HR oracle 1.1
 per-subject recipe solved; binding constraint is recruiting diverse subjects (tiers,
 builds, **sexes -- all male so far**, ages). Cross-subject `learned` LOSO number
 unlocks once a 2nd subject's set is complete.
+
+v3 freeze (2026-06-10): platform-hardening packages landed (WP1 cfgs, WP2 ECG +
+belt-rate probe, WP3 capture guards, WP5 manifest + backup, WP6 longitudinal
+rollup, WP7 consent + SOP). Open bench items before v3 captures: WP1 ceiling
+soak, WP2 ECG bench validation, one WP3 end-to-end smoke. The evergreen
+reference demo (WP7.4: one screen recording of the live dashboard + founder +
+H10) is captured after the first clean v3 session.
