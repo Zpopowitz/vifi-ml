@@ -957,7 +957,7 @@ def main() -> int:
     # scripts are scp'd from THIS working tree at capture time). Only gates an
     # actual capture -- --reset-only / --preflight-only produce no provenance.
     produces_capture = not (args.reset_only or args.preflight_only)
-    dirty, dirty_lines = (dev_tree_dirty() if produces_capture else (False, ""))
+    dirty, dirty_lines = dev_tree_dirty() if produces_capture else (False, "")
     if dirty and not args.allow_dirty:
         log(
             "\nFAIL: uncommitted tracked changes in this repo -- capture.py scp's "
