@@ -36,10 +36,13 @@ No engineering dependency; everything here is purchasing or a decision.
 
 1. Merge open PRs as they go green (current queue: #114, #115, #116,
    plus the PRs this plan produces).
-2. **Buy 2 spare IWRL6432BOOST boards + 1 spare C232HM-DDHSL-0 cable**
-   (~$200 total; TI store / Mouser / Digi-Key). Mitigates: board-revision
-   drift mid-dataset (we are on REV A1 with documented errata), single
-   point of hardware failure, and enables WP4's board-interleaving.
+2. **Spare boards: DEFERRED (founder decision 2026-06-10).** Not bought
+   unless one of the necessity triggers fires: the board shows any
+   flakiness, recruitment passes ~subject 5, or a pilot/manufacturing
+   claim approaches. Risk accepted: a board death mid-dataset costs a
+   ~1-week shipping delay; WP3's board-serial stamping keeps any future
+   swap analyzable instead of a silent confound. Board-interleaving in
+   WP4 is deferred with it.
 3. **Decision: publication intent.** Whether the dataset may ever be
    released (even partially) as an academic benchmark or shared with
    collaborators. Feeds the consent template wording (WP7). Recommended:
