@@ -25,7 +25,7 @@ Everything runs on the Pi (`vifi-pi-room1.local`, user `zpopowitz`,
      └─ rr_logger  --bus   ─▶ rr.reference.<pid>
                         │  VIFI_BUS_URL=redis://localhost:6379/0
                         ▼
-              Redis  (systemd: redis-server, 127.0.0.1:6379, AOF on)
+              Redis  (systemd: redis-server, 127.0.0.1:6379, AOF off: transport only)
               ▲           ▲                         ▲
    vifi-inference.service │              vifi-audit.service
    reads csi.raw.<pid>    │              reads all topics → audit JSONL
@@ -78,7 +78,10 @@ From WSL (or directly on the Pi):
 
 Idempotent installer. It resolves the Pi, syncs the repo, then on the Pi:
 ensures the `.venv` has the `redis` client; installs `redis-server` if absent
-and configures it for loopback-only bind + AOF durability; installs
+and configures it for loopback-only bind with AOF OFF (the bus is
+transport; durability lives in the fsync'd audit JSONL, and AOF on a
+radar host meant multi-GB write-ahead files, multi-minute boot
+replays, and tail corruption on power cuts); installs
 `/etc/vifi/live.env` from the template (never clobbering an existing copy);
 installs the three `systemd` units; `enable --now`s all four services; and
 polls until every service is `active` and the dashboard answers `/health`.
