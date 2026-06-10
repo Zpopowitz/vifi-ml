@@ -195,6 +195,51 @@ def balanced_sample_weights(
     return w
 
 
+def learnability(
+    windows: Sequence[tuple[Sequence[Candidate], float]],
+    tol_bpm: float = 5.0,
+) -> dict:
+    """Post-capture QC: is the true heartbeat actually *recoverable* here?
+
+    Radar HR is a peak-SELECTION problem -- a learned selector can only ever
+    pick a candidate the front-end surfaced. So before a subject unstraps, the
+    question is not "what HR did we estimate" but "in how many windows did a
+    candidate peak land near the H10 truth at all". If the truth peak is absent,
+    no model (not even the oracle) recovers it, and the fix is physical
+    (re-seat, re-aim, recapture) -- not algorithmic.
+
+    For each window the oracle is the candidate nearest the truth. Returns:
+
+      - ``n_windows``        -- labeled windows scored
+      - ``candidate_presence`` -- fraction of windows with a candidate within
+        ``tol_bpm`` of truth (NaN when ``n_windows == 0``)
+      - ``oracle_gap_bpm``   -- mean ``|nearest candidate - truth|``, the error
+        floor a perfect selector would still pay on this capture (NaN when
+        ``n_windows == 0``)
+      - ``tol_bpm``          -- the presence tolerance used
+
+    ``windows`` is the output of :func:`radar.windows.iter_windows`. This is a
+    pure function (no I/O); the bench wiring lives in ``tools/capture.py``.
+    """
+    n = 0
+    present = 0
+    gaps: list[float] = []
+    for cands, truth in windows:
+        if not cands or not np.isfinite(truth):
+            continue
+        n += 1
+        nearest = min(abs(c.freq_bpm - truth) for c in cands)
+        gaps.append(nearest)
+        if nearest <= tol_bpm:
+            present += 1
+    return {
+        "n_windows": n,
+        "candidate_presence": (present / n) if n else float("nan"),
+        "oracle_gap_bpm": (float(np.mean(gaps)) if gaps else float("nan")),
+        "tol_bpm": float(tol_bpm),
+    }
+
+
 def viterbi_decode(
     per_window_freqs: list[np.ndarray],
     per_window_scores: list[np.ndarray],

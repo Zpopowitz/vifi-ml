@@ -75,6 +75,16 @@ EXPECT_ADC_PER_FRAME = "6144"  # 4 chirps x 3 RX x 256 x 2 (20 fps HR)
 MIN_FPS = 17.0
 BOARD_POLL_S = 90  # max wait for a guided manual NRST
 RETRIES = 2  # auto-recaptures on a bad capture
+REST_DEFAULT_S = (
+    300  # WP3: doubles windows per sit vs the old 150 (28-min soak cleared it)
+)
+ELEVATED_DEFAULT_S = 120  # post-exercise decay window
+ABSENCE_DEFAULT_S = 60  # empty-room segment
+BREATH_HOLD_COUNT = 2  # WP3: free apnea labels inside a rest capture
+BREATH_HOLD_S = 15
+CLOCK_WARN_S = 0.1  # cross-sensor alignment dies silently above this
+CLOCK_FAIL_S = 1.0
+LEARNABILITY_WARN = 0.60  # candidate-presence floor before a re-seat + recapture
 
 
 # --------------------------------------------------------------------------- #
@@ -158,7 +168,7 @@ def _ble_present(mac: str, name: str) -> bool:
     return remote_py(_BLE_SCAN.format(mac=mac, name=name)).startswith("FOUND")
 
 
-def preflight(rr: bool) -> None:
+def preflight(rr: bool, skip_straps: bool = False) -> tuple[float | None, bool]:
     # FT232H + auto-unbind ftdi_sio if it grabbed the cable.
     code, out = ssh("lsusb | grep -i '0403:6014' || echo NONE")
     if "NONE" in out:
@@ -208,6 +218,30 @@ def preflight(rr: bool) -> None:
         raise Fail(f"Low disk on the Pi data dir ({free_kb} KB free). Free >1 GB.")
     log(f"  disk: {free_kb // 1024} MB free")
 
+    # Clock discipline: a drifted Pi clock corrupts the absolute timestamps that
+    # provenance + any cross-sensor reasoning rely on. Warn past CLOCK_WARN_S,
+    # refuse past CLOCK_FAIL_S.
+    offset, synced = pi_clock_offset()
+    if offset is None:
+        log("  clock: no chrony/timedatectl on the Pi -- offset unverified")
+    else:
+        if offset > CLOCK_FAIL_S:
+            raise Fail(
+                f"Pi clock offset {offset:.3f} s exceeds {CLOCK_FAIL_S} s. "
+                "Sync it (sudo chronyc makestep / systemctl restart chrony) before "
+                "capturing -- cross-sensor alignment dies silently otherwise."
+            )
+        tag = "ok" if offset <= CLOCK_WARN_S else "HIGH"
+        log(f"  clock: offset {offset * 1000:.1f} ms ({tag}, ntp_synced={synced})")
+        if offset > CLOCK_WARN_S:
+            log(
+                f"  WARNING: clock offset > {CLOCK_WARN_S * 1000:.0f} ms; consider a resync."
+            )
+
+    if skip_straps:
+        log("  straps: skipped (absence / radar-only capture)")
+        return offset, synced
+
     # BLE straps last (they need to be worn/awake); wake-retry loop.
     for label, mac, name, required in (
         ("Polar H10 (HR truth)", H10_MAC, "Polar", True),
@@ -234,6 +268,7 @@ def preflight(rr: bool) -> None:
                     "The H10 is the load-bearing label -- no capture without it."
                 )
             log(f"  {label}: NOT seen -- proceeding H10-only (RR row will be empty)")
+    return offset, synced
 
 
 # --------------------------------------------------------------------------- #
@@ -306,7 +341,13 @@ def wait_for_board(reason: str, auto_reset: bool = True) -> None:
 # --------------------------------------------------------------------------- #
 # 4. Capture (reuse the proven Pi-side script)
 # --------------------------------------------------------------------------- #
-def run_capture(duration: int, rr: bool, keep_chirps: bool) -> None:
+def run_capture(
+    duration: int,
+    rr: bool,
+    keep_chirps: bool,
+    breath_hold: bool = False,
+    h10_enabled: bool = True,
+) -> list[dict]:
     code, _ = _run(
         ["scp", "-q", "tools/capture_labeled.sh", f"{PI}:/tmp/capture_labeled.sh"],
         timeout=20,
@@ -315,11 +356,15 @@ def run_capture(duration: int, rr: bool, keep_chirps: bool) -> None:
         raise Fail("could not scp capture_labeled.sh to the Pi.")
     rr_env = "" if rr else "RR=0 "
     kc_env = "" if keep_chirps else "KEEP_CHIRPS=0 "
+    h10_env = "" if h10_enabled else "H10_ENABLED=0 "
     ssh(
-        f"{rr_env}{kc_env}nohup bash /tmp/capture_labeled.sh {duration} '{H10_MAC}' "
-        f">/dev/null 2>&1 & echo launched"
+        f"{rr_env}{kc_env}{h10_env}nohup bash /tmp/capture_labeled.sh {duration} "
+        f"'{H10_MAC}' >/dev/null 2>&1 & echo launched"
     )
-    log(f"  capturing {duration}s (arm -> collector -> sensorStart -> H10+RR)...")
+    stream = "radar-only (absence)" if not h10_enabled else "H10+RR"
+    log(f"  capturing {duration}s (arm -> collector -> sensorStart -> {stream})...")
+    # Breath-hold cues (if any) run on this side while the Pi streams in parallel.
+    events = _run_breath_holds(duration) if breath_hold else []
     # Poll the Pi-side progress log for the done marker.
     waited, budget = 0, duration + 60
     while waited < budget:
@@ -334,6 +379,7 @@ def run_capture(duration: int, rr: bool, keep_chirps: bool) -> None:
     _, armfail = ssh("grep -q 'ARM FAILED' /tmp/sync.log && echo YES || echo NO")
     if "YES" in armfail:
         raise Fail("ARM FAILED on the Pi (board lost its fresh boot mid-run).")
+    return events
 
 
 def run_elevated_capture(
@@ -416,7 +462,7 @@ def run_elevated_capture(
             break
 
 
-def dump_and_pull(out: Path, rr: bool) -> dict:
+def dump_and_pull(out: Path, rr: bool, expect_hr: bool = True) -> dict:
     dumped = remote_py(
         "import redis, pickle\n" + PI_BUS_URL_PY + "r = redis.from_url(BUS_URL)\n"
         "rows = [(e.decode(), {k.decode(): v for k, v in f.items()}) "
@@ -427,10 +473,10 @@ def dump_and_pull(out: Path, rr: bool) -> dict:
     log(f"  dumped {dumped} radar bus entries")
     if not scp_pull(f"{PI_TMP}/radar_cap.pkl", out / "radar_cap.pkl"):
         raise Fail("radar pull failed.")
-    if not scp_pull(f"{PI_TMP}/hr_pi.csv", out / "hr_h10.csv"):
+    if expect_hr and not scp_pull(f"{PI_TMP}/hr_pi.csv", out / "hr_h10.csv"):
         raise Fail("H10 pull failed -- no HR label.")
     n_rr = 0
-    if rr and scp_pull(f"{PI_TMP}/rr_pi.csv", out / "rr_log.csv"):
+    if expect_hr and rr and scp_pull(f"{PI_TMP}/rr_pi.csv", out / "rr_log.csv"):
         scp_pull(f"{PI_TMP}/rr_pi.csv.meta.json", out / "rr_log.csv.meta.json")
         n_rr = max(0, sum(1 for _ in (out / "rr_log.csv").open()) - 1)
     return {"n_rr": n_rr}
@@ -439,7 +485,7 @@ def dump_and_pull(out: Path, rr: bool) -> dict:
 # --------------------------------------------------------------------------- #
 # 5. Auto-verify
 # --------------------------------------------------------------------------- #
-def verify(out: Path) -> dict:
+def verify(out: Path, expect_hr: bool = True) -> dict:
     import numpy as np  # noqa: PLC0415
 
     entries = __import__("pickle").load((out / "radar_cap.pkl").open("rb"))
@@ -475,12 +521,16 @@ def verify(out: Path) -> dict:
 
     import pandas as pd  # noqa: PLC0415
 
-    hr = pd.read_csv(out / "hr_h10.csv")
-    hr_col = "hr_bpm" if "hr_bpm" in hr else hr.columns[-1]
-    n_hr = len(hr)
-    hr_min = float(hr[hr_col].min()) if n_hr else 0.0
-    hr_max = float(hr[hr_col].max()) if n_hr else 0.0
-    hr_ok = n_hr >= 10 and 40 <= hr_min and hr_max <= 200
+    if expect_hr:
+        hr = pd.read_csv(out / "hr_h10.csv")
+        hr_col = "hr_bpm" if "hr_bpm" in hr else hr.columns[-1]
+        n_hr = len(hr)
+        hr_min = float(hr[hr_col].min()) if n_hr else 0.0
+        hr_max = float(hr[hr_col].max()) if n_hr else 0.0
+        hr_ok: bool | None = n_hr >= 10 and 40 <= hr_min and hr_max <= 200
+    else:
+        # Absence / radar-only: no H10 strap. HR liveness is not part of the gate.
+        n_hr, hr_min, hr_max, hr_ok = 0, 0.0, 0.0, None
 
     rr_path = out / "rr_log.csv"
     if rr_path.exists():
@@ -504,11 +554,13 @@ def verify(out: Path) -> dict:
         "hr_min": round(hr_min, 1),
         "hr_max": round(hr_max, 1),
         "hr_range": round(hr_max - hr_min, 1),
-        "hr_ok": bool(hr_ok),
+        "hr_ok": None if hr_ok is None else bool(hr_ok),
         "rr_note": rr_note,
         "rr_ok": rr_ok,
     }
-    res["capture_ok"] = res["fps_ok"] and res["adc_ok"] and res["hr_ok"]
+    # Absence / radar-only captures have no HR strap, so the gate is fps + ADC
+    # liveness only; an H10 capture additionally requires a sane HR stream.
+    res["capture_ok"] = res["fps_ok"] and res["adc_ok"] and (hr_ok is None or hr_ok)
     return res
 
 
@@ -544,7 +596,168 @@ def pi_head() -> tuple[str, bool]:
     return (toks[0] if toks else "unknown"), ("DIRTY" in out)
 
 
-def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
+def dev_tree_dirty() -> tuple[bool, str]:
+    """Tracked-file changes in the DEV orchestrator repo (this machine).
+
+    capture.py scp's the Pi-side scripts (capture_labeled.sh, radar_arm.sh,
+    go_capture.sh) straight from this working tree, so an uncommitted edit here
+    means the Pi runs UN-attested capture code while provenance would stamp a
+    clean commit. Untracked files are ignored (scratch, pulled artifacts); only
+    tracked modifications vs HEAD break reproducibility.
+    """
+    code, out = _run(
+        ["git", "status", "--porcelain", "--untracked-files=no"], timeout=10
+    )
+    dirty_lines = [ln for ln in out.splitlines() if ln.strip()]
+    return (code == 0 and bool(dirty_lines)), "\n".join(dirty_lines)
+
+
+def pi_clock_offset() -> tuple[float | None, bool]:
+    """(abs clock offset seconds, ntp_synced) on the Pi, best-effort.
+
+    The radar frames and the H10/RR rows share the Pi wall clock, so the offset
+    does not bias intra-capture alignment; it guards the ABSOLUTE timestamps in
+    meta (and any dev-side cross-referencing) against a silently-drifted Pi
+    clock. Parsed from chronyc, falling back to timedatectl. Returns (None,
+    False) when neither tool is present.
+    """
+    out = remote_py(
+        "import subprocess, re\n"
+        "def sh(c):\n"
+        "    return subprocess.run(c, capture_output=True, text=True).stdout\n"
+        "t = sh(['chronyc', 'tracking'])\n"
+        "m = re.search(r'System time\\s*:\\s*([0-9.]+) seconds', t)\n"
+        "if m:\n"
+        "    synced = 'Not synchronised' not in t\n"
+        "    print('OFFSET', m.group(1), 1 if synced else 0)\n"
+        "else:\n"
+        "    s = sh(['timedatectl', 'show', '-p', 'NTPSynchronized',"
+        " '--value']).strip()\n"
+        "    print('SYNCONLY 0.0 ' + ('1' if s == 'yes' else '0')"
+        " if s in ('yes', 'no') else 'NOCLOCK')\n",
+        timeout=20,
+    )
+    toks = out.split()
+    if toks and toks[0] in ("OFFSET", "SYNCONLY"):
+        try:
+            return abs(float(toks[1])), bool(int(toks[2]))
+        except (ValueError, IndexError):
+            return None, False
+    return None, False
+
+
+def board_serial() -> str:
+    """XDS110 debug-probe serial -- the board's identity for provenance.
+
+    Lets WP4 board-interleaving be analyzable (which board produced which
+    capture) instead of a silent confound after any board swap. Read from the
+    deterministic /dev/serial/by-id symlink, falling back to ``pyocd list``.
+    Best-effort: a capture is never aborted for a missing serial.
+    """
+    out = remote_py(
+        "import glob, re, subprocess\n"
+        "g = glob.glob('/dev/serial/by-id/usb-Texas_Instruments_XDS110*-if00')\n"
+        "ser = ''\n"
+        "if g:\n"
+        "    m = re.search(r'_([0-9A-Za-z]{6,})-if00$', g[0])\n"
+        "    ser = m.group(1) if m else ''\n"
+        "if not ser:\n"
+        "    p = subprocess.run(['.venv/bin/pyocd', 'list'],"
+        " capture_output=True, text=True)\n"
+        "    m = re.search(r'\\b([0-9A-Fa-f]{8,})\\b', p.stdout)\n"
+        "    ser = m.group(1) if m else ''\n"
+        "print(ser or 'unattested')\n",
+        timeout=25,
+    )
+    return out.splitlines()[-1].strip() if out else "unattested"
+
+
+def learnability_check(out: Path) -> dict | None:
+    """Post-capture QC: did the true heartbeat survive into the candidate peaks?
+
+    Runs the shared selector windowing (radar.windows) over the just-pulled
+    capture and reports the fraction of windows with a candidate near the H10
+    truth + the oracle gap. Additive QC: any failure here is logged and
+    swallowed (like RR), it never aborts a capture. Returns the metric dict, or
+    None if it could not run.
+    """
+    try:
+        from radar.hr_selector import learnability  # noqa: PLC0415
+        from radar.windows import iter_windows  # noqa: PLC0415
+
+        report = learnability(list(iter_windows(out)))
+    except Exception as exc:  # QC must never sink a real capture
+        log(f"  learnability QC skipped ({type(exc).__name__}: {exc})")
+        return None
+    if report["n_windows"] == 0:
+        log("  learnability: no scorable windows (capture too short / no H10 overlap)")
+        return report
+    pres = report["candidate_presence"]
+    gap = report["oracle_gap_bpm"]
+    flag = "ok" if pres >= LEARNABILITY_WARN else "LOW"
+    log(
+        f"  learnability: candidate_presence={pres:.0%} ({flag}), "
+        f"oracle_gap={gap:.1f} bpm over {report['n_windows']} windows"
+    )
+    if pres < LEARNABILITY_WARN:
+        log(
+            f"  WARNING: the true HR peak is present in only {pres:.0%} of windows "
+            f"(<{LEARNABILITY_WARN:.0%}). RE-SEAT + RE-AIM and recapture while the "
+            "subject is still strapped -- no selector recovers a peak the "
+            "front-end never surfaced."
+        )
+    return report
+
+
+def _run_breath_holds(duration: int) -> list[dict]:
+    """Cue BREATH_HOLD_COUNT x BREATH_HOLD_S breath-holds during a rest capture.
+
+    Free apnea labels: the operator reads the printed countdown to the subject,
+    and each hold's start/end unix times are recorded into meta ``events``.
+    Holds are spaced through the middle of the capture (clear of the bring-up
+    settle and the tail). Blocks for most of ``duration`` while the Pi-side
+    capture streams in parallel.
+    """
+    events: list[dict] = []
+    t_start = time.time()
+    span_lo, span_hi = 0.2, 0.75
+    span = max(1, BREATH_HOLD_COUNT - 1)
+    offsets = [
+        int(duration * (span_lo + (span_hi - span_lo) * i / span))
+        for i in range(BREATH_HOLD_COUNT)
+    ]
+    for n, off in enumerate(offsets, 1):
+        wait = off - (time.time() - t_start)
+        if wait > 0:
+            time.sleep(wait)
+        log(
+            f"  >> BREATH-HOLD {n}/{BREATH_HOLD_COUNT}: tell the subject to HOLD "
+            f"now ({BREATH_HOLD_S}s)"
+        )
+        t0 = time.time()
+        for s in range(BREATH_HOLD_S, 0, -1):
+            if s <= 3 or s % 5 == 0:
+                log(f"     hold... {s}s")
+            time.sleep(1)
+        t1 = time.time()
+        log("  >> BREATHE normally")
+        events.append({"type": "breath_hold", "t_start_unix": t0, "t_end_unix": t1})
+    return events
+
+
+def stamp(
+    out: Path,
+    args,
+    n_rr: int,
+    n_hr: int,
+    ver: dict,
+    *,
+    clock: tuple[float | None, bool] = (None, False),
+    events: list[dict] | None = None,
+    learn: dict | None = None,
+    board_ser: str = "unattested",
+    dev_dirty: bool = False,
+) -> None:
     code, git = _run(["git", "rev-parse", "--short", "HEAD"], timeout=10)
     pi_sha, pi_dirty = pi_head()
     geometry = {"distance_m": args.distance_m, "angle_deg": args.angle_deg}
@@ -562,10 +775,17 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         )
         if v is not None
     }
+    if getattr(args, "absence", False):
+        mode = "absence"
+    elif getattr(args, "elevated", False):
+        mode = "elevated"
+    else:
+        mode = "rest"
+    clock_offset_s, ntp_synced = clock
     meta = {
         "label": args.label,
         "duration_s": args.duration,
-        "mode": "elevated" if getattr(args, "elevated", False) else "rest",
+        "mode": mode,
         "captured_utc": datetime.now(timezone.utc).isoformat(),
         "subject": args.subject,
         "h10_mac": H10_MAC,
@@ -574,6 +794,13 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
         "body": body,
         "h10_rows": n_hr,
         "rr_rows": n_rr,
+        # WP3 capture-hardening provenance.
+        "dev_dirty": dev_dirty,  # True = orchestrator tree had uncommitted edits
+        "board_serial": board_ser,  # XDS110 probe serial (board-interleaving)
+        "clock_offset_s": clock_offset_s,  # Pi NTP offset at capture (abs seconds)
+        "ntp_synced": ntp_synced,
+        "events": events or [],  # breath-hold cue windows, etc.
+        "learnability": learn,  # post-capture candidate-presence / oracle QC
         # Pickle format markers (also inside "verify"; lifted top-level so
         # loaders can branch without digging): keep_chirps pickles carry
         # chirps_per_frame slot-tagged entries per frame (radar/capture_io.py).
@@ -596,7 +823,14 @@ def stamp(out: Path, args, n_rr: int, n_hr: int, ver: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="self-healing radar+H10+RR capture v1")
     ap.add_argument("label")
-    ap.add_argument("duration", nargs="?", type=int, default=150)
+    ap.add_argument(
+        "duration",
+        nargs="?",
+        type=int,
+        default=None,
+        help=f"capture seconds; mode-dependent default: rest={REST_DEFAULT_S} "
+        f"(WP3), elevated={ELEVATED_DEFAULT_S}, absence={ABSENCE_DEFAULT_S}",
+    )
     ap.add_argument("--subject", required=True, help="subject pseudo-ID for provenance")
     ap.add_argument("--distance-m", dest="distance_m", type=float, default=1.0)
     ap.add_argument("--angle-deg", dest="angle_deg", type=float, default=0.0)
@@ -672,10 +906,60 @@ def main() -> int:
         help="seconds from arm to auto-fire in --elevated mode (the bout + sit "
         "window; the radar is armed-not-streaming so a generous window is free)",
     )
+    ap.add_argument(
+        "--absence",
+        action="store_true",
+        help="empty-room segment: radar-only, no straps, H10/RR skipped "
+        f"(labeled absence data). Default {ABSENCE_DEFAULT_S} s.",
+    )
+    ap.add_argument(
+        "--breath-hold",
+        dest="breath_hold",
+        action="store_true",
+        help="cue 2 x 15 s breath-holds during a rest capture (free apnea "
+        "labels); records the hold windows into meta events.",
+    )
+    ap.add_argument(
+        "--allow-dirty",
+        dest="allow_dirty",
+        action="store_true",
+        help="capture even with uncommitted tracked changes in this repo "
+        "(stamps dev_dirty=true; provenance is then non-reproducible).",
+    )
     args = ap.parse_args()
+
+    if args.absence and args.elevated:
+        ap.error("--absence and --elevated are mutually exclusive")
+    if args.breath_hold and (args.elevated or args.absence):
+        ap.error("--breath-hold is only valid for a rest capture")
+    if args.duration is None:
+        args.duration = (
+            ABSENCE_DEFAULT_S
+            if args.absence
+            else ELEVATED_DEFAULT_S
+            if args.elevated
+            else REST_DEFAULT_S
+        )
+    expect_hr = not args.absence
 
     out = Path(f"data/captures/radar_dataset/{args.subject}/{args.label}")
 
+    # Dirty-tree guard: provenance must point at a real commit (the Pi-side
+    # scripts are scp'd from THIS working tree at capture time).
+    dirty, dirty_lines = dev_tree_dirty()
+    if dirty and not args.allow_dirty:
+        log(
+            "\nFAIL: uncommitted tracked changes in this repo -- capture.py scp's "
+            "the Pi-side capture scripts from this tree, so provenance would be "
+            "unattested:\n" + dirty_lines + "\nCommit/stash, or pass --allow-dirty "
+            "to capture anyway (stamps dev_dirty=true)."
+        )
+        return 2
+    if dirty:
+        log("  dev tree DIRTY -- capturing with --allow-dirty (dev_dirty=true)")
+
+    clock: tuple[float | None, bool] = (None, False)
+    board_ser = "unattested"
     try:
         log("[1/6] Pi reachability")
         resolve_pi()
@@ -685,11 +969,12 @@ def main() -> int:
             log("RESET OK -- board rebooted via XDS110, CLI alive.")
             return 0
         log("[2/6] preflight")
-        preflight(args.rr)
+        clock = preflight(args.rr, skip_straps=args.absence)
         log("[3/6] board liveness")
         wait_for_board("pre-capture", auto_reset=args.auto_reset)
+        board_ser = board_serial()
         if args.preflight_only:
-            log("PREFLIGHT OK (--preflight-only). Board reset + ready.")
+            log(f"PREFLIGHT OK (--preflight-only). Board ready; serial={board_ser}.")
             return 0
     except Fail as e:
         log(f"\nFAIL: {e}")
@@ -702,17 +987,31 @@ def main() -> int:
                 run_elevated_capture(
                     args.duration, args.rr, args.countdown, args.keep_chirps
                 )
+                events: list[dict] = []
             else:
-                run_capture(args.duration, args.rr, args.keep_chirps)
+                events = run_capture(
+                    args.duration,
+                    args.rr,
+                    args.keep_chirps,
+                    breath_hold=args.breath_hold,
+                    h10_enabled=expect_hr,
+                )
             log("[5/6] pull + verify")
-            stats = dump_and_pull(out, args.rr)
-            n_hr = max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)
-            ver = verify(out)
+            stats = dump_and_pull(out, args.rr, expect_hr=expect_hr)
+            n_hr = (
+                max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)
+                if expect_hr and (out / "hr_h10.csv").exists()
+                else 0
+            )
+            ver = verify(out, expect_hr=expect_hr)
+            if ver["hr_ok"] is None:
+                hr_disp = "n/a (absence)"
+            else:
+                hr_disp = f"{ver['n_hr']} ({'ok' if ver['hr_ok'] else 'SUSPECT'})"
             log(
                 f"  fps={ver['fps']} ({'ok' if ver['fps_ok'] else 'COLLAPSE'})  "
                 f"adc_std={ver['adc_std']} ({'ok' if ver['adc_ok'] else 'FLAT'})  "
-                f"H10={ver['n_hr']} ({'ok' if ver['hr_ok'] else 'SUSPECT'})  "
-                f"RR={ver['rr_note']}"
+                f"H10={hr_disp}  RR={ver['rr_note']}"
             )
             if args.elevated:
                 log(
@@ -724,8 +1023,22 @@ def main() -> int:
                         "span>=15 bpm). Consider a redo with a harder/longer bout "
                         "for the wide-range data the selector needs."
                     )
+            # Learnability QC (additive, H10 captures only): can the selector
+            # actually recover this HR? Warns to re-seat while the subject waits.
+            learn = learnability_check(out) if expect_hr else None
             log("[6/6] provenance")
-            stamp(out, args, stats["n_rr"], n_hr, ver)
+            stamp(
+                out,
+                args,
+                stats["n_rr"],
+                n_hr,
+                ver,
+                clock=clock,
+                events=events,
+                learn=learn,
+                board_ser=board_ser,
+                dev_dirty=dirty,
+            )
             if ver["capture_ok"]:
                 log(f"\nCAPTURE OK -> {out}")
                 return 0
