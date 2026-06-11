@@ -42,12 +42,26 @@ from modules.bus import (  # noqa: E402
     EARLIEST,
     LATEST,
     MessageBus,
-    all_topics,
+    audit_topics,
     bus_from_env,
     subscribe,
 )
 
 log = logging.getLogger("vifi.audit_subscriber")
+
+
+def _include_raw() -> bool:
+    """Whether the audit logs the raw sensor firehoses (off by default).
+
+    Logging csi.raw/radar.raw into the encrypted audit duplicated the dataset
+    at ~8 GB/day and filled the Pi; the audit records disclosures + decisions.
+    Set VIFI_AUDIT_INCLUDE_RAW=1 to restore the legacy every-topic behavior.
+    """
+    return os.environ.get("VIFI_AUDIT_INCLUDE_RAW", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 CONSUMER_GROUP = "audit"
@@ -88,9 +102,10 @@ def run(
     `drain_existing` instead.
     """
     writer = AuditLogWriter(audit_dir=audit_dir)
+    include_raw = _include_raw()
     topics: list[str] = []
     for pid in patient_ids:
-        topics.extend(all_topics(pid))
+        topics.extend(audit_topics(pid, include_raw=include_raw))
     consumer = consumer_name or _consumer_name()
 
     # Idempotent group creation per topic.
@@ -142,9 +157,10 @@ def drain_existing(
     after a restart, or for tests.
     """
     writer = AuditLogWriter(audit_dir=audit_dir)
+    include_raw = _include_raw()
     topics: list[str] = []
     for pid in patient_ids:
-        topics.extend(all_topics(pid))
+        topics.extend(audit_topics(pid, include_raw=include_raw))
     cursors = {t: EARLIEST for t in topics}
     while True:
         msgs = bus.read(cursors, block_ms=0, count=1000)
