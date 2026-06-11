@@ -29,9 +29,9 @@ T0 = 1_700_000_000.0
 
 
 def test_frame_periodicity_of_base_and_variants() -> None:
-    assert _frame_periodicity_ms(BASE_CFG) == 50  # 20 fps
+    assert _frame_periodicity_ms(BASE_CFG) == 40  # v3 frozen base = 25 fps
     assert _frame_periodicity_ms(CFG_DIR / "MotionDetect_50fps.cfg") == 20
-    assert _frame_periodicity_ms(CFG_DIR / "MotionDetect_25fps.cfg") == 40
+    assert _frame_periodicity_ms(CFG_DIR / "MotionDetect_20fps.cfg") == 50
 
 
 def _write_capture(out: Path, n_frames: int, dt: float) -> None:

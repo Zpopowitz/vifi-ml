@@ -69,9 +69,11 @@ def _windows(cap_dir: str):
     Thin wrapper over the promoted, shared definition in :mod:`radar.windows`
     so the trainer, the accuracy gate, and the bench learnability QC never fork
     the windowing. Kept as a re-export because the gate and the synthetic-aug
-    experiment import ``_windows`` from here.
+    experiment import ``_windows`` from here. ``fs`` is intentionally NOT passed:
+    iter_windows derives each capture's true rate from its own timestamps, so a
+    25 fps capture is scored at 25, not the legacy 20 fps assumption.
     """
-    yield from iter_windows(cap_dir, fs=FS, win_s=WIN_S, stride_s=STRIDE_S)
+    yield from iter_windows(cap_dir, win_s=WIN_S, stride_s=STRIDE_S)
 
 
 def main(argv: list[str] | None = None) -> None:

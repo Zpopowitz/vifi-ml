@@ -199,18 +199,22 @@ def preflight(rr: bool, skip_straps: bool = False) -> tuple[float | None, bool]:
             raise Fail("redis down on the Pi and restart failed.")
     log("  redis: PONG")
 
+    # v3 frozen platform: 25 fps (framePeriodicity 40 ms; WP1 ceiling soak).
+    # The pin catches a stale/wrong cfg on the Pi (e.g. left on 20 fps, or an
+    # fps_soak candidate) before it silently produces an off-rate capture.
     code, out = ssh(f"grep -E 'frameCfg' {CFG_PATH} 2>/dev/null || echo MISSING")
     if "MISSING" in out:
         raise Fail(
-            f"{CFG_PATH} missing. Re-copy the 20 fps HR profile (frameCfg 2 8 600 "
-            "2 50 0) from the SDK profile per APPLIED_EDITS.md."
+            f"{CFG_PATH} missing. Re-copy the 25 fps HR profile (frameCfg 2 8 600 "
+            "2 40 0) from deploy/radar/MotionDetect.cfg."
         )
-    if "frameCfg 2 8 600 2 50 0" not in out:
+    if "frameCfg 2 8 600 2 40 0" not in out:
         raise Fail(
-            f"{CFG_PATH} has the wrong frameCfg ({out.strip()}). The HR profile is "
-            "'frameCfg 2 8 600 2 50 0' (-> adcDataPerFrame=6144)."
+            f"{CFG_PATH} has the wrong frameCfg ({out.strip()}). The v3 frozen HR "
+            "profile is 'frameCfg 2 8 600 2 40 0' = 25 fps (-> adcDataPerFrame="
+            "6144). Redeploy deploy/radar/MotionDetect.cfg to the Pi."
         )
-    log("  profile: 20 fps HR frameCfg")
+    log("  profile: 25 fps HR frameCfg (v3 frozen)")
 
     code, out = ssh(f"df -P {PI_REPO}/data 2>/dev/null | tail -1 | awk '{{print $4}}'")
     free_kb = int(out.strip() or "0")

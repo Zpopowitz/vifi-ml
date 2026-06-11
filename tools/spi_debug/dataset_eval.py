@@ -21,12 +21,12 @@ from pathlib import Path
 
 import numpy as np
 
-from radar.capture_io import load_capture
+from radar.capture_io import load_capture, measured_fps
 from radar.config import RadarConfig
 from radar.dataset import included_captures
 from radar.pipeline import process
 
-FS = 20.0
+FS = 20.0  # fallback only; the real rate is measured per-capture from timestamps
 CLUTTER = "mean"  # zero-phase, full-buffer; the windowed worker can use it too
 
 
@@ -53,26 +53,29 @@ def _load(d):
     cube, t = cap.frames, cap.ts
     # Align radar to the H10 read window (shared wall clock).
     m = (t >= ts_lo) & (t <= ts_hi)
-    return truth, cube[m], len(rr)
+    # The capture's own rate, not an assumed constant -- a 25 fps capture scored
+    # as 20 fps reports HR 20% low, silently.
+    fs = measured_fps(t[m]) or measured_fps(t) or FS
+    return truth, cube[m], len(rr), fs
 
 
-def _hr(cube):
-    if cube.ndim < 2 or cube.shape[0] < int(8 * FS):
+def _hr(cube, fs):
+    if cube.ndim < 2 or cube.shape[0] < int(8 * fs):
         return float("nan")
     return process(
         cube,
-        RadarConfig(n_rx=cube.shape[-1] if cube.ndim == 3 else 1, frame_rate_hz=FS),
+        RadarConfig(n_rx=cube.shape[-1] if cube.ndim == 3 else 1, frame_rate_hz=fs),
         clutter_method=CLUTTER,
     ).hr_bpm
 
 
 # Baseline methods to evaluate. Add candidates here as they are proposed; the
 # eval scores all of them the same way so nothing gets answer-key-tuned.
-def methods(cube):
-    out = {"MRC": _hr(cube)}
+def methods(cube, fs):
+    out = {"MRC": _hr(cube, fs)}
     if cube.ndim == 3:
         for rx in range(cube.shape[2]):
-            out[f"RX{rx}"] = _hr(cube[..., rx])
+            out[f"RX{rx}"] = _hr(cube[..., rx], fs)
     return out
 
 
@@ -94,11 +97,11 @@ def main():
     for d in caps:
         label = os.path.basename(d)
         try:
-            truth, cube, n = _load(d)
+            truth, cube, n, fs = _load(d)
         except (FileNotFoundError, ValueError) as e:
             print(f"{label:>16}  skip ({e})")
             continue
-        m = methods(cube)
+        m = methods(cube, fs)
         names = names or list(m)
         rows.append((truth, m))
         cells = "  ".join(f"{k}={v:.0f}({v - truth:+.0f})" for k, v in m.items())

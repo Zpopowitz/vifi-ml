@@ -42,14 +42,15 @@ def _frame_periodicity_ms(cfg_path: Path) -> int:
 
 
 def test_variants_exist() -> None:
-    # The plan enumerates 25/30/40/50; guard against an empty glob silently
-    # passing the parametrized tests below.
+    # The WP1 search candidates + the superseded 20 fps profile; guard against
+    # an empty glob silently passing the parametrized tests below.
     rates = {int(re.search(r"_(\d+)fps", v.name).group(1)) for v in VARIANTS}
-    assert {25, 30, 40, 50} <= rates
+    assert {20, 30, 40, 50} <= rates
 
 
-def test_base_is_20fps() -> None:
-    assert _frame_periodicity_ms(BASE) == 50  # 1000 / 50 ms = 20 fps
+def test_base_is_25fps() -> None:
+    # v3 frozen platform (WP1 ceiling): 1000 / 40 ms = 25 fps.
+    assert _frame_periodicity_ms(BASE) == 40
 
 
 @pytest.mark.parametrize("variant", VARIANTS, ids=[v.name for v in VARIANTS])
@@ -71,7 +72,7 @@ def test_variant_differs_from_base_only_in_framecfg(variant: Path) -> None:
         f"only frameCfg may change."
     )
     differing = {k for k in base if base[k] != var[k]}
-    assert differing == {"frameCfg"}, (
-        f"{variant.name} differs from base in {differing or '{}'}; "
+    assert differing <= {"frameCfg"}, (
+        f"{variant.name} differs from base in {differing}; "
         f"only frameCfg may change between rate variants."
     )

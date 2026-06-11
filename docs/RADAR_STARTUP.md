@@ -273,9 +273,10 @@ ssh pi 'watch -n 1 "for t in csi.raw.founder radar.raw.founder hr.predicted.foun
 ```
 
 You should see `radar.raw.founder` climbing at the SPI HR-profile frame
-rate (20 entries/s, one `(256, 3)` IQ cube per frame; the radar worker
-needs `VIFI_RADAR_FRAME_RATE_HZ=20` to match) and `hr.predicted.founder`
-climbing every ~3 s as the worker emits predictions on its stride.
+rate (25 entries/s on the v3 frozen platform, one `(256, 3)` IQ cube per
+frame; the radar worker needs `VIFI_RADAR_FRAME_RATE_HZ=25` to match) and
+`hr.predicted.founder` climbing every ~3 s as the worker emits predictions
+on its stride.
 
 ## 7. Open the dashboard
 

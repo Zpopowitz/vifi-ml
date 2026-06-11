@@ -23,12 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
-from radar.capture_io import load_capture
+from radar.capture_io import load_capture, measured_fps
 from radar.config import RadarConfig
 from radar.hr_selector import Candidate, extract_candidates
 from radar.pipeline import process
 
-DEFAULT_FS = 20.0
 DEFAULT_WIN_S = 20.0
 DEFAULT_STRIDE_S = 5.0
 # process() needs a few seconds of slow-time for a stable cardiac spectrum;
@@ -69,11 +68,17 @@ def _truth_in(h10: np.ndarray, t0: float, t1: float) -> float:
 def iter_windows(
     cap_dir: str | Path,
     *,
-    fs: float = DEFAULT_FS,
+    fs: float | None = None,
     win_s: float = DEFAULT_WIN_S,
     stride_s: float = DEFAULT_STRIDE_S,
 ) -> Iterator[tuple[list[Candidate], float]]:
     """Yield ``(candidates, truth_bpm)`` for each labeled window of a capture.
+
+    ``fs`` defaults to the rate the capture ACTUALLY ran at, derived from its
+    own frame timestamps (:func:`radar.capture_io.measured_fps`) -- never an
+    assumed constant, so a 20 fps and a 25 fps capture are both scored at their
+    true rate (assuming 20 on a 25 fps capture reports HR 20% low, silently).
+    Pass ``fs`` only to override (tests).
 
     Windows whose radar coverage is below :data:`MIN_WINDOW_S`, whose H10 truth
     is missing, or that surface zero candidate peaks are skipped (they cannot
@@ -85,6 +90,10 @@ def iter_windows(
     cube, ts = cap.frames, cap.ts
     h10 = load_h10(cap_dir)
     if cube.ndim != 3 or h10.size == 0:
+        return
+    if fs is None:
+        fs = measured_fps(ts)
+    if fs <= 0:
         return
     min_frames = int(MIN_WINDOW_S * fs)
     cfg = RadarConfig(n_rx=cube.shape[2], frame_rate_hz=fs)
