@@ -149,6 +149,23 @@ def all_topics(patient_id: str) -> list[str]:
     ]
 
 
+def audit_topics(patient_id: str, include_raw: bool = False) -> list[str]:
+    """Topics the audit log records: disclosures + decisions, not raw firehoses.
+
+    Excludes the raw sensor streams (``csi.raw`` / ``radar.raw``) by default.
+    Those are the dataset -- retained, provenance-stamped, and backed up
+    separately -- so encrypting every frame into the tamper-evident audit was
+    pure duplication (~8 GB/day at 25 fps, which filled the Pi). The audit's job
+    is accountability: predictions/disclosures, references, and events. Pass
+    ``include_raw=True`` (operator sets ``VIFI_AUDIT_INCLUDE_RAW=1``) only if a
+    deployment genuinely needs every raw frame in the chain.
+    """
+    if include_raw:
+        return all_topics(patient_id)
+    raw = {csi_raw(patient_id), radar_raw(patient_id)}
+    return [t for t in all_topics(patient_id) if t not in raw]
+
+
 # ---------------------------------------------------------------------------
 # Message + cursor types
 # ---------------------------------------------------------------------------

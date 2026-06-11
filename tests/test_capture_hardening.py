@@ -91,3 +91,57 @@ def test_learnability_check_returns_report_dict(tmp_path):
 def test_learnability_check_swallows_errors(tmp_path):
     # No capture pickle at all -> QC must return None, never raise.
     assert cap.learnability_check(tmp_path) is None
+
+
+def test_respiratory_battery_total_matches_phases():
+    assert cap.RESP_BATTERY_TOTAL == sum(
+        secs for _n, secs, _c in cap.RESP_BATTERY_PHASES
+    )
+    assert cap.RESP_BATTERY_TOTAL == 330
+
+
+def test_pause_resume_restores_only_what_was_active(monkeypatch):
+    calls = []
+
+    def fake_ssh(cmd, timeout=40):
+        calls.append(cmd)
+        if "is-active vifi-radar-collector" in cmd:
+            return 0, "active\n"
+        if "is-active vifi-radar-inference" in cmd:
+            return 0, "inactive\n"
+        return 0, ""
+
+    monkeypatch.setattr(cap, "ssh", fake_ssh)
+    paused = cap.pause_live_stack()
+    # only the running service is paused...
+    assert paused == ["vifi-radar-collector"]
+    assert any("systemctl stop vifi-radar-collector" in c for c in calls)
+    # ...the already-stopped one is never touched (no state change).
+    assert not any("stop" in c and "inference" in c for c in calls)
+
+    calls.clear()
+    cap.resume_live_stack(paused)
+    assert any("systemctl start vifi-radar-collector" in c for c in calls)
+
+
+def test_resume_noop_when_nothing_was_active(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cap, "ssh", lambda c, timeout=40: (calls.append(c), (0, ""))[1])
+    cap.resume_live_stack([])
+    assert calls == []  # down stays down: never starts a service the operator left off
+
+
+def test_respiratory_battery_records_every_phase(monkeypatch):
+    # Don't actually breathe through 330 s of capture.
+    monkeypatch.setattr(cap.time, "sleep", lambda _s: None)
+    events = cap._run_respiratory_battery()
+    assert len(events) == len(cap.RESP_BATTERY_PHASES)
+    assert [e["phase"] for e in events] == [p[0] for p in cap.RESP_BATTERY_PHASES]
+    last_end = 0.0
+    for ev in events:
+        assert ev["type"] == "resp_phase"
+        assert ev["t_end_unix"] >= ev["t_start_unix"]
+        assert ev["t_start_unix"] >= last_end  # phases are sequential
+        last_end = ev["t_end_unix"]
+    # The two apnea holds are present and labeled for offline apnea extraction.
+    assert [e["phase"] for e in events].count("hold") == 2
