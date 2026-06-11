@@ -107,6 +107,22 @@ def load_capture(path: str | Path) -> CaptureData:
     )
 
 
+def measured_fps(ts: np.ndarray) -> float:
+    """Frame rate a capture actually ran at, from its own frame timestamps.
+
+    The single source of truth for the rate: the capture self-describes it, so
+    offline tools must NEVER assume a fixed FS (a 25 fps capture analyzed as
+    20 fps reports every frequency -- and thus HR/RR -- 20% low, silently).
+    Uses the MEDIAN inter-frame interval so a dropped-publish gap or a startup
+    transient cannot skew the estimate. Returns 0.0 for <2 frames.
+    """
+    ts = np.sort(np.asarray(ts, dtype=float))
+    if ts.size < 2:
+        return 0.0
+    dt = float(np.median(np.diff(ts)))
+    return 1.0 / dt if dt > 0 else 0.0
+
+
 def legacy_average(slots: np.ndarray) -> np.ndarray:
     """All-4-slot coherent average: what averaged captures stored on disk.
 

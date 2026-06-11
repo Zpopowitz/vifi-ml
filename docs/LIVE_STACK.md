@@ -167,7 +167,7 @@ read by all four services via `EnvironmentFile`:
 | `VIFI_BUS_MAXLEN`          | `120000`                   | Per-stream entry cap (~22 min of 90 Hz CSI)        |
 | `VIFI_AUTH_MODE`           | `none` (set explicitly)    | SP1 bench mode. The *code* default (unset) is `api_key`, fail-closed: an unconfigured boot refuses to start. SP7 flips this line to `api_key` + keys |
 | `VIFI_RADAR_FTDI_URL`      | `ftdi://ftdi:232h/1`       | FT232H device URL for the radar collector's `--source ftdi`; set only if more than one FTDI device is attached |
-| `VIFI_RADAR_FRAME_RATE_HZ` | `20`                       | Slow-time frame rate the radar DSP assumes (matches the solved SPI capture profile) |
+| `VIFI_RADAR_FRAME_RATE_HZ` | `25`                       | Slow-time frame rate the radar DSP assumes (v3 frozen platform; must match the flashed cfg) |
 | `VIFI_METRICS_ADDR`        | `127.0.0.1`                | Worker Prometheus bind address; widen deliberately for a remote scraper (patient-id labels are otherwise LAN-readable) |
 
 `VIFI_REQUIRE_PSEUDO` also defaults to `true` in code: with no

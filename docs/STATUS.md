@@ -23,10 +23,17 @@ TDM CONFIRMED on the bench: the chirp profile's 4 chirps/frame alternate
 TX (ABAB, ~108 deg stable offset): per-frame averaging was losing
 ~4.6 dB and the 6-virtual-antenna azimuth array. Dataset captures now
 run keep-chirps (platform re-freeze v2 in RADAR_DATASET_PROTOCOL.md);
-offline tools read pickles via `radar.capture_io`. 100 fps tested and
-falsified (firmware frame budget); 20 fps keep-chirps is the frozen
-platform. Capture flow is SP7-aware (resolves the authed bus URL from
-live.env via passwordless sudo).
+offline tools read pickles via `radar.capture_io`. WP1 ceiling search
+(2026-06-10): **25 fps keep-chirps is the v3 frozen platform**
+(framePeriodicity 40 ms, 20-min soak clean); 30 fps trips the firmware
+"Frame Time is not enough" warning; 50/100 fps collapse to ~2 fps. Offline
+HR tools now derive each capture's rate from its own timestamps
+(`radar.capture_io.measured_fps`), not a hardcoded constant. **Pi redeploy
+for 25 fps:** push `deploy/radar/MotionDetect.cfg` to
+`/home/zpopowitz/MotionDetect.cfg`, set `VIFI_RADAR_FRAME_RATE_HZ=25` in
+`/etc/vifi/live.env`, restart `vifi-radar-collector` + `vifi-radar-inference`.
+Capture flow is SP7-aware (resolves the authed bus URL from live.env via
+passwordless sudo).
 
 2026-06-09. Eval-findings hardening pass (branch
 `fix/eval-findings-2026-06-09`; all 33 findings in

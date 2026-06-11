@@ -144,3 +144,47 @@ def test_iter_windows_runs_on_well_formed_capture(tmp_path) -> None:
     for cands, truth in wins:
         assert np.isfinite(truth)
         assert all(isinstance(c, Candidate) for c in cands)
+
+
+def _synth_capture_at(root: Path, fps: float, hr_bpm: float) -> Path:
+    """A realistic synthetic cardiac capture at `fps`, timestamped at `fps`."""
+    from radar.config import RadarConfig  # noqa: PLC0415
+    from radar.synth import synth_capture  # noqa: PLC0415
+
+    adc, _meta = synth_capture(
+        RadarConfig(n_rx=3, frame_rate_hz=fps),
+        duration_s=30.0,
+        hr_bpm=hr_bpm,
+        seed=1,
+    )
+    d = root / f"synth_{int(fps)}fps"
+    d.mkdir()
+    rows = []
+    for i in range(adc.shape[0]):
+        payload = {
+            "ts_unix": T0 + i / fps,
+            "adc_real": adc[i].real.tolist(),
+            "adc_imag": adc[i].imag.tolist(),
+        }
+        rows.append((f"{i}", {"json": json.dumps(payload).encode()}))
+    (d / "radar_cap.pkl").write_bytes(pickle.dumps(rows))
+    rr_ms = 60000.0 / hr_bpm
+    lines = ["timestamp_unix,hr_bpm,rr_interval_ms"]
+    for k in range(31):
+        lines.append(f"{T0 + k},{hr_bpm:.0f},{rr_ms:.1f}")
+    (d / "hr_h10.csv").write_text("\n".join(lines) + "\n")
+    return d
+
+
+def test_iter_windows_scores_at_the_captures_real_rate(tmp_path) -> None:
+    # The bug this guards: a 25 fps capture MUST be scored at 25, not an assumed
+    # 20. A clean 72 bpm signal generated + timestamped at 25 fps is recoverable
+    # near 72 only if iter_windows read the rate from the timestamps; the old
+    # hardcoded 20 fps would put the peak near 72 * 20/25 = 57.6.
+    d = _synth_capture_at(tmp_path, fps=25.0, hr_bpm=72.0)
+    wins = list(iter_windows(d))
+    assert wins, "no windows produced"
+    best = min(min(abs(c.freq_bpm - 72.0) for c in cands) for cands, _truth in wins)
+    assert (
+        best < 6.0
+    ), f"nearest candidate off by {best:.1f} bpm -- rate not read from data"

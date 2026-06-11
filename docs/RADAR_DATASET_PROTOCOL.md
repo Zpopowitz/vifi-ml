@@ -18,7 +18,8 @@ touches train, eval, or SSL.
 
 ## Platform (fixed; v2 re-freeze 2026-06-10: keep-chirps)
 
-Multi-RX raw-ADC-over-SPI, CPU-pinned collector (core 3), clean **20 fps**, current
+Multi-RX raw-ADC-over-SPI, CPU-pinned collector (core 3), **25 fps** (v3 freeze
+2026-06-10; was 20 fps in v2), current
 firmware (`vifi_mpd_spi.appimage`). Capture flow: `tools/radar_arm.sh` (pre-arm) +
 `tools/go_capture.sh` (sensorStart + H10 + RR belt) for elevated captures;
 `tools/capture_labeled.sh` for rest. Both H10 and the Vernier belt are read in
@@ -268,11 +269,15 @@ below is frozen; the single open value is the WP1 platform rate (next section).
 
 Keep-chirps, multi-RX raw-ADC over FTDI SPI, CPU-pinned collector, current
 firmware (`vifi_mpd_spi.appimage`, `firmware_sha16=d5d49697e40615f1`). Frame
-rate: **PENDING WP1 ceiling search** (see "WP1 frame-rate ceiling" below). Until
-that soak lands, captures run the proven **20 fps** (`MotionDetect.cfg`); v3 does
-not freeze a faster rate without 20-minute soak evidence. All other platform
-facts are unchanged from the v2 re-freeze above (keep-chirps rationale, TDM,
-100 fps falsified).
+rate: **25 fps** (framePeriodicity 40 ms; `deploy/radar/MotionDetect.cfg`),
+soak-confirmed 2026-06-10 (WP1 below). This is the firmware ceiling: 30 fps
+trips the firmware's own "Frame Time is not enough to transfer" warning. The
+offline HR tools derive each capture's rate from its own frame timestamps
+(`radar.capture_io.measured_fps`), so they are rate-correct for 25 fps (and any
+future rate) with no per-rate constant. All other platform facts are unchanged
+from the v2 re-freeze (keep-chirps rationale, TDM, 100 fps falsified). The
+founder's v2 captures ran at 20 fps and are re-captured at 25 fps per the
+recapture ledger, so the v3 dataset is uniformly 25 fps.
 
 ### Session recipe per subject (priority order)
 
@@ -347,17 +352,22 @@ restores the frozen 20 fps cfg on exit (capture.py's preflight refuses a stale
 rate anyway). Verify `VIFI_BUS_MAXLEN` headroom at the chosen rate (PR #116 set
 12000).
 
-**Result: PENDING (board not on the bench at v3 authoring).** Fill on completion:
+**Result (bench, 2026-06-10, radar-only keep-chirps soaks):**
 
-| candidate | held 5 min? | 20-min soak fps | notes |
+| candidate | held 5 min? | 20-min soak | notes |
 |---|---|---|---|
-| 25 fps (40 ms) | _TBD_ | _TBD_ | |
-| 30 fps (33 ms) | _TBD_ | _TBD_ | |
-| 40 fps (25 ms) | _TBD_ | _TBD_ | |
-| 50 fps (20 ms) | _TBD_ | _TBD_ | |
+| **25 fps (40 ms)** | **yes, 25.0 fps** | **yes, 25.0 fps every minute, 30113 frames, no drift** | **FROZEN** |
+| 30 fps (33 ms) | no (1 frame total) | -- | firmware: "Frame Time is not enough to transfer" (6144 B SPI > 33 ms) |
+| 40 fps (25 ms) | not run | -- | shorter budget than 30, which already fails -> can only be worse |
+| 50 fps (20 ms) | no (collapses to 2 fps) | -- | SPI cannot keep up |
+| 100 fps (10 ms) | no (collapses to 2 fps) | -- | prior result |
 
-**Frozen rate: _TBD_.** If the answer is 20 fps, firmware-stripping for higher
-slow-time is declared mandatory-before-subject-4+ and scheduled explicitly.
+**Frozen rate: 25 fps.** It is the safe edge of the plateau: 40 ms frame with a
+~6.7 ms margin below the 33 ms firmware cliff. 26-29 fps were not chased -- a
+4-16% slow-time gain in an already 8-25x-oversampled cardiac band, bought by
+spending the entire safety margin, is a bad trade. Faster than 25 requires
+firmware timing work (SPI transfer or frame pipeline), a declared follow-on, not
+a blocker. Evidence: `tools/fps_soak.py` per-minute logs.
 
 ## Status
 

@@ -8,7 +8,7 @@ bug), so it cannot test candidates. This harness does, without straps:
 
   reset board -> push deploy/radar/MotionDetect_<rate>fps.cfg to the Pi ->
   radar-only stream for N minutes -> per-minute fps verdict -> restore the
-  frozen 20 fps cfg.
+  v3 frozen 25 fps cfg (MotionDetect.cfg).
 
 It reuses tools/capture.py's plumbing (reset, ssh, the radar-only capture path,
 the pull) so there is one implementation of the bench dance. Run on the dev box.
@@ -107,10 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-reset", dest="auto_reset", action="store_false")
     args = ap.parse_args(argv)
 
-    cfg = BASE_CFG if args.rate == 20 else CFG_DIR / f"MotionDetect_{args.rate}fps.cfg"
+    cfg = BASE_CFG if args.rate == 25 else CFG_DIR / f"MotionDetect_{args.rate}fps.cfg"
     if not cfg.exists():
         log(
-            f"FAIL: no cfg for {args.rate} fps ({cfg}). Candidates: 25/30/40/50 (or 20 base)."
+            f"FAIL: no cfg for {args.rate} fps ({cfg}). "
+            "Candidates: 20/30/40/50 (or 25 = frozen base)."
         )
         return 2
     minutes = (
@@ -169,15 +170,16 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _restore_base() -> None:
-    """Always leave the Pi on the frozen 20 fps profile."""
+    """Always leave the Pi on the v3 frozen 25 fps profile (MotionDetect.cfg)."""
     code, _ = _run(["scp", "-q", str(BASE_CFG), f"{PI}:{CFG_PATH}"], timeout=20)
     if code == 0:
         ssh("true")  # no-op; ensure the scp settled
-        log(f"  restored frozen 20 fps cfg -> Pi:{CFG_PATH}")
+        log(f"  restored frozen 25 fps cfg -> Pi:{CFG_PATH}")
     else:
         log(
-            f"  WARNING: could not restore the 20 fps cfg to Pi:{CFG_PATH} -- "
-            "do it manually before the next real capture (capture.py preflight will else refuse)."
+            f"  WARNING: could not restore the 25 fps cfg to Pi:{CFG_PATH} -- "
+            "do it manually before the next real capture (capture.py preflight "
+            "will else refuse)."
         )
 
 
