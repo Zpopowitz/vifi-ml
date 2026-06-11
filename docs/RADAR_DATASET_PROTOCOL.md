@@ -42,44 +42,25 @@ frame budget at the firmware level): higher slow-time rate for Stage-2
 morphology requires firmware timing work, tracked as future engineering,
 and does NOT block this dataset.
 
-## Per-subject session (identical for every subject, founder included)
+## Per-subject session
 
-- **Geometry, pinned + recorded:** subject seated, chest square to the board,
-  fixed distance (~1 m), still. Record distance + angle in the metadata.
-- **Captures (locked counts -- see "Capture plan" below for the why):**
-  - **2 x rest, floor >=150 s, target 180 s** each (long windows -> finer
-    resolution, the path to <1 bpm). 150 s clears the floor; 180 s buys ~1 extra
-    independent 90 s window. Window analysis is duration-tolerant, do NOT
-    re-capture a >=150 s rest just to reach 180.
-  - **3 x post-exercise decay, ~120 s**, pre-armed so the elevated HR is caught
-    within ~1 s of sitting (each capture sweeps the HR range as it decays). This
-    is the data-starved axis (the selector learns peak-disambiguation here, not at
-    rest); take the top of the old 2-3 range. The only sanctioned per-subject
-    knob is +1 post-exercise for a fit subject -- never trade a post-ex for a rest.
-  - **1 x rr_fast (paced fast + SHALLOW breathing AT REST), ~90 s** -- subject
-    seated and STILL, taking quick SMALL breaths to a metronome ~25-28 /min, NO
-    exercise. Shallow is deliberate: real pathological tachypnea is fast **and
-    low-amplitude** (small chest displacement near the cardiac motion scale --
-    the hard, realistic case the radar must actually resolve). Voluntary fast +
-    DEEP breaths are the easy case AND a hyperventilation / lightheadedness /
-    faint risk, so do NOT coach deep breathing. Isolates whether radar RR
-    resolves tachypnea **absent body motion** (the clinical case); the
-    post-exercise RR test is confounded by settling motion (see regime map below).
-    Mild and safe for all tiers, but stop at any lightheadedness; skip on
-    older / at-risk subjects. Shallow-paced is a PROXY -- the real validation is
-    actual tachypneic patients (no access yet). Label `rr_fast`.
-  - H10 paired throughout (the HR label) AND the Vernier Go Direct belt paired
-    throughout for RR ground truth -- the only way to validate RR (H10 is HR-only).
-    The belt is captured in parallel by default (best-effort: a missing/asleep belt
-    never aborts the radar+H10 capture; set RR=0 to disable). Its raw force at 10 Hz
-    is the source of truth; RR is recomputed offline from force, not the onboard DSP.
-  - NRST + arm before each capture (board needs a fresh boot per `adcLogging`).
-- **Plus unlabeled (harvest free):** the collector runs through warm-up, settle,
-  and the gaps between labeled captures -- save ALL that raw, it is on-platform
-  unlabeled radar for SSL pretraining at zero subject-time cost. SSL feeds the
-  Stage-2 waveform model, NOT the Stage-1 selector (the gate), so do not burn a
-  dedicated subject-time slot on it in the pilot. Formalize a dedicated unlabeled
-  block only at scale, when the SSL backbone is actually being built.
+> **The recipe is the "Session recipe per subject" section below (2026-06-11
+> redesign): Design principle -> Core captures -> Deployment-realism -> Research
+> adjunct, with the still-elevation tiers.** This section keeps only the
+> capture-agnostic facts that survived the redesign.
+
+- **Geometry, recorded per capture:** distance + angle in the metadata every
+  time. Seated core is square within ~15-20 deg; the realism captures vary angle
+  on purpose (vitals are frequencies -> angle-invariant; spanning teaches it).
+- **Truth sensors on every labeled capture:** H10 (HR) + raw ECG (beat timing /
+  morphology, WP2) + Vernier belt (RR). The belt's raw force at 10 Hz is the RR
+  source of truth (recomputed offline, not the onboard DSP); best-effort, a
+  missing belt never aborts the radar+H10 capture (RR=0 to disable).
+- **Fresh board boot** (NRST + arm) before each capture (`adcLogging`).
+- **Unlabeled, harvested free:** save ALL raw from warm-up, settle, and the gaps
+  between labeled captures -- on-platform unlabeled radar for Stage-2 SSL at zero
+  subject-time cost. SSL feeds the waveform model, NOT the Stage-1 selector (the
+  gate); no dedicated subject-time slot in the pilot.
 
 ## Labels
 
@@ -136,26 +117,19 @@ range, firmware hash, git commit. Dataset directory:
 stage-agnostic name -- the same captures train the Stage-1 selector and the
 Stage-2 waveform model). Gitignored like all `data/`.
 
-## Capture plan -- locked counts + phasing (2026-06-04)
+## Capture plan -- phasing + gate (2026-06-04; counts superseded 2026-06-11)
 
-Per-subject recipe (identical for everyone, founder included):
+> **The per-subject capture list is superseded by the "Session recipe per
+> subject" section (2026-06-11): long rest + respiratory battery + absence +
+> still-elevated + supine + realism (+ optional Tier-A decay).** The old 2-rest
+> / 3-post-exercise / rr_fast split below is retired -- the motion-heavy
+> post-exercise weighting was the thing the redesign removed (the sensor cannot
+> read moving HR at Stage 1). The durable guidance survives:
 
-| Capture | Count | Length | Labeled min | Trains |
-|---|---|---|---|---|
-| rest | 2 | >=150 s (target 180) | ~5-6 | resting-HR <1 bpm (long windows), RR, test-retest |
-| post-exercise decay | 3 | ~120 s | ~6 | the Stage-1 selector (the gate); wide-HR disambiguation |
-| unlabeled | harvested free | warm-up + dead time | 0 | Stage-2 SSL backbone (downstream of the gate) |
-
-= **5 labeled captures (~11 labeled min) + free unlabeled per subject.** RR rides
-in parallel on every labeled capture (no separate RR captures). The split is
-weighted to post-exercise on purpose: at rest the true HR sits on the ~80 bpm
-respiration-harmonic artifact (falsely accurate, teaches the selector nothing);
-all the disambiguation signal is at elevated/changing HR, where we have only
-n=2 captures ever (`RADAR_HR_FINDINGS_2026-05-29.md`).
-
-**The split is second-order. Subject count is first-order.** 2-3-1 vs 2-4-0
-barely moves the model next to 1 subject -> 12. Do NOT let recipe-tuning delay
-recruitment.
+**The recipe is second-order. Subject count is first-order.** Tweaking the
+capture mix barely moves the model next to 1 subject -> 12. Do NOT let
+recipe-tuning delay recruitment; bank the realism captures and move to the next
+body.
 
 Phasing with a hard gate:
 
@@ -182,19 +156,29 @@ windows -- no hard-coded 150/180 to trip on. Separate (non-blocking) item: `WIN_
 is fixed at 20 s; parameterize it to 60-90 s for the resting <1 bpm path (a 150 s
 rest supports ~one 90 s window, 180 s supports ~one more).
 
-## Subject tiers + elevation safety (2026-06-04)
+## Subject tiers + elevation safety (2026-06-11: still-elevation)
 
-The Tier-A all-out bout in the per-subject session above is for young/fit subjects
-ONLY. Screen on health/fitness, NOT age alone -- age is the prior, a 30-second
-screen is the decision. Screen: any heart condition / chest pain / on beta-blockers
-/ sedentary? Any flag drops the subject a tier. Consent + supervision + fall
-precautions scale with intensity. Record the method per capture in `--protocol-note`.
+The elevated capture induces HR into the deterioration band **with the body
+still**, not via exercise (the redesign above). Screen on health/fitness, NOT
+age alone -- age is the prior, a 30-second screen is the decision. Screen: any
+heart condition / chest pain / on beta-blockers / sedentary? Any flag drops the
+subject a tier. Record the method per capture in `--protocol-note`; titrate to
+the live H10.
 
-| Tier | Who (default) | Elevation method | HR target | Captures |
+| Tier | Who (default) | Still-elevation method | HR target | Elevated captures |
 |---|---|---|---|---|
-| **A -- full** | ~18-40, cleared, active | all-out bout (sprint / burpees) | ~85-90% max (150-180) | 2 rest + 3 elevated |
-| **B -- moderate** | ~40-65, cleared, no cardiac flags | brisk walk / stairs / sit-to-stands | moderate ~110-135 (65-75% max, "can still talk", RPE 12-14) | 2 rest + 2 elevated |
-| **C -- gentle/rest** | ~65+, frail, or ANY cardiac flag / beta-blocker | rest + paced deep breathing (RSA modulates HR safely) +/- light sit-to-stands | natural rest -> mild ~90-110 | 3-4 rest + optional gentle |
+| **A -- full** | ~18-40, cleared, active | isometric handgrip (~30% MVC, contralateral arm rested) for the steady band, + 1 still post-exercise decay (capture #7) for the high band | 90-135 still (+ decay tail to ~150) | 1 still-elevated + 1 decay |
+| **B -- moderate** | ~40-65, cleared, no cardiac flags | handgrip and/or cold-pressor (hand in ice water) | 90-125 still | 1 still-elevated |
+| **C -- gentle/rest** | ~65+, frail, or ANY cardiac flag / beta-blocker | silent mental stress (timed serial-7s / Stroop) +/- gentle handgrip; NO exercise, NO cold-pressor if CV/Raynaud's | mild 85-110 still | 1 still-elevated (gentle) |
+
+Method notes: **handgrip** is the most reliable still HR elevator (sustained ->
+plateau, silent, chest quiet; screen out uncontrolled HTN). **Cold-pressor**
+(hand in ice water <=2 min) is a strong sympathetic/BP activator with a
+modest/variable HR rise -- secondary; discard the first ~15 s (immersion flinch);
+exclude Raynaud's / CV disease / HTN. **Mental stress** must be SILENT (respond on
+screen / by tap, not aloud -- talking moves the chest). Beta-blockers blunt the
+response; that is useful diversity (real patients are on them), do not compensate
+by pushing harder.
 
 NEVER push an elderly or at-risk subject to maximal exertion -- cardiac + fall +
 liability red line. Band coverage is a COHORT property: the young cover the high
@@ -279,33 +263,68 @@ from the v2 re-freeze (keep-chirps rationale, TDM, 100 fps falsified). The
 founder's v2 captures ran at 20 fps and are re-captured at 25 fps per the
 recapture ledger, so the v3 dataset is uniformly 25 fps.
 
-### Session recipe per subject (priority order)
+### Design principle (2026-06-11 redesign)
 
-Cut from the bottom when subject patience runs out; **never cut a rest or the
-elevated below its tier minimum**. Order is by value-at-risk:
+Capture the intersection of three things, because that is the only data that is
+simultaneously real, readable, and saleable:
+1. **The sensor's real regime:** still-body vitals. Moving/post-exercise HR is
+   near-chance for the Stage-1 selector (motion smears the spectrum; the true
+   peak often is not even a candidate). Dense data where the label is frequently
+   absent is wasted subject-time.
+2. **The deployment:** a still patient in a bed or chair, sensor overhead or at
+   the head of the bed, often through a blanket, often off-axis.
+3. **The clinical event that pays:** deterioration scoring (NEWS2, qSOFA, SIRS)
+   is built on **resting** vitals. RR >=22 and resting HR ~110-130 are the early
+   sepsis/decompensation signals; post-exercise athletic HR appears in no score.
 
-1. **2 x rest, 300 s** each (`--breath-hold` on at least one). 300 s doubles
-   windows per sit; the breath-hold adds free apnea labels. H10 + ECG + belt
-   throughout.
-2. **1 x rr_fast, ~90 s** (paced fast + shallow breathing at rest; the
-   still-tachypnea clinical case).
-3. **1 x absence segment, 60 s** (`--absence`: empty room, no straps) -- labeled
-   absence / presence-detection data per session.
-4. **Tier-appropriate elevated** (recovery-sweep framing: the value is the HR
-   descent at rest after the bout; Tier A 3x, B 2x, C none). Cut these FIRST if
-   time runs short -- they are the data-starved axis but also the most
-   perishable to fatigue.
+Consequence vs the prior recipe: elevated HR is induced **at rest** (still body),
+not via motion-heavy post-exercise decay. This mirrors the `rr_fast` decision
+(fast breathing without body motion) applied to HR. Vitals are FREQUENCIES, so
+viewing angle scales amplitude, not the rate; angle is therefore spanned on
+purpose (not fixed, not exhaustively enumerated) to teach invariance, and logged
+per capture.
 
-Every labeled capture: H10 **and raw ECG** (`--ecg`, WP2) **and** the Vernier
-belt in parallel; the capture tool stamps clock offset, board serial, and a
-learnability QC (re-seat if candidate-presence < 60%).
+### Core captures (every subject, every tier, seated upright, ~16 min)
 
-### Opportunistic variants (willing subjects only, after the core recipe)
+Seated, chest square to the board (within ~15-20 deg -- for cross-subject
+*consistency*, not because the signal needs it), ~1 m, board boresight on the
+sternum. H10 + raw ECG + belt throughout. The capture tool stamps clock offset,
+board serial, geometry, and a learnability QC (re-seat if candidate-presence
+< 60%).
 
-Domain-shift labels, NOT core protocol -- collect only if the subject has
-patience left:
-- one capture at **1.5-2 m** or **20-30 deg off-angle**;
-- one **under a blanket / thick layer** (attenuation robustness).
+1. **Long rest, 600 s.** Still, normal breathing. Baseline HR/RR, HRV, drift +
+   false-alarm characterization, ECG morphology, within-session test-retest.
+2. **Respiratory battery, ~360 s continuous, still:** 60 s normal -> 60 s
+   slow-deep (~8/min) -> 90 s fast-shallow (~26-28/min, the tachypnea case) ->
+   2 x 20 s breath-hold (apnea) -> 60 s recovery. The full respiratory-event
+   product (tachypnea, bradypnea, apnea, hypopnea), all at rest. RR is the lead
+   product; this is weighted accordingly.
+3. **Absence, 60 s** (`--absence`: empty room, no straps) -- presence / bed-exit,
+   no-false-alarm baseline.
+4. **Elevated AT REST, ~150-180 s, still** (HR into the deterioration band
+   90-135 without body motion). Method by tier (next table). Record the method
+   in `--protocol-note`; titrate to the live H10 (start recording once in band).
+
+### Deployment-realism captures (bank from subject 1, ~5 min)
+
+These are the deployment, not edge cases. Record one of each per subject from the
+start so the eventual supine/realism claim needs no re-recruitment. **Vary the
+angle across subjects on purpose** (do not standardize): the spread is what
+proves angle-invariance.
+
+5. **Supine / bed, ~150 s.** Subject lying/reclined; **board repositioned to look
+   DOWN at the chest** (overhead, or head-of-bed tilted 30-45 deg) -- never flat
+   from the side (that looks across the chest motion -> dead). Log distance +
+   angle.
+6. **Off-axis or blanket, ~150 s.** One capture deliberately 20-30 deg off-axis
+   OR under a blanket/thick layer. Log it.
+
+### Research adjunct (Tier A only, optional, NON-gating)
+
+7. **Still post-exercise decay, ~120 s.** Hard 30-60 s bout, then sit/lie and
+   **wait ~20-30 s for gross motion to settle**, then capture the still decay
+   from peak down. The only place dynamic HR belongs (Stage-2 continuity /
+   morphology). Never allowed to delay recruitment.
 
 ### Sealed vault policy (pre-registered)
 
@@ -323,12 +342,16 @@ boards arrive: alternate boards between captures for >=2 subjects; every capture
 already stamps the XDS110 `board_serial` (WP3), so board-invariance becomes a
 measurable claim instead of a silent confound.
 
-### Recapture ledger (v3 redo)
+### Recapture ledger (redo on the 2026-06-11 recipe)
 
-- **founder**: 2 x rest 300 s (one breath-hold) + rr_fast + absence on v3;
-  elevated optional (already have 3 valid v2 elevated).
-- **subj03**: redo rest_1 on v3 + the owed rest_2 / postex x2 / rr_fast when
-  they return.
+The prior captures (founder 5/5, subj03 rest_1) were the OLD recipe (2 rest /
+3 post-exercise / rr_fast) at 20 fps. They do not satisfy the redesigned recipe
+and are not in the v3 dataset. Both subjects get a full redo on the new recipe
++ 25 fps when they next sit:
+
+- **founder**: full new set (long rest + respiratory battery + absence +
+  still-elevated + supine + realism). The old post-exercise captures are retired.
+- **subj03**: full new set on their return.
 
 ## WP1 frame-rate ceiling (bench, GATES the freeze)
 
@@ -371,11 +394,14 @@ a blocker. Evidence: `tools/fps_soak.py` per-minute logs.
 
 ## Status
 
-Subjects: founder (1) COMPLETE 5/5; subj03 in progress (rest_1 in: HR oracle 1.1 bpm
-@60s, RR 0.36 brpm -- 2nd body confirms resting signal). subj02 deferred. Platform +
-per-subject recipe solved; binding constraint is recruiting diverse subjects (tiers,
-builds, **sexes -- all male so far**, ages). Cross-subject `learned` LOSO number
-unlocks once a 2nd subject's set is complete.
+Subjects: founder + subj03 have OLD-recipe captures only (retired; full redo owed
+on the 2026-06-11 recipe + 25 fps -- see recapture ledger). Net trainable
+subjects on the current recipe + platform: **0** until the first new-recipe
+session runs. Their prior captures confirmed the resting signal is real (subj03
+rest_1: HR oracle 1.1 bpm @60s, RR 0.36 brpm) but do not enter the dataset.
+Binding constraint is recruiting diverse subjects (sex -- **all male so far**,
+the top gap; then age, fitness, build). Cross-subject `learned` LOSO number
+unlocks once 2 subjects' full new-recipe sets exist.
 
 v3 freeze (2026-06-10): platform-hardening packages landed (WP1 cfgs, WP2 ECG +
 belt-rate probe, WP3 capture guards, WP5 manifest + backup, WP6 longitudinal
