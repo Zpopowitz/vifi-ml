@@ -22,34 +22,50 @@ from modules.bus import (  # noqa: E402
     csi_raw,
     hr_predicted,
     hr_reference,
+    radar_raw,
 )
 from tools.audit_subscriber import drain_existing, run  # noqa: E402
 
 
-def test_drain_writes_all_topics_for_one_patient(tmp_path):
+def test_drain_excludes_raw_firehose_by_default(tmp_path):
+    # The audit records disclosures/decisions, NOT the raw sensor firehose:
+    # logging csi.raw/radar.raw (encrypted) duplicated the dataset at ~8 GB/day.
     bus = InMemoryBus()
     bus.publish(csi_raw("alice"), {"ts_unix": 1.0, "amps": [1.0]}, ts_ms=1000)
-    bus.publish(hr_reference("alice"), {"ts_unix": 1.0, "hr_bpm": 72}, ts_ms=1001)
-    bus.publish(hr_predicted("alice"), {"ts_unix": 1.0, "hr_bpm": 74.5}, ts_ms=1002)
+    bus.publish(radar_raw("alice"), {"ts_unix": 1.0, "adc_real": [1.0]}, ts_ms=1001)
+    bus.publish(hr_reference("alice"), {"ts_unix": 1.0, "hr_bpm": 72}, ts_ms=1002)
+    bus.publish(hr_predicted("alice"), {"ts_unix": 1.0, "hr_bpm": 74.5}, ts_ms=1003)
 
     writer = drain_existing(bus, ["alice"], audit_dir=tmp_path)
     path = writer.current_path
     writer.close()
 
     assert path is not None and path.exists()
-    lines = path.read_text().strip().splitlines()
-    assert len(lines) == 3
-    records = [json.loads(line) for line in lines]
+    records = [json.loads(line) for line in path.read_text().strip().splitlines()]
     topics_seen = {r["topic"] for r in records}
-    assert topics_seen == {
-        csi_raw("alice"),
-        hr_reference("alice"),
-        hr_predicted("alice"),
-    }
+    assert topics_seen == {hr_reference("alice"), hr_predicted("alice")}
+    assert csi_raw("alice") not in topics_seen
+    assert radar_raw("alice") not in topics_seen
     # Each record carries the full message envelope.
     sample = records[0]
     assert "topic" in sample and "msg_id" in sample and "ts_ms" in sample
     assert "payload" in sample
+
+
+def test_drain_includes_raw_with_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIFI_AUDIT_INCLUDE_RAW", "1")
+    bus = InMemoryBus()
+    bus.publish(radar_raw("alice"), {"adc_real": [1.0]}, ts_ms=1000)
+    bus.publish(hr_predicted("alice"), {"hr_bpm": 70}, ts_ms=1001)
+
+    writer = drain_existing(bus, ["alice"], audit_dir=tmp_path)
+    path = writer.current_path
+    writer.close()
+
+    topics_seen = {
+        json.loads(line)["topic"] for line in path.read_text().strip().splitlines()
+    }
+    assert radar_raw("alice") in topics_seen  # override restores the firehose
 
 
 def test_drain_isolates_by_patient(tmp_path):
