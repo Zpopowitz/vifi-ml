@@ -108,12 +108,16 @@ so a future "one more capture" is an ask, not a re-recruitment.
 - [ ] founder elevated-flow shakeout clean (postex_1-3 verified) before subject 2
 - [ ] consent + pseudonymization (`pseudonymize.py`) flow ready; no PII in `meta.json`
 
-### Post-capture reconciliation TODO (does NOT block the founder session)
+### Post-capture reconciliation -- RESOLVED 2026-06-10
 
-The frozen platform DIVERGES from `origin/main` (`main` has newer, untested-on-this-Pi
-versions of the capture scripts + inference worker). The Pi's versions are the
-*proven* ones (produced `founder_restval_1`). Before deployment work, diff
-proven-Pi vs `main` per file and decide the canonical version:
-- `radar/ftdi_spi.py`, `tools/radar_kickstart_adc.py`: already == `origin/main` (tested).
-- `tools/capture_labeled.sh` / `go_capture.sh` / `radar_arm.sh`: Pi proven vs `main` +68/+29/+28 lines -- reconcile.
-- `tools/radar_inference_worker.py`: Pi is STALE vs `main` (no RR smoothing); `main` is better -- adopt `main`'s after a capture-path regression check.
+The 2026-06-04 divergence is closed. The Pi repo was reset to `origin/main`
+(`git reset --hard origin/main` + ff to the v3 freeze, then restart all 5
+services) so the Pi runs the canonical v3 code. The 2026-06-04 proven freeze is
+preserved permanently by the tag `radar-platform-freeze-20260604` (`14f5288`),
+on both the Pi and origin. Resolution per file:
+- `radar/ftdi_spi.py`, `tools/radar_kickstart_adc.py`: were already == `main`.
+- `tools/capture_labeled.sh` / `go_capture.sh` / `radar_arm.sh`: adopted `main`'s
+  v3 versions (absence mode, ECG, keep-chirps), bench-proven during the WP1
+  25 fps soaks which ran `main`'s `capture_labeled.sh` on this board.
+- `tools/radar_inference_worker.py`: adopted `main`'s (RR smoothing + unattended
+  bring-up); verified live after restart -- 25 fps stream, hr/rr.predicted flowing.
