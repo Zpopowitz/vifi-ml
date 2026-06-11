@@ -91,3 +91,26 @@ def test_learnability_check_returns_report_dict(tmp_path):
 def test_learnability_check_swallows_errors(tmp_path):
     # No capture pickle at all -> QC must return None, never raise.
     assert cap.learnability_check(tmp_path) is None
+
+
+def test_respiratory_battery_total_matches_phases():
+    assert cap.RESP_BATTERY_TOTAL == sum(
+        secs for _n, secs, _c in cap.RESP_BATTERY_PHASES
+    )
+    assert cap.RESP_BATTERY_TOTAL == 330
+
+
+def test_respiratory_battery_records_every_phase(monkeypatch):
+    # Don't actually breathe through 330 s of capture.
+    monkeypatch.setattr(cap.time, "sleep", lambda _s: None)
+    events = cap._run_respiratory_battery()
+    assert len(events) == len(cap.RESP_BATTERY_PHASES)
+    assert [e["phase"] for e in events] == [p[0] for p in cap.RESP_BATTERY_PHASES]
+    last_end = 0.0
+    for ev in events:
+        assert ev["type"] == "resp_phase"
+        assert ev["t_end_unix"] >= ev["t_start_unix"]
+        assert ev["t_start_unix"] >= last_end  # phases are sequential
+        last_end = ev["t_end_unix"]
+    # The two apnea holds are present and labeled for offline apnea extraction.
+    assert [e["phase"] for e in events].count("hold") == 2

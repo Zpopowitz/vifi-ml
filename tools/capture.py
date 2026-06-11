@@ -85,6 +85,25 @@ BREATH_HOLD_S = 15
 CLOCK_WARN_S = 0.1  # cross-sensor alignment dies silently above this
 CLOCK_FAIL_S = 1.0
 LEARNABILITY_WARN = 0.60  # candidate-presence floor before a re-seat + recapture
+# Respiratory battery (the cued breathing sequence; the whole respiratory-event
+# product at rest). Fixed clinical phase durations; the capture duration is
+# their sum. Each phase boundary is cued to the operator and stamped into meta
+# events so every breathing regime is offline-labeled.
+RESP_BATTERY_PHASES = (
+    ("normal", 60, "breathe normally"),
+    ("slow_deep", 60, "slow deep breaths ~8/min (in 4 s / out 4 s; use a metronome)"),
+    (
+        "fast_shallow",
+        90,
+        "fast SHALLOW breaths ~27/min (small quick breaths; do NOT deep-breathe)",
+    ),
+    ("hold", 20, "HOLD breath"),
+    ("breathe", 10, "breathe normally"),
+    ("hold", 20, "HOLD breath"),
+    ("breathe", 10, "breathe normally"),
+    ("recover", 60, "back to normal breathing"),
+)
+RESP_BATTERY_TOTAL = sum(p[1] for p in RESP_BATTERY_PHASES)  # 330 s
 
 
 # --------------------------------------------------------------------------- #
@@ -351,6 +370,7 @@ def run_capture(
     keep_chirps: bool,
     breath_hold: bool = False,
     h10_enabled: bool = True,
+    respiratory_battery: bool = False,
 ) -> list[dict]:
     code, _ = _run(
         ["scp", "-q", "tools/capture_labeled.sh", f"{PI}:/tmp/capture_labeled.sh"],
@@ -367,8 +387,13 @@ def run_capture(
     )
     stream = "radar-only (absence)" if not h10_enabled else "H10+RR"
     log(f"  capturing {duration}s (arm -> collector -> sensorStart -> {stream})...")
-    # Breath-hold cues (if any) run on this side while the Pi streams in parallel.
-    events = _run_breath_holds(duration) if breath_hold else []
+    # Operator cues (if any) run on this side while the Pi streams in parallel.
+    if respiratory_battery:
+        events = _run_respiratory_battery()
+    elif breath_hold:
+        events = _run_breath_holds(duration)
+    else:
+        events = []
     # Poll the Pi-side progress log for the done marker.
     waited, budget = 0, duration + 60
     while waited < budget:
@@ -722,6 +747,39 @@ def learnability_check(out: Path) -> dict | None:
     return report
 
 
+def _run_respiratory_battery() -> list[dict]:
+    """Cue the respiratory battery and stamp each phase into meta ``events``.
+
+    Runs the fixed RESP_BATTERY_PHASES sequence (normal / slow-deep /
+    fast-shallow / 2x breath-hold / recover) -- the whole respiratory-event
+    product at rest. Prints each phase's instruction + a countdown for the
+    operator to relay, and records each phase's start/end unix time so every
+    breathing regime is offline-labeled. Blocks for RESP_BATTERY_TOTAL while the
+    Pi-side capture streams in parallel; the capture duration should equal that.
+    """
+    events: list[dict] = []
+    for n, (name, secs, cue) in enumerate(RESP_BATTERY_PHASES, 1):
+        t0 = time.time()
+        log(f"  >> [{n}/{len(RESP_BATTERY_PHASES)}] {name.upper()} ({secs}s): {cue}")
+        remaining = secs
+        while remaining > 0:
+            step = min(5, remaining)
+            time.sleep(step)
+            remaining -= step
+            if remaining and (remaining <= 3 or remaining % 15 == 0):
+                log(f"     {name}... {remaining}s")
+        events.append(
+            {
+                "type": "resp_phase",
+                "phase": name,
+                "t_start_unix": t0,
+                "t_end_unix": time.time(),
+            }
+        )
+    log("  >> respiratory battery complete")
+    return events
+
+
 def _run_breath_holds(duration: int) -> list[dict]:
     """Cue BREATH_HOLD_COUNT x BREATH_HOLD_S breath-holds during a rest capture.
 
@@ -774,7 +832,11 @@ def stamp(
 ) -> None:
     code, git = _run(["git", "rev-parse", "--short", "HEAD"], timeout=10)
     pi_sha, pi_dirty = pi_head()
-    geometry = {"distance_m": args.distance_m, "angle_deg": args.angle_deg}
+    geometry = {
+        "distance_m": args.distance_m,
+        "angle_deg": args.angle_deg,
+        "pose": getattr(args, "pose", "seated"),
+    }
     if args.board_height_cm is not None:
         geometry["board_height_cm"] = args.board_height_cm
     body = {
@@ -935,6 +997,21 @@ def main() -> int:
         "labels); records the hold windows into meta events.",
     )
     ap.add_argument(
+        "--respiratory-battery",
+        dest="respiratory_battery",
+        action="store_true",
+        help=f"cue the respiratory battery (normal/slow/fast-shallow/2x hold/"
+        f"recover, {RESP_BATTERY_TOTAL} s) during a rest capture; stamps each "
+        "phase into meta events. The respiratory-event product, all at rest.",
+    )
+    ap.add_argument(
+        "--pose",
+        choices=["seated", "supine", "reclined"],
+        default="seated",
+        help="subject posture, stamped into meta (seated core; supine/reclined "
+        "for the bed/realism captures).",
+    )
+    ap.add_argument(
         "--allow-dirty",
         dest="allow_dirty",
         action="store_true",
@@ -947,9 +1024,13 @@ def main() -> int:
         ap.error("--absence and --elevated are mutually exclusive")
     if args.breath_hold and (args.elevated or args.absence):
         ap.error("--breath-hold is only valid for a rest capture")
+    if args.respiratory_battery and (args.elevated or args.absence or args.breath_hold):
+        ap.error("--respiratory-battery is a standalone rest capture")
     if args.duration is None:
         args.duration = (
-            ABSENCE_DEFAULT_S
+            RESP_BATTERY_TOTAL
+            if args.respiratory_battery
+            else ABSENCE_DEFAULT_S
             if args.absence
             else ELEVATED_DEFAULT_S
             if args.elevated
@@ -1012,6 +1093,7 @@ def main() -> int:
                     args.keep_chirps,
                     breath_hold=args.breath_hold,
                     h10_enabled=expect_hr,
+                    respiratory_battery=args.respiratory_battery,
                 )
             log("[5/6] pull + verify")
             stats = dump_and_pull(out, args.rr, expect_hr=expect_hr)
