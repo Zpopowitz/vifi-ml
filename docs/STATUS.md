@@ -28,10 +28,15 @@ offline tools read pickles via `radar.capture_io`. WP1 ceiling search
 (framePeriodicity 40 ms, 20-min soak clean); 30 fps trips the firmware
 "Frame Time is not enough" warning; 50/100 fps collapse to ~2 fps. Offline
 HR tools now derive each capture's rate from its own timestamps
-(`radar.capture_io.measured_fps`), not a hardcoded constant. **Pi redeploy
-for 25 fps:** push `deploy/radar/MotionDetect.cfg` to
-`/home/zpopowitz/MotionDetect.cfg`, set `VIFI_RADAR_FRAME_RATE_HZ=25` in
-`/etc/vifi/live.env`, restart `vifi-radar-collector` + `vifi-radar-inference`.
+(`radar.capture_io.measured_fps`), not a hardcoded constant. **25 fps
+ACTIVATED on the Pi 2026-06-10** (collector measured at 25.0 fps,
+worker emitting hr/rr.predicted). Redeploy recipe: push
+`deploy/radar/MotionDetect.cfg` to `/home/zpopowitz/MotionDetect.cfg`, set
+BOTH `VIFI_RADAR_FRAME_RATE_HZ=25` AND
+`VIFI_RADAR_CFG=/home/zpopowitz/MotionDetect.cfg` in `/etc/vifi/live.env`
+(the live bring-up `radar_bringup.sh` defaults to the REPO cfg, which lags a
+stale Pi repo -- that gap silently armed 20 fps until VIFI_RADAR_CFG was
+set), then restart `vifi-radar-collector` + `vifi-radar-inference`.
 Capture flow is SP7-aware (resolves the authed bus URL from live.env via
 passwordless sudo).
 
