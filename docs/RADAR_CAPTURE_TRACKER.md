@@ -8,33 +8,37 @@ Mark a cell: `[ ]` todo, `[~]` captured pending verify, `[x]` verified
 (`meta.json` `capture_ok: true`), `[!]` quarantined (note why). A capture is
 DONE only at `[x]`.
 
-## Per-subject recipe (identical for everyone)
+## Per-subject recipe (2026-06-11 redesign -- see `RADAR_DATASET_PROTOCOL.md`)
+
+Seated upright core + banked deployment-realism. Operator runbook:
+`docs/SESSION_RUNBOOK.md`.
 
 | slot | id | type | length | notes |
 |---|---|---|---|---|
-| 1 | `rest_1` | rest | >=150 s (target 180) | still, chest square, ~1 m |
-| 2 | `rest_2` | rest | >=150 s (target 180) | test-retest of rest_1 |
-| 3 | `postex_1` | post-exercise decay | ~120 s | all-out bout, pre-armed, sit, catch HR <1 s |
-| 4 | `postex_2` | post-exercise decay | ~120 s | second bout |
-| 5 | `postex_3` | post-exercise decay | ~120 s | third bout (Tier B: 2 bouts; Tier C: none) |
-| 6 | `rr_fast` | paced fast breathing AT REST | ~90 s | seated STILL, ~25-28/min metronome, NO exercise; tests tachypnea RR absent motion |
-| - | (unlabeled) | harvested | warm-up + dead time | save all raw; no dedicated slot in pilot |
+| 1 | `rest_1` | long rest | 600 s | still, seated, normal breathing |
+| 2 | `resp_battery` | respiratory battery | ~360 s | normal/slow/fast-shallow/2x hold/recover (cued) |
+| 3 | `absence_1` | empty room | 60 s | no straps, radar-only |
+| 4 | `elev_handgrip` | elevated AT REST | ~160 s | still HR 90-135 via handgrip (tier method); titrate to live H10 |
+| 5 | `bed_1` | supine / bed | ~150 s | lying; board looks DOWN at chest; log angle |
+| 6 | `realism_1` | off-axis or blanket | ~150 s | 20-30 deg off-axis OR under blanket; vary across subjects |
+| 7 | `postex_decay` | still post-ex decay | ~120 s | **Tier A only, optional, non-gating**; still tail after settle |
+| - | (unlabeled) | harvested | warm-up + dead time | save all raw |
 
-Every labeled capture: H10 + Vernier belt paired in parallel; NRST + arm before
-each (fresh boot per `adcLogging`); record firmware hash + git commit + geometry
-in `meta.json`. Only sanctioned knob: `+postex_4` for a fit subject. Never trade
-a post-ex for a rest.
+Every labeled capture: H10 + raw ECG + Vernier belt in parallel; fresh board boot
+per `adcLogging`; geometry + provenance stamped in `meta.json`. Elevated is induced
+**still** (no motion-heavy post-exercise as the primary). Never cut a rest or the
+respiratory battery; cut the realism/decay captures first if time runs short.
 
 ## Per-capture field checklist (run for every capture)
 
 - [ ] environment: operator OUT of beam (behind board / out of room); subject the ONLY mover; no fans / HVAC draft / pets / foot-traffic; ~1 m+ clear space behind subject
 - [ ] geometry: board boresight on the subject's sternum, square, ~1 m; stable chair (if rolling -> lock/chock wheels + swivel)
-- [ ] tier + `--protocol-note` set per the safety screen (A all-out / B moderate / C rest+paced)
+- [ ] tier + `--protocol-note` set per the safety screen (A handgrip+decay / B handgrip/cold-pressor / C silent mental-stress)
 - [ ] NRST the board, confirm fresh boot
 - [ ] `tools/radar_arm.sh` (pre-arm) succeeds -- abort on arm failure, do NOT stream stale
 - [ ] H10 contact good (skin contact, BLE connected); belt awake (or RR=0 intentionally)
-- [ ] elevated only: subject seated within ~1 s of bout end (perishable HR window)
-- [ ] live QA: frame rate holds ~20 fps for the full duration (no collapse)
+- [ ] elevated: start recording once the live H10 reads in the 90-135 band, body STILL
+- [ ] live QA: frame rate holds ~25 fps for the full duration (no collapse)
 - [ ] post: `meta.json` written with fps_ok / adc_ok / hr_ok / capture_ok + provenance
 - [ ] quarantine on the spot if degraded (lose one ~2 min capture, never the set)
 

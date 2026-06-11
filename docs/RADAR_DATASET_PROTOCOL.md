@@ -182,19 +182,29 @@ windows -- no hard-coded 150/180 to trip on. Separate (non-blocking) item: `WIN_
 is fixed at 20 s; parameterize it to 60-90 s for the resting <1 bpm path (a 150 s
 rest supports ~one 90 s window, 180 s supports ~one more).
 
-## Subject tiers + elevation safety (2026-06-04)
+## Subject tiers + elevation safety (2026-06-11: still-elevation)
 
-The Tier-A all-out bout in the per-subject session above is for young/fit subjects
-ONLY. Screen on health/fitness, NOT age alone -- age is the prior, a 30-second
-screen is the decision. Screen: any heart condition / chest pain / on beta-blockers
-/ sedentary? Any flag drops the subject a tier. Consent + supervision + fall
-precautions scale with intensity. Record the method per capture in `--protocol-note`.
+The elevated capture induces HR into the deterioration band **with the body
+still**, not via exercise (the redesign above). Screen on health/fitness, NOT
+age alone -- age is the prior, a 30-second screen is the decision. Screen: any
+heart condition / chest pain / on beta-blockers / sedentary? Any flag drops the
+subject a tier. Record the method per capture in `--protocol-note`; titrate to
+the live H10.
 
-| Tier | Who (default) | Elevation method | HR target | Captures |
+| Tier | Who (default) | Still-elevation method | HR target | Elevated captures |
 |---|---|---|---|---|
-| **A -- full** | ~18-40, cleared, active | all-out bout (sprint / burpees) | ~85-90% max (150-180) | 2 rest + 3 elevated |
-| **B -- moderate** | ~40-65, cleared, no cardiac flags | brisk walk / stairs / sit-to-stands | moderate ~110-135 (65-75% max, "can still talk", RPE 12-14) | 2 rest + 2 elevated |
-| **C -- gentle/rest** | ~65+, frail, or ANY cardiac flag / beta-blocker | rest + paced deep breathing (RSA modulates HR safely) +/- light sit-to-stands | natural rest -> mild ~90-110 | 3-4 rest + optional gentle |
+| **A -- full** | ~18-40, cleared, active | isometric handgrip (~30% MVC, contralateral arm rested) for the steady band, + 1 still post-exercise decay (capture #7) for the high band | 90-135 still (+ decay tail to ~150) | 1 still-elevated + 1 decay |
+| **B -- moderate** | ~40-65, cleared, no cardiac flags | handgrip and/or cold-pressor (hand in ice water) | 90-125 still | 1 still-elevated |
+| **C -- gentle/rest** | ~65+, frail, or ANY cardiac flag / beta-blocker | silent mental stress (timed serial-7s / Stroop) +/- gentle handgrip; NO exercise, NO cold-pressor if CV/Raynaud's | mild 85-110 still | 1 still-elevated (gentle) |
+
+Method notes: **handgrip** is the most reliable still HR elevator (sustained ->
+plateau, silent, chest quiet; screen out uncontrolled HTN). **Cold-pressor**
+(hand in ice water <=2 min) is a strong sympathetic/BP activator with a
+modest/variable HR rise -- secondary; discard the first ~15 s (immersion flinch);
+exclude Raynaud's / CV disease / HTN. **Mental stress** must be SILENT (respond on
+screen / by tap, not aloud -- talking moves the chest). Beta-blockers blunt the
+response; that is useful diversity (real patients are on them), do not compensate
+by pushing harder.
 
 NEVER push an elderly or at-risk subject to maximal exertion -- cardiac + fall +
 liability red line. Band coverage is a COHORT property: the young cover the high
@@ -279,33 +289,68 @@ from the v2 re-freeze (keep-chirps rationale, TDM, 100 fps falsified). The
 founder's v2 captures ran at 20 fps and are re-captured at 25 fps per the
 recapture ledger, so the v3 dataset is uniformly 25 fps.
 
-### Session recipe per subject (priority order)
+### Design principle (2026-06-11 redesign)
 
-Cut from the bottom when subject patience runs out; **never cut a rest or the
-elevated below its tier minimum**. Order is by value-at-risk:
+Capture the intersection of three things, because that is the only data that is
+simultaneously real, readable, and saleable:
+1. **The sensor's real regime:** still-body vitals. Moving/post-exercise HR is
+   near-chance for the Stage-1 selector (motion smears the spectrum; the true
+   peak often is not even a candidate). Dense data where the label is frequently
+   absent is wasted subject-time.
+2. **The deployment:** a still patient in a bed or chair, sensor overhead or at
+   the head of the bed, often through a blanket, often off-axis.
+3. **The clinical event that pays:** deterioration scoring (NEWS2, qSOFA, SIRS)
+   is built on **resting** vitals. RR >=22 and resting HR ~110-130 are the early
+   sepsis/decompensation signals; post-exercise athletic HR appears in no score.
 
-1. **2 x rest, 300 s** each (`--breath-hold` on at least one). 300 s doubles
-   windows per sit; the breath-hold adds free apnea labels. H10 + ECG + belt
-   throughout.
-2. **1 x rr_fast, ~90 s** (paced fast + shallow breathing at rest; the
-   still-tachypnea clinical case).
-3. **1 x absence segment, 60 s** (`--absence`: empty room, no straps) -- labeled
-   absence / presence-detection data per session.
-4. **Tier-appropriate elevated** (recovery-sweep framing: the value is the HR
-   descent at rest after the bout; Tier A 3x, B 2x, C none). Cut these FIRST if
-   time runs short -- they are the data-starved axis but also the most
-   perishable to fatigue.
+Consequence vs the prior recipe: elevated HR is induced **at rest** (still body),
+not via motion-heavy post-exercise decay. This mirrors the `rr_fast` decision
+(fast breathing without body motion) applied to HR. Vitals are FREQUENCIES, so
+viewing angle scales amplitude, not the rate; angle is therefore spanned on
+purpose (not fixed, not exhaustively enumerated) to teach invariance, and logged
+per capture.
 
-Every labeled capture: H10 **and raw ECG** (`--ecg`, WP2) **and** the Vernier
-belt in parallel; the capture tool stamps clock offset, board serial, and a
-learnability QC (re-seat if candidate-presence < 60%).
+### Core captures (every subject, every tier, seated upright, ~16 min)
 
-### Opportunistic variants (willing subjects only, after the core recipe)
+Seated, chest square to the board (within ~15-20 deg -- for cross-subject
+*consistency*, not because the signal needs it), ~1 m, board boresight on the
+sternum. H10 + raw ECG + belt throughout. The capture tool stamps clock offset,
+board serial, geometry, and a learnability QC (re-seat if candidate-presence
+< 60%).
 
-Domain-shift labels, NOT core protocol -- collect only if the subject has
-patience left:
-- one capture at **1.5-2 m** or **20-30 deg off-angle**;
-- one **under a blanket / thick layer** (attenuation robustness).
+1. **Long rest, 600 s.** Still, normal breathing. Baseline HR/RR, HRV, drift +
+   false-alarm characterization, ECG morphology, within-session test-retest.
+2. **Respiratory battery, ~360 s continuous, still:** 60 s normal -> 60 s
+   slow-deep (~8/min) -> 90 s fast-shallow (~26-28/min, the tachypnea case) ->
+   2 x 20 s breath-hold (apnea) -> 60 s recovery. The full respiratory-event
+   product (tachypnea, bradypnea, apnea, hypopnea), all at rest. RR is the lead
+   product; this is weighted accordingly.
+3. **Absence, 60 s** (`--absence`: empty room, no straps) -- presence / bed-exit,
+   no-false-alarm baseline.
+4. **Elevated AT REST, ~150-180 s, still** (HR into the deterioration band
+   90-135 without body motion). Method by tier (next table). Record the method
+   in `--protocol-note`; titrate to the live H10 (start recording once in band).
+
+### Deployment-realism captures (bank from subject 1, ~5 min)
+
+These are the deployment, not edge cases. Record one of each per subject from the
+start so the eventual supine/realism claim needs no re-recruitment. **Vary the
+angle across subjects on purpose** (do not standardize): the spread is what
+proves angle-invariance.
+
+5. **Supine / bed, ~150 s.** Subject lying/reclined; **board repositioned to look
+   DOWN at the chest** (overhead, or head-of-bed tilted 30-45 deg) -- never flat
+   from the side (that looks across the chest motion -> dead). Log distance +
+   angle.
+6. **Off-axis or blanket, ~150 s.** One capture deliberately 20-30 deg off-axis
+   OR under a blanket/thick layer. Log it.
+
+### Research adjunct (Tier A only, optional, NON-gating)
+
+7. **Still post-exercise decay, ~120 s.** Hard 30-60 s bout, then sit/lie and
+   **wait ~20-30 s for gross motion to settle**, then capture the still decay
+   from peak down. The only place dynamic HR belongs (Stage-2 continuity /
+   morphology). Never allowed to delay recruitment.
 
 ### Sealed vault policy (pre-registered)
 
