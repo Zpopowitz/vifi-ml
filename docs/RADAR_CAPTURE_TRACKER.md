@@ -44,28 +44,32 @@ respiratory battery; cut the realism/decay captures first if time runs short.
 
 ## Master progress
 
-Pilot target = 12 subjects. Scale target = ~30 (25-40 band). Span BMI, age,
-fitness, resting HR.
+Pilot target = 12 subjects. Scale target = ~30 (25-40 band). Span **sex (all
+male so far -- top gap)**, age, fitness, build/adiposity. Columns are the
+2026-06-11 recipe: rest (600s) / resp_battery / absence / elev (still) / bed /
+realism / decay (Tier A opt). Net trainable subjects on the current recipe: **0**.
 
-| # | subject_id | body (H/W/age band) | rest_1 | rest_2 | postex_1 | postex_2 | postex_3 | status |
-|---|---|---|---|---|---|---|---|---|
-| 1 | founder | (fill) | [x] | [x] | [x] | [x] | [x] | DONE (5/5) |
-| 2 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 3 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 4 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 5 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 6 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 7 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 8 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 9 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 10 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 11 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
-| 12 | | | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| # | subject_id | body (H/W/age/sex) | rest | resp | absence | elev | bed | realism | decay | status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | founder | (fill) | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | OLD set retired; redo owed |
+| 2 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 3 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 4 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 5 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 6 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 7 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 8 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 9 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 10 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 11 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
+| 12 | | | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | not started |
 
-Subject 1 (founder) COMPLETE: 5/5 captures at `data/captures/radar_dataset/founder/`,
-all `dataset_include=true`. `rest_1` is the former `dataset_20260603/founder_restval_1`
-(150 s, at floor), migrated. Signal-presence gate passed (oracle 6.77 bpm pooled,
-0.57 bpm on stable rest at 90 s windows; tallest baseline 43.98).
+Subject 1 (founder): the 5 OLD-recipe captures at
+`data/captures/radar_dataset/founder/` are **retired** (old recipe, 20 fps) and
+owed a full redo on the 2026-06-11 recipe + 25 fps. They confirmed the resting
+signal is real (oracle 0.57 bpm on stable rest at 90 s windows; tallest baseline
+43.98) but do not enter the dataset. Set their `dataset_include=false` (or move
+aside) so the gate harness does not score retired data.
 
 ## Consent + re-contact ledger (WP7)
 
