@@ -258,6 +258,16 @@ class _EcgSink:
         self.rows += len(samples)
         self._f.flush()
 
+    def on_control(self, _characteristic, data: bytearray) -> None:
+        # PMD control-point response to the start command:
+        # [0xF0, opcode, measurement_type, error_code, ...]. error_code 0 means
+        # the H10 accepted ECG streaming; non-zero means it refused (e.g. busy
+        # with another client), in which case no DATA frames ever arrive -- flag
+        # it so a refused stream is a loud failure, not a silently empty file.
+        b = bytes(data)
+        if len(b) >= 4 and b[0] == 0xF0 and b[3] != 0x00:
+            self.failed = True
+
     def close(self) -> None:
         try:
             self._f.close()
@@ -375,12 +385,19 @@ async def _log_impl(
                     await client.start_notify(HR_MEASUREMENT_UUID, on_hr)
                     if ecg is not None and not ecg.failed:
                         # Additive: start the PMD raw-ECG stream on the same
-                        # client. Re-issued on every (re)connect.
+                        # client. Re-issued on every (re)connect. Subscribe to the
+                        # DATA (and control-point) characteristics BEFORE writing
+                        # the start command: the H10 streams the instant it accepts
+                        # the command, so a DATA subscription enabled afterwards
+                        # misses the entire stream (observed on the bench: a clean
+                        # "streaming" start but 0 ECG samples). The control-point
+                        # notify carries the H10's accept/reject response.
                         try:
+                            await client.start_notify(PMD_CONTROL_UUID, ecg.on_control)
+                            await client.start_notify(PMD_DATA_UUID, ecg.on_ecg)
                             await client.write_gatt_char(
                                 PMD_CONTROL_UUID, ECG_START_COMMAND, response=True
                             )
-                            await client.start_notify(PMD_DATA_UUID, ecg.on_ecg)
                             if not ecg.started:
                                 print(
                                     f"ECG: streaming PMD ECG at {ECG_SAMPLE_RATE_HZ} Hz"
@@ -403,10 +420,11 @@ async def _log_impl(
                     except Exception:
                         pass  # disconnect already happened; nothing to stop
                     if ecg is not None and ecg.started:
-                        try:
-                            await client.stop_notify(PMD_DATA_UUID)
-                        except Exception:
-                            pass
+                        for uuid in (PMD_DATA_UUID, PMD_CONTROL_UUID):
+                            try:
+                                await client.stop_notify(uuid)
+                            except Exception:
+                                pass
                     break  # reached deadline cleanly
             except Exception as exc:
                 # OSError, BleakError, etc. -- assume BLE dropped. Reconnect.

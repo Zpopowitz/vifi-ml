@@ -56,12 +56,30 @@ and does NOT block this dataset.
   morphology, WP2) + Vernier belt (RR). The belt's raw force at 10 Hz is the RR
   source of truth (recomputed offline, not the onboard DSP); best-effort, a
   missing belt never aborts the radar+H10 capture (RR=0 to disable).
-  - **ECG requires a BONDED H10 (one-time per Pi).** Basic HR streams unpaired,
-    but the PMD raw-ECG service does not -- an unpaired Pi records 0 ECG and the
-    capture otherwise looks clean (`org.bluez.Error.NotPermitted: Not paired`).
-    Bond once with `bash tools/pair_h10.sh` on the Pi (strap worn/bridged);
-    `trust` makes it auto-reconnect thereafter. `capture_labeled.sh` warns into
-    `/tmp/sync.log` at preflight if ECG is requested while the H10 is unpaired.
+  - **ECG bring-up (validated end-to-end 2026-06-11).** The raw PMD ECG stream
+    has three independent gates; all three must hold or it silently records 0
+    samples while the capture otherwise looks clean:
+    1. **Bond the H10 (one-time per Pi).** Basic HR streams unpaired, but PMD
+       does not (`org.bluez.Error.NotPermitted: Not paired`). Bond once with
+       `bash tools/pair_h10.sh` on the Pi (strap worn/bridged); `capture.py`
+       preflight now also auto-bonds (`ensure_h10_bonded`) when the strap is
+       confirmed advertising. `capture_labeled.sh` warns into `/tmp/sync.log` if
+       ECG is requested while unbonded.
+    2. **`[GATT] Cache = no` in `/etc/bluetooth/main.conf` on the Pi**, then
+       `sudo systemctl restart bluetooth`. With the default cache, BlueZ re-uses
+       a bonded device's cached attributes on reconnect and `start_notify`
+       reports success but never re-arms the CCCD -- so the FIRST PMD session per
+       bluetooth boot streams and every session after it gets 0 (i.e. capture 1
+       has ECG, captures 2+ silently do not). `Cache = no` forces fresh discovery
+       per connect. (Reproducible Pi config; add to Pi provisioning so a re-image
+       keeps it.)
+    3. **Good electrode contact.** PMD stops mid-stream on contact loss (HR, with
+       lower signal demand, survives it). Wet both electrode strips and wear snug
+       for the whole capture, or ECG cuts out partway (variable stop time, real
+       QRS while it streams).
+    Code: `hr_logger.py` subscribes the PMD control + data characteristics
+    BEFORE writing the start command (the H10 streams the instant it accepts, so
+    a data subscription enabled afterwards misses the stream).
 - **Fresh board boot** (NRST + arm) before each capture (`adcLogging`).
 - **Unlabeled, harvested free:** save ALL raw from warm-up, settle, and the gaps
   between labeled captures -- on-platform unlabeled radar for Stage-2 SSL at zero
