@@ -91,6 +91,15 @@ ECG_MEASUREMENT_TYPE = 0x00  # PMD type 0 = ECG
 # sample-rate setting 130 Hz (0x00 0x01 | 0x82 0x00), resolution 14-bit
 # (0x01 0x01 | 0x0E 0x00). Bytes per the Polar BLE SDK PMD spec.
 ECG_START_COMMAND = bytes([0x02, 0x00, 0x00, 0x01, 0x82, 0x00, 0x01, 0x01, 0x0E, 0x00])
+# PMD "stop ECG" request: stop(0x03) ECG(0x00). Used by the stall watchdog.
+ECG_STOP_COMMAND = bytes([0x03, 0x00])
+# The H10 PMD stream can stall mid-capture (an electrode shift drops frames; the
+# H10 sends NO control-point notice and the BLE link stays up, so the stream is
+# silently dead). The watchdog re-issues STOP+START after this many seconds of no
+# frames, which resumes streaming once contact returns -- proven on the bench to
+# recover and then run continuously. Without it, one shift loses ECG for the rest
+# of the capture.
+ECG_STALL_S = 3.0
 # hr_ecg.csv schema. The host receive time anchors each frame to the wall clock
 # the radar shares; sample_index is the exact monotonic position in the 130 Hz
 # stream, so offline alignment survives BLE batching/jitter.
@@ -246,6 +255,10 @@ class _EcgSink:
         self.rows = 0
         self.started = False
         self.failed = False
+        # Watchdog state: the wall-clock of the last ECG frame, and how many
+        # times the stream was re-STARTed after a stall (see the log() loop).
+        self.last_sample_time: float | None = None
+        self.resumes = 0
 
     def on_ecg(self, _characteristic, data: bytearray) -> None:
         _ts_ns, samples = parse_pmd_ecg(bytes(data))
@@ -256,6 +269,7 @@ class _EcgSink:
             self._writer.writerow([f"{t:.3f}", self.index, uv])
             self.index += 1
         self.rows += len(samples)
+        self.last_sample_time = t
         self._f.flush()
 
     def on_control(self, _characteristic, data: bytearray) -> None:
@@ -404,6 +418,9 @@ async def _log_impl(
                                     f" to {ecg_out}"
                                 )
                                 ecg.started = True
+                            # Arm the stall watchdog from the start so even a START
+                            # that never delivers a first frame is recovered.
+                            ecg.last_sample_time = time.time()
                         except Exception as exc:
                             ecg.failed = True
                             print(
@@ -412,9 +429,30 @@ async def _log_impl(
                                 file=sys.stderr,
                             )
                     # Sleep in 1-second slices so we can react if BleakClient
-                    # context manager raises mid-sleep.
+                    # context manager raises mid-sleep; also run the ECG stall
+                    # watchdog -- re-START PMD when frames stop (electrode shift),
+                    # which resumes streaming once contact returns.
                     while time.time() < deadline:
                         await asyncio.sleep(1.0)
+                        if (
+                            ecg is not None
+                            and ecg.started
+                            and not ecg.failed
+                            and ecg.last_sample_time is not None
+                            and time.time() - ecg.last_sample_time > ECG_STALL_S
+                        ):
+                            try:
+                                await client.write_gatt_char(
+                                    PMD_CONTROL_UUID, ECG_STOP_COMMAND, response=True
+                                )
+                                await asyncio.sleep(0.3)
+                                await client.write_gatt_char(
+                                    PMD_CONTROL_UUID, ECG_START_COMMAND, response=True
+                                )
+                                ecg.resumes += 1
+                            except Exception:
+                                pass  # link dropped -> outer reconnect loop handles it
+                            ecg.last_sample_time = time.time()  # debounce one window
                     try:
                         await client.stop_notify(HR_MEASUREMENT_UUID)
                     except Exception:
@@ -451,7 +489,11 @@ async def _log_impl(
             ecg.close()
 
     elapsed = time.time() - start_wall
-    ecg_note = f", {ecg.rows} ECG samples" if ecg is not None else ""
+    ecg_note = (
+        f", {ecg.rows} ECG samples ({ecg.resumes} stall-resumes)"
+        if ecg is not None
+        else ""
+    )
     print(
         f"Done. Logged {total_count} HR updates / {beat_count} beats{ecg_note} over "
         f"{elapsed:.1f}s to {out_path} ({reconnect_count} reconnects)"
