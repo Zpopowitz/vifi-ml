@@ -71,12 +71,15 @@ and does NOT block this dataset.
        reports success but never re-arms the CCCD -- so the FIRST PMD session per
        bluetooth boot streams and every session after it gets 0 (i.e. capture 1
        has ECG, captures 2+ silently do not). `Cache = no` forces fresh discovery
-       per connect. (Reproducible Pi config; add to Pi provisioning so a re-image
-       keeps it.)
-    3. **Good electrode contact.** PMD stops mid-stream on contact loss (HR, with
-       lower signal demand, survives it). Wet both electrode strips and wear snug
-       for the whole capture, or ECG cuts out partway (variable stop time, real
-       QRS while it streams).
+       per connect. Set idempotently by `tools/setup_live_stack.sh` (the Pi
+       provisioner), so a re-image just re-runs the installer.
+    3. **Good electrode contact.** PMD stalls mid-stream on contact loss (HR, with
+       lower signal demand, survives it) -- the H10 sends NO notice and the link
+       stays up. `hr_logger` runs a stall watchdog (re-STARTs PMD after 3 s of no
+       frames) that resumes the stream once contact returns; the summary line
+       reports `stall-resumes`. Validated: 120 s run = 106 s continuous ECG at
+       130 Hz, 100% coverage, 1 resume. Still wet both strips + wear snug to
+       minimise stalls (each costs ~3 s + ramp).
     Code: `hr_logger.py` subscribes the PMD control + data characteristics
     BEFORE writing the start command (the H10 streams the instant it accepts, so
     a data subscription enabled afterwards misses the stream).
