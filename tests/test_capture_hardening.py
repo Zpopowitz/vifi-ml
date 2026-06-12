@@ -41,6 +41,42 @@ def _write_radar_only(out: Path, n_frames: int, frame_dt: float) -> None:
     (out / "radar_cap.pkl").write_bytes(pickle.dumps(rows))
 
 
+def _write_keep_chirps(
+    out: Path, n_frames: int, chirps_per_frame: int, frame_dt: float
+) -> None:
+    """A keep-chirps capture: chirps_per_frame slot-tagged entries per frame,
+    all sharing the frame's ts_unix. This is the v3 dataset default and the
+    format a 600s capture produces (tens of thousands of entries)."""
+    rng = np.random.default_rng(2)
+    rows = []
+    for i in range(n_frames):
+        ts = T0 + i * frame_dt
+        for slot in range(chirps_per_frame):
+            arr = rng.normal(0.0, 200.0, size=(N_SAMPLES, N_RX))
+            payload = {
+                "ts_unix": ts,
+                "chirp_idx": i * chirps_per_frame + slot,
+                "adc_real": arr.tolist(),
+                "adc_imag": (arr * 0.5).tolist(),
+                "chirp_slot": slot,
+            }
+            rows.append((f"{i}-{slot}", {"json": json.dumps(payload).encode()}))
+    (out / "radar_cap.pkl").write_bytes(pickle.dumps(rows))
+
+
+def test_verify_keep_chirps_rates_in_frame_terms(tmp_path):
+    # 25 fps in FRAME terms, 4 chirps/frame -> 100 entries/s. The gate must read
+    # the frame rate (25), not the entry rate, and report chirps_per_frame=4.
+    _write_keep_chirps(tmp_path, n_frames=50, chirps_per_frame=4, frame_dt=0.04)
+    res = cap.verify(tmp_path, expect_hr=False)
+    assert res["keep_chirps"] is True
+    assert res["chirps_per_frame"] == 4
+    assert res["n_frames"] == 50
+    assert res["fps"] == 25.0
+    assert res["fps_ok"] is True
+    assert res["adc_ok"] is True
+
+
 def test_verify_absence_passes_on_fps_and_adc_only(tmp_path):
     # 20 fps, live ADC, no H10 strap -> gate is fps + ADC; hr_ok is None.
     _write_radar_only(tmp_path, n_frames=60, frame_dt=0.05)

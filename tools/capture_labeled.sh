@@ -78,7 +78,17 @@ echo "=== H10 + RR READ START $(date +%s) ===" >> /tmp/sync.log
 rm -f /tmp/hr_pi.csv /tmp/rr_pi.csv /tmp/rr_pi.csv.meta.json
 rm -f /tmp/hr_ecg.csv /tmp/hr_ecg.csv.meta.json
 ECG_ARGS=""
-[ "$ECG" = "1" ] && ECG_ARGS="--ecg --ecg-out /tmp/hr_ecg.csv"
+if [ "$ECG" = "1" ]; then
+  ECG_ARGS="--ecg --ecg-out /tmp/hr_ecg.csv"
+  # ECG (PMD) needs a BONDED H10 or BlueZ refuses it (NotPermitted: Not paired)
+  # and we silently record 0 ECG samples. Surface that BEFORE the capture burns
+  # DUR seconds -- additive, so we only warn (HR/RR/radar are unaffected). Fix
+  # with tools/pair_h10.sh on this Pi.
+  if ! bluetoothctl info "$H10" 2>/dev/null | grep -q "Paired: yes"; then
+    echo "=== [!] ECG REQUESTED but H10 ${H10} is NOT paired -- ECG will be EMPTY." >> /tmp/sync.log
+    echo "===     Run: bash tools/pair_h10.sh ${H10}   (HR/RR/radar continue normally)" >> /tmp/sync.log
+  fi
+fi
 # RR ground truth (Vernier GDX-RB belt) runs in PARALLEL with the H10, pinned to
 # core 1 -- off the collector's busy-wait core 3 AND off the H10's core 0 -- so the
 # 20 fps SPI stream never starves. Best-effort: a missing/asleep belt must NOT abort

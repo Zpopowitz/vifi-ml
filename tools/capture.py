@@ -530,30 +530,42 @@ def verify(out: Path, expect_hr: bool = True) -> dict:
         v = f.get(k, f.get(k.encode()))
         return v.decode() if isinstance(v, bytes) else v
 
-    payloads = [json.loads(field(f, "json")) for _, f in entries]
-
-    # Keep-chirps pickles hold chirps_per_frame slot-tagged entries per radar
-    # frame, all sharing the frame's ts_unix. The fps gate is in FRAME terms
-    # either way, so collapse to unique frame timestamps before rating.
-    keep_chirps = any("chirp_slot" in p for p in payloads)
-    if keep_chirps:
-        chirps_per_frame = (
-            max(int(p["chirp_slot"]) for p in payloads if "chirp_slot" in p) + 1
-        )
-        ts = sorted({float(p["ts_unix"]) for p in payloads})
-    else:
-        chirps_per_frame = 1
-        ts = sorted(float(p["ts_unix"]) for p in payloads)
-    span = ts[-1] - ts[0] if len(ts) > 1 else 0.0
-    fps = (len(ts) - 1) / span if span else 0.0
-
     def cube(p):
         return np.asarray(p["adc_real"]) + 1j * np.asarray(p["adc_imag"])
 
-    sample = np.stack([cube(p) for p in payloads[: min(200, len(payloads))]])
-    adc_std = float(sample.real.std())
-    adc_uniq = int(np.unique(sample.real).size)
-    shape = cube(payloads[0]).shape
+    # Single streaming pass. A 600s keep-chirps capture is ~60k entries / ~1.6 GB
+    # of ADC floats; materializing every parsed frame at once OOMs the dev box and
+    # has truncated a real capture mid-finalize. Parse one frame at a time and
+    # retain only the unique frame timestamps, the max chirp slot, and a bounded
+    # ADC sample for the liveness stats. Keep-chirps pickles hold chirps_per_frame
+    # slot-tagged entries per frame, all sharing the frame's ts_unix; the fps gate
+    # is in FRAME terms either way, so de-duping ts_unix collapses to frame count.
+    ADC_SAMPLE = 200
+    ts_set: set[float] = set()
+    max_slot = -1
+    sample: list = []
+    shape: tuple[int, ...] | None = None
+    for idx, (_, f) in enumerate(entries):
+        p = json.loads(field(f, "json"))
+        ts_set.add(float(p["ts_unix"]))
+        slot = p.get("chirp_slot")
+        if slot is not None and int(slot) > max_slot:
+            max_slot = int(slot)
+        if idx < ADC_SAMPLE:
+            c = cube(p)
+            if shape is None:
+                shape = c.shape
+            sample.append(c)
+
+    keep_chirps = max_slot >= 0
+    chirps_per_frame = (max_slot + 1) if keep_chirps else 1
+    ts = sorted(ts_set)
+    span = ts[-1] - ts[0] if len(ts) > 1 else 0.0
+    fps = (len(ts) - 1) / span if span else 0.0
+
+    stack = np.stack(sample)
+    adc_std = float(stack.real.std())
+    adc_uniq = int(np.unique(stack.real).size)
 
     import pandas as pd  # noqa: PLC0415
 
@@ -1122,9 +1134,12 @@ def main() -> int:
                         "span>=15 bpm). Consider a redo with a harder/longer bout "
                         "for the wide-range data the selector needs."
                     )
-            # Learnability QC (additive, H10 captures only): can the selector
-            # actually recover this HR? Warns to re-seat while the subject waits.
-            learn = learnability_check(out) if expect_hr else None
+            # Write provenance BEFORE the optional learnability QC. The QC loads
+            # the FULL capture (radar.capture_io.load_capture materializes every
+            # frame) and can OOM-kill the process on a long keep-chirps capture;
+            # an uncatchable SIGKILL there must still leave a CORRECT meta.json on
+            # disk (learnability=null) rather than the stale/absent meta that a
+            # mid-finalize death produced (the WSL-restart Frankenstein-dir bug).
             log("[6/6] provenance")
             stamp(
                 out,
@@ -1135,10 +1150,29 @@ def main() -> int:
                 n_ecg=stats.get("n_ecg", 0),
                 clock=clock,
                 events=events,
-                learn=learn,
+                learn=None,
                 board_ser=board_ser,
                 dev_dirty=dirty,
             )
+            # Learnability QC (additive, H10 captures only): can the selector
+            # actually recover this HR? Warns to re-seat while the subject waits.
+            # Re-stamp to fold the report in only if it survived (None = skipped /
+            # no scorable windows / swallowed error -- the learn=null meta stands).
+            learn = learnability_check(out) if expect_hr else None
+            if learn is not None:
+                stamp(
+                    out,
+                    args,
+                    stats["n_rr"],
+                    n_hr,
+                    ver,
+                    n_ecg=stats.get("n_ecg", 0),
+                    clock=clock,
+                    events=events,
+                    learn=learn,
+                    board_ser=board_ser,
+                    dev_dirty=dirty,
+                )
             if ver["capture_ok"]:
                 log(f"\nCAPTURE OK -> {out}")
                 return 0

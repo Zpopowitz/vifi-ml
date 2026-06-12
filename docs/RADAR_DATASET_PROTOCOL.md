@@ -56,6 +56,12 @@ and does NOT block this dataset.
   morphology, WP2) + Vernier belt (RR). The belt's raw force at 10 Hz is the RR
   source of truth (recomputed offline, not the onboard DSP); best-effort, a
   missing belt never aborts the radar+H10 capture (RR=0 to disable).
+  - **ECG requires a BONDED H10 (one-time per Pi).** Basic HR streams unpaired,
+    but the PMD raw-ECG service does not -- an unpaired Pi records 0 ECG and the
+    capture otherwise looks clean (`org.bluez.Error.NotPermitted: Not paired`).
+    Bond once with `bash tools/pair_h10.sh` on the Pi (strap worn/bridged);
+    `trust` makes it auto-reconnect thereafter. `capture_labeled.sh` warns into
+    `/tmp/sync.log` at preflight if ECG is requested while the H10 is unpaired.
 - **Fresh board boot** (NRST + arm) before each capture (`adcLogging`).
 - **Unlabeled, harvested free:** save ALL raw from warm-up, settle, and the gaps
   between labeled captures -- on-platform unlabeled radar for Stage-2 SSL at zero
