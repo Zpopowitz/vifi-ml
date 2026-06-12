@@ -28,6 +28,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Resilience for rclone-backed repos (Google Drive 500s under restic's
+# many-small-object writes -- the first un-tuned backup failed exactly here).
+# Retried requests ride out the transient 500s. Harmless on non-rclone repos
+# (b2:/s3:) which ignore these. Override by exporting them before calling.
+export RCLONE_LOW_LEVEL_RETRIES="${RCLONE_LOW_LEVEL_RETRIES:-20}"
+export RCLONE_RETRIES="${RCLONE_RETRIES:-8}"
+
 BACKUP_PATHS=("data" "models_real")
 EXCLUDES=(
   --exclude "**/__pycache__"
@@ -79,9 +86,10 @@ cmd_restore_test() {
   local sample
   sample="$(find data/captures -name radar_cap.pkl -type f 2>/dev/null | head -1 || true)"
   [ -n "$sample" ] || die "no radar_cap.pkl under data/captures to restore-test."
-  local tmp
+  # NOT local: the EXIT trap fires after this function returns, so a `local`
+  # tmp would be out of scope and trip `set -u` ("tmp: unbound variable").
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  trap 'rm -rf "${tmp:-}"' EXIT
   echo "Restore-testing: $sample"
   restic restore latest --target "$tmp" --include "/$sample" >/dev/null
   local restored="$tmp/$sample"

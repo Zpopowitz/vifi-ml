@@ -1,10 +1,10 @@
 # Capture session runbook (one subject, start to finish)
 
 Step-by-step for running one subject through the optimal protocol
-(`RADAR_DATASET_PROTOCOL.md`). Runs on the tool already deployed; the
-respiratory-battery and handgrip cueing are operator-cued for now (a guided
-`--respiratory-battery` / `--elevated-still` mode is the tracked tooling
-follow-on). Replace `subjNN` with the pseudonymous subject id.
+(`RADAR_DATASET_PROTOCOL.md`). The respiratory battery is cued automatically by
+`--respiratory-battery` (prints each phase + countdown, labels them in meta); the
+handgrip elevation is operator-watched against the live H10. Replace `subjNN`
+with the pseudonymous subject id.
 
 ## Before the subject arrives
 
@@ -28,7 +28,7 @@ Common args for every command below (fill the body metrics once):
 | # | Command (add the common args) | Subject does | Watch |
 |---|---|---|---|
 | 1 | `capture.py rest_1 600` | Sit still, breathe normally, 10 min | `capture_ok`, learnability >=60% |
-| 2 | `capture.py resp_battery 360 --protocol-note "60 normal/60 slow~8/90 fast-shallow~27/2x20 hold/60 recover"` | Follow your spoken cues + metronome: normal, slow-deep, fast-shallow, two breath-holds, recover | belt modulating |
+| 2 | `capture.py resp_battery --respiratory-battery` (auto 330 s) | Follow the tool's printed phase cues + a metronome: normal, slow-deep, fast-shallow, two holds, recover | belt modulating |
 | 3 | `capture.py absence_1 60 --absence` | Leave the room, straps off | radar-only fps ok |
 | 4 | `capture.py elev_handgrip 160 --protocol-note "handgrip ~30% contralateral; HR target 90-135"` | Squeeze the grip trainer steadily; start once the H10 reads in-band | live H10 in band |
 
@@ -36,7 +36,7 @@ Common args for every command below (fill the body metrics once):
 
 | # | Command | Setup | Note |
 |---|---|---|---|
-| 5 | `capture.py bed_1 150 --angle-deg 35 --protocol-note "supine; board head-of-bed ~35deg down"` | Subject lies/reclines; board moved to look DOWN at the chest (overhead or head-of-bed tilt), never flat from the side | log the real angle |
+| 5 | `capture.py bed_1 150 --pose supine --angle-deg 35 --protocol-note "board head-of-bed ~35deg down"` | Subject lies/reclines; board moved to look DOWN at the chest (overhead or head-of-bed tilt), never flat from the side | log the real angle |
 | 6 | `capture.py realism_1 150 --angle-deg 25 --protocol-note "25deg off-axis"` OR `--protocol-note "under blanket"` | One capture off-axis 20-30 deg, or under a blanket | log it |
 
 ## Tier A only, optional, last (never delays anything)

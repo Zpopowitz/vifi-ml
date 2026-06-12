@@ -104,6 +104,11 @@ RESP_BATTERY_PHASES = (
     ("recover", 60, "back to normal breathing"),
 )
 RESP_BATTERY_TOTAL = sum(p[1] for p in RESP_BATTERY_PHASES)  # 330 s
+# Live monitoring services that hold the radar/FTDI. A capture must stop them
+# (else systemd's Restart=always re-grabs the cable mid-capture) and restore
+# whatever was running afterward, so the 24/7 dogfooding and capture sessions
+# coexist without operator bookkeeping.
+LIVE_SERVICES = ("vifi-radar-collector", "vifi-radar-inference")
 
 
 # --------------------------------------------------------------------------- #
@@ -162,6 +167,40 @@ def resolve_pi() -> None:
             "`powershell.exe Test-Connection`) and update ~/.ssh/config."
         )
     log(f"  Pi: {out.strip().splitlines()[0]}")
+
+
+def pause_live_stack() -> list[str]:
+    """Stop the live radar services for the capture; return what WAS active.
+
+    A capture owns the FTDI/board; the live collector (systemd Restart=always)
+    would otherwise re-grab the cable mid-capture. Only services that were
+    running are stopped + returned, so :func:`resume_live_stack` restores the
+    operator's prior state exactly (down stays down, up comes back up).
+    Best-effort: a failure here never blocks the capture.
+    """
+    was_active: list[str] = []
+    for svc in LIVE_SERVICES:
+        _, out = ssh(f"systemctl is-active {svc} 2>/dev/null || true")
+        if out.strip() == "active":
+            was_active.append(svc)
+    if was_active:
+        ssh(f"sudo -n systemctl stop {' '.join(was_active)}")
+        log(f"  paused live stack: {', '.join(was_active)} (restored after capture)")
+    return was_active
+
+
+def resume_live_stack(services: list[str]) -> None:
+    """Restart the live services :func:`pause_live_stack` stopped."""
+    if not services:
+        return
+    code, _ = ssh(f"sudo -n systemctl start {' '.join(services)}")
+    if code == 0:
+        log(f"  resumed live stack: {', '.join(services)}")
+    else:
+        log(
+            f"  WARNING: could not resume {', '.join(services)} -- restart manually: "
+            f"sudo systemctl start {' '.join(services)}"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -1070,96 +1109,86 @@ def main() -> int:
 
     clock: tuple[float | None, bool] = (None, False)
     board_ser = "unattested"
+    paused_services: list[str] = []
     try:
-        log("[1/6] Pi reachability")
-        resolve_pi()
-        if args.reset_only:
-            reset_board()
-            wait_for_board("reset-only", auto_reset=False)
-            log("RESET OK -- board rebooted via XDS110, CLI alive.")
-            return 0
-        log("[2/6] preflight")
-        clock = preflight(args.rr, skip_straps=args.absence)
-        log("[3/6] board liveness")
-        wait_for_board("pre-capture", auto_reset=args.auto_reset)
-        board_ser = board_serial()
-        if args.preflight_only:
-            log(f"PREFLIGHT OK (--preflight-only). Board ready; serial={board_ser}.")
-            return 0
-    except Fail as e:
-        log(f"\nFAIL: {e}")
-        return 2
-
-    for attempt in range(1, args.retries + 2):
         try:
-            log(f"[4/6] capture (attempt {attempt})")
-            if args.elevated:
-                run_elevated_capture(
-                    args.duration, args.rr, args.countdown, args.keep_chirps
-                )
-                events: list[dict] = []
-            else:
-                events = run_capture(
-                    args.duration,
-                    args.rr,
-                    args.keep_chirps,
-                    breath_hold=args.breath_hold,
-                    h10_enabled=expect_hr,
-                    respiratory_battery=args.respiratory_battery,
-                )
-            log("[5/6] pull + verify")
-            stats = dump_and_pull(out, args.rr, expect_hr=expect_hr)
-            n_hr = (
-                max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)
-                if expect_hr and (out / "hr_h10.csv").exists()
-                else 0
-            )
-            ver = verify(out, expect_hr=expect_hr)
-            if ver["hr_ok"] is None:
-                hr_disp = "n/a (absence)"
-            else:
-                hr_disp = f"{ver['n_hr']} ({'ok' if ver['hr_ok'] else 'SUSPECT'})"
-            log(
-                f"  fps={ver['fps']} ({'ok' if ver['fps_ok'] else 'COLLAPSE'})  "
-                f"adc_std={ver['adc_std']} ({'ok' if ver['adc_ok'] else 'FLAT'})  "
-                f"H10={hr_disp}  RR={ver['rr_note']}"
-            )
-            if args.elevated:
+            log("[1/6] Pi reachability")
+            resolve_pi()
+            # Borrow the radar from the live stack (restored in the finally) so
+            # its collector cannot re-grab the FTDI mid-capture.
+            paused_services = pause_live_stack()
+            if args.reset_only:
+                reset_board()
+                wait_for_board("reset-only", auto_reset=False)
+                log("RESET OK -- board rebooted via XDS110, CLI alive.")
+                return 0
+            log("[2/6] preflight")
+            clock = preflight(args.rr, skip_straps=args.absence)
+            log("[3/6] board liveness")
+            wait_for_board("pre-capture", auto_reset=args.auto_reset)
+            board_ser = board_serial()
+            if args.preflight_only:
                 log(
-                    f"  HR range: {ver['hr_min']}-{ver['hr_max']} bpm (span {ver['hr_range']})"
+                    f"PREFLIGHT OK (--preflight-only). Board ready; serial={board_ser}."
                 )
-                if ver["hr_max"] < 100 or ver["hr_range"] < 15:
-                    log(
-                        "  WARNING: bout may not have elevated HR (want max>=100, "
-                        "span>=15 bpm). Consider a redo with a harder/longer bout "
-                        "for the wide-range data the selector needs."
+                return 0
+        except Fail as e:
+            log(f"\nFAIL: {e}")
+            return 2
+
+        for attempt in range(1, args.retries + 2):
+            try:
+                log(f"[4/6] capture (attempt {attempt})")
+                if args.elevated:
+                    run_elevated_capture(
+                        args.duration, args.rr, args.countdown, args.keep_chirps
                     )
-            # Write provenance BEFORE the optional learnability QC. The QC loads
-            # the FULL capture (radar.capture_io.load_capture materializes every
-            # frame) and can OOM-kill the process on a long keep-chirps capture;
-            # an uncatchable SIGKILL there must still leave a CORRECT meta.json on
-            # disk (learnability=null) rather than the stale/absent meta that a
-            # mid-finalize death produced (the WSL-restart Frankenstein-dir bug).
-            log("[6/6] provenance")
-            stamp(
-                out,
-                args,
-                stats["n_rr"],
-                n_hr,
-                ver,
-                n_ecg=stats.get("n_ecg", 0),
-                clock=clock,
-                events=events,
-                learn=None,
-                board_ser=board_ser,
-                dev_dirty=dirty,
-            )
-            # Learnability QC (additive, H10 captures only): can the selector
-            # actually recover this HR? Warns to re-seat while the subject waits.
-            # Re-stamp to fold the report in only if it survived (None = skipped /
-            # no scorable windows / swallowed error -- the learn=null meta stands).
-            learn = learnability_check(out) if expect_hr else None
-            if learn is not None:
+                    events: list[dict] = []
+                else:
+                    events = run_capture(
+                        args.duration,
+                        args.rr,
+                        args.keep_chirps,
+                        breath_hold=args.breath_hold,
+                        h10_enabled=expect_hr,
+                        respiratory_battery=args.respiratory_battery,
+                    )
+                log("[5/6] pull + verify")
+                stats = dump_and_pull(out, args.rr, expect_hr=expect_hr)
+                n_hr = (
+                    max(0, sum(1 for _ in (out / "hr_h10.csv").open()) - 1)
+                    if expect_hr and (out / "hr_h10.csv").exists()
+                    else 0
+                )
+                ver = verify(out, expect_hr=expect_hr)
+                if ver["hr_ok"] is None:
+                    hr_disp = "n/a (absence)"
+                else:
+                    hr_disp = f"{ver['n_hr']} ({'ok' if ver['hr_ok'] else 'SUSPECT'})"
+                log(
+                    f"  fps={ver['fps']} ({'ok' if ver['fps_ok'] else 'COLLAPSE'})  "
+                    f"adc_std={ver['adc_std']} ({'ok' if ver['adc_ok'] else 'FLAT'})  "
+                    f"H10={hr_disp}  RR={ver['rr_note']}"
+                )
+                if args.elevated:
+                    log(
+                        f"  HR range: {ver['hr_min']}-{ver['hr_max']} bpm "
+                        f"(span {ver['hr_range']})"
+                    )
+                    if ver["hr_max"] < 100 or ver["hr_range"] < 15:
+                        log(
+                            "  WARNING: bout may not have elevated HR (want max>=100, "
+                            "span>=15 bpm). Consider a redo with a harder/longer bout "
+                            "for the wide-range data the selector needs."
+                        )
+                # Write provenance BEFORE the optional learnability QC. The QC
+                # loads the FULL capture (radar.capture_io.load_capture
+                # materializes every frame) and can OOM-kill the process on a long
+                # keep-chirps capture; an uncatchable SIGKILL there must still
+                # leave a CORRECT meta.json on disk (learnability=null) rather than
+                # the stale/absent meta a mid-finalize death produced (the
+                # WSL-restart Frankenstein-dir bug).
+                log("[6/6] provenance")
                 stamp(
                     out,
                     args,
@@ -1169,29 +1198,55 @@ def main() -> int:
                     n_ecg=stats.get("n_ecg", 0),
                     clock=clock,
                     events=events,
-                    learn=learn,
+                    learn=None,
                     board_ser=board_ser,
                     dev_dirty=dirty,
                 )
-            if ver["capture_ok"]:
-                log(f"\nCAPTURE OK -> {out}")
-                return 0
-            if attempt <= args.retries:
-                log(
-                    "  capture FAILED verify (collapse/flat/HR). Recapturing after NRST."
-                )
-                wait_for_board("post-collapse recapture", auto_reset=args.auto_reset)
-            else:
-                log(f"\nCAPTURE SAVED BUT SUSPECT -> {out}  (verify failed; inspect)")
-                return 3
-        except Fail as e:
-            log(f"  capture error: {e}")
-            if attempt <= args.retries:
-                wait_for_board("post-error recapture", auto_reset=args.auto_reset)
-            else:
-                log("\nFAIL: capture did not complete after retries.")
-                return 2
-    return 2
+                # Learnability QC (additive, H10 captures only): can the selector
+                # actually recover this HR? Warns to re-seat while the subject
+                # waits. Re-stamp to fold the report in only if it survived (None =
+                # skipped / no scorable windows / swallowed error -- learn=null meta
+                # stands).
+                learn = learnability_check(out) if expect_hr else None
+                if learn is not None:
+                    stamp(
+                        out,
+                        args,
+                        stats["n_rr"],
+                        n_hr,
+                        ver,
+                        n_ecg=stats.get("n_ecg", 0),
+                        clock=clock,
+                        events=events,
+                        learn=learn,
+                        board_ser=board_ser,
+                        dev_dirty=dirty,
+                    )
+                if ver["capture_ok"]:
+                    log(f"\nCAPTURE OK -> {out}")
+                    return 0
+                if attempt <= args.retries:
+                    log(
+                        "  capture FAILED verify (collapse/flat/HR). Recapturing after NRST."
+                    )
+                    wait_for_board(
+                        "post-collapse recapture", auto_reset=args.auto_reset
+                    )
+                else:
+                    log(
+                        f"\nCAPTURE SAVED BUT SUSPECT -> {out}  (verify failed; inspect)"
+                    )
+                    return 3
+            except Fail as e:
+                log(f"  capture error: {e}")
+                if attempt <= args.retries:
+                    wait_for_board("post-error recapture", auto_reset=args.auto_reset)
+                else:
+                    log("\nFAIL: capture did not complete after retries.")
+                    return 2
+        return 2
+    finally:
+        resume_live_stack(paused_services)
 
 
 if __name__ == "__main__":
