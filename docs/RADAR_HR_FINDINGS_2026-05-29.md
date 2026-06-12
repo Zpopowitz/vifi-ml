@@ -177,6 +177,53 @@ Fast-changing HR smears a long window (the elevated <1 partly flatters the oracl
 does it; resolution-independent) -- the radarODE-MTL endgame. So: resting-HR <1 =
 long windows + learned selector; dynamic-HR/HRV <1 = beat-by-beat.
 
+## Oracle-MAE is invalid on narrow-HR (resting) captures (2026-06-11)
+
+The oracle ("nearest candidate peak to truth") is an UPPER BOUND on a selector,
+not an accuracy measurement. On a resting capture it collapses to the
+coincidence floor: ~8 candidate peaks spread across the 48-150 bpm cardiac band
+mean one sits near any plausible resting HR by luck, and resting truth barely
+moves, so "a peak near truth" is near-guaranteed regardless of whether it is the
+heart. Two null baselines expose this; run both before quoting any oracle number.
+
+Measured on `founder/rest_1` (600s, 25 fps keep-chirps, H10 truth 78-89 bpm, 119
+windows @ 20s):
+
+| metric | MAE (bpm) | reading |
+|---|---|---|
+| real oracle | 2.63 | the headline number |
+| **shuffle-truth null** (each window's peaks vs a *different* window's truth) | **2.81** | coincidence floor -- real is only 0.18 better |
+| **constant prior** (ignore radar, always guess median 84) | **2.36** | a radar-blind guess BEATS the oracle |
+
+A narrow-HR capture is **uninformative** for HR accuracy -- not proof of
+success, not proof of failure. When truth never moves, the shuffle null cannot
+detect tracking and a constant prior cannot be beaten, so MAE measures nothing.
+The one real signal is `corr(selected_freq, truth) = +0.55` (p<1e-10),
+consistent with the pooled **r=+0.56** over 74-151 bpm: the radar weakly tracks
+the heart, but an 11 bpm span is too narrow for that to surface as an error.
+
+Reconciles with the 2026-06-05 regime map (`RADAR_DATASET_PROTOCOL.md`, "rest =
+1.9x better than chance = REAL") -- it does not contradict it. Two reasons the
+ratio there was high and here is ~1.07x: (a) that decoy was a *uniform-random*
+fake HR over the full band, a WEAK null; the shuffle here pairs against another
+window's *real resting* truth (all ~84), a far stricter null. (b) Physics: that
+rest sat ~65 bpm, cleanly separated from the ~80 bpm breathing artifact, so a
+near-truth peak was likely the heart; founder rests at ~84, right ON the
+artifact (the TL;DR "at rest it coincides with the true HR, falsely accurate
+~78"), so the near-truth peak is ambiguous between heart and artifact. Resting
+HR near 80 is the worst case, not a clean win.
+
+**Methodology (mandatory going forward):**
+- Validate HR with the **shuffle-truth null** AND the **constant-prior**
+  baseline, never oracle-MAE alone. An oracle that does not beat both on a
+  capture with real HR range is measuring coincidence.
+- Quote accuracy on **wide-HR-range** data (elevated + decay sweeps), where a
+  moving target defeats both nulls. Pool across HR levels; never cite a single
+  resting session, and never cite a resting session whose HR sits near ~80.
+- Treat resting captures as resting/RR/SSL anchors, not HR-selector evidence.
+  The dataset's HR value is in dynamic-range captures (see
+  `docs/RADAR_DATASET_PROTOCOL.md` tiers).
+
 ## RR (respiratory rate) -- the near-term win
 
 RR is the easy signal (respiration is the dominant chest motion). Prototype

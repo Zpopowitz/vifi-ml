@@ -230,6 +230,17 @@ strong. Elevated/post-exercise degrades BOTH HR and RR; the band-fix did NOT
 rescue elevated RR (the failure is motion-confounded, not a drift artifact ->
 `rr_fast` capture added to disambiguate the still-tachypnea clinical case).
 
+Caveat on that "rest = REAL" row (sharpened 2026-06-11 on `founder/rest_1`, 84
+bpm rest): the 1.9x used a *uniform-random* decoy, a weak null. Under a stricter
+null (shuffle against other windows' real resting truth) resting HR is only
+~1.07x and a constant-prior guess BEATS the oracle -- because at ~84 bpm the
+true HR sits on top of the ~80 bpm breathing artifact. **Resting HR is only
+recoverable when it is separated from ~80 bpm; near it, the metric is
+uninformative.** Evaluate HR with shuffle + constant-prior nulls on wide-range
+data, never oracle-MAE on a single resting session. Full analysis +
+methodology: `docs/RADAR_HR_FINDINGS_2026-05-29.md` ("Oracle-MAE is invalid on
+narrow-HR captures").
+
 **Model guidance:**
 - A single-window spectral peak-selector (Stage 1) works for **resting HR only**;
   it cannot recover elevated/dynamic HR (there is no peak at the true rate to
