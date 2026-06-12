@@ -71,8 +71,8 @@ and does NOT block this dataset.
        reports success but never re-arms the CCCD -- so the FIRST PMD session per
        bluetooth boot streams and every session after it gets 0 (i.e. capture 1
        has ECG, captures 2+ silently do not). `Cache = no` forces fresh discovery
-       per connect. (Reproducible Pi config; add to Pi provisioning so a re-image
-       keeps it.)
+       per connect. Set idempotently by `tools/setup_live_stack.sh` (the Pi
+       provisioner), so a re-image just re-runs the installer.
     3. **Good electrode contact.** PMD stalls mid-stream on contact loss (HR, with
        lower signal demand, survives it) -- the H10 sends NO notice and the link
        stays up. `hr_logger` runs a stall watchdog (re-STARTs PMD after 3 s of no

@@ -89,6 +89,30 @@ else
   "$VENV/bin/pip" install "redis==5.0.8"
 fi
 
+# ---- 1b. BlueZ GATT cache off (raw H10 ECG survives reconnect) ----
+# The H10 PMD raw-ECG service (capture-side, WP2) needs fresh attribute discovery
+# on every connect. With BlueZ's default cache, a bonded device's cached
+# attributes are re-used on reconnect and start_notify never re-arms the CCCD, so
+# only the FIRST PMD session per bluetooth boot streams -- capture 1 gets ECG,
+# captures 2+ silently record 0. Force [GATT] Cache = no; restart bluetooth only
+# when we actually change it. (The bench Pi runs captures alongside the stack.)
+BT_CONF="/etc/bluetooth/main.conf"
+if [[ -f "$BT_CONF" ]] && grep -qE '^[[:space:]]*Cache[[:space:]]*=[[:space:]]*no' "$BT_CONF"; then
+  echo "[ok]      BlueZ [GATT] Cache = no already set"
+elif [[ -f "$BT_CONF" ]]; then
+  echo "[config]  setting BlueZ [GATT] Cache = no (H10 ECG over reconnect)"
+  if grep -qE '^[[:space:]]*#?[[:space:]]*Cache[[:space:]]*=' "$BT_CONF"; then
+    sudo sed -i -E 's/^[[:space:]]*#?[[:space:]]*Cache[[:space:]]*=.*/Cache = no/' "$BT_CONF"
+  elif grep -qE '^\[GATT\]' "$BT_CONF"; then
+    sudo sed -i '/^\[GATT\]/a Cache = no' "$BT_CONF"
+  else
+    printf '\n[GATT]\nCache = no\n' | sudo tee -a "$BT_CONF" >/dev/null
+  fi
+  sudo systemctl restart bluetooth
+else
+  echo "[skip]    $BT_CONF absent — bluez not installed?"
+fi
+
 # ---- 2. redis-server installed ----
 REDIS_CFG_CHANGED=0
 if dpkg -s redis-server >/dev/null 2>&1; then
