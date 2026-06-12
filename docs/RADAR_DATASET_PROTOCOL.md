@@ -56,6 +56,12 @@ and does NOT block this dataset.
   morphology, WP2) + Vernier belt (RR). The belt's raw force at 10 Hz is the RR
   source of truth (recomputed offline, not the onboard DSP); best-effort, a
   missing belt never aborts the radar+H10 capture (RR=0 to disable).
+  - **ECG requires a BONDED H10 (one-time per Pi).** Basic HR streams unpaired,
+    but the PMD raw-ECG service does not -- an unpaired Pi records 0 ECG and the
+    capture otherwise looks clean (`org.bluez.Error.NotPermitted: Not paired`).
+    Bond once with `bash tools/pair_h10.sh` on the Pi (strap worn/bridged);
+    `trust` makes it auto-reconnect thereafter. `capture_labeled.sh` warns into
+    `/tmp/sync.log` at preflight if ECG is requested while the H10 is unpaired.
 - **Fresh board boot** (NRST + arm) before each capture (`adcLogging`).
 - **Unlabeled, harvested free:** save ALL raw from warm-up, settle, and the gaps
   between labeled captures -- on-platform unlabeled radar for Stage-2 SSL at zero
@@ -223,6 +229,17 @@ Read: **the radar is a RESTING vitals sensor today.** At rest both vitals are
 strong. Elevated/post-exercise degrades BOTH HR and RR; the band-fix did NOT
 rescue elevated RR (the failure is motion-confounded, not a drift artifact ->
 `rr_fast` capture added to disambiguate the still-tachypnea clinical case).
+
+Caveat on that "rest = REAL" row (sharpened 2026-06-11 on `founder/rest_1`, 84
+bpm rest): the 1.9x used a *uniform-random* decoy, a weak null. Under a stricter
+null (shuffle against other windows' real resting truth) resting HR is only
+~1.07x and a constant-prior guess BEATS the oracle -- because at ~84 bpm the
+true HR sits on top of the ~80 bpm breathing artifact. **Resting HR is only
+recoverable when it is separated from ~80 bpm; near it, the metric is
+uninformative.** Evaluate HR with shuffle + constant-prior nulls on wide-range
+data, never oracle-MAE on a single resting session. Full analysis +
+methodology: `docs/RADAR_HR_FINDINGS_2026-05-29.md` ("Oracle-MAE is invalid on
+narrow-HR captures").
 
 **Model guidance:**
 - A single-window spectral peak-selector (Stage 1) works for **resting HR only**;
