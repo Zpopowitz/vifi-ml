@@ -226,6 +226,46 @@ def _ble_present(mac: str, name: str) -> bool:
     return remote_py(_BLE_SCAN.format(mac=mac, name=name)).startswith("FOUND")
 
 
+def ensure_h10_bonded() -> None:
+    """Idempotent, best-effort H10 BLE bond so the PMD raw-ECG stream works.
+
+    The H10's HR characteristic streams UNPAIRED, but the PMD service (raw 130 Hz
+    ECG, WP2) requires a BONDED link or BlueZ refuses it
+    (``org.bluez.Error.NotPermitted: Not paired``) and the capture silently
+    records 0 ECG. Bond here, in preflight, while the strap is confirmed
+    advertising and nothing has connected to it yet -- the only safe window (a
+    BLE scan during the radar arm collapses the frame rate, and hr_logger grabs
+    the H10 once the capture starts). The bond persists across reboots, so
+    steady-state this is a sub-second "already paired" check.
+
+    NEVER raises and never gates the capture: ECG is additive, so a bond failure
+    must leave the HR/RR/radar capture untouched (proceeds HR-only). Stages
+    ``pair_h10.sh`` to /tmp from the dev tree (same provenance path as
+    capture_labeled.sh) so it does not depend on the Pi's git checkout.
+    """
+    _, out = ssh(
+        f"bluetoothctl info {H10_MAC} 2>/dev/null | grep -q 'Paired: yes'"
+        " && echo BONDED || echo NO"
+    )
+    if "BONDED" in out:
+        log("  H10: already bonded (ECG enabled)")
+        return
+    log("  H10: not bonded -- bonding for raw ECG (one-time, strap is on)...")
+    rc, _ = _run(["scp", "-q", "tools/pair_h10.sh", f"{PI}:{PI_TMP}/pair_h10.sh"], 30)
+    if rc != 0:
+        log("  H10: could not stage pair_h10.sh -- HR-only, ECG will be empty.")
+        return
+    _, out = ssh(f"bash {PI_TMP}/pair_h10.sh {H10_MAC}", timeout=90)
+    if "SUCCESS" in out:
+        log("  H10: bonded + trusted (ECG enabled)")
+    else:
+        tail = next((ln for ln in reversed(out.splitlines()) if ln.strip()), "(none)")
+        log(
+            f"  H10: bond FAILED -- proceeding HR-only, ECG empty ({tail.strip()})."
+            " Retry later: bash tools/pair_h10.sh"
+        )
+
+
 def preflight(rr: bool, skip_straps: bool = False) -> tuple[float | None, bool]:
     # FT232H + auto-unbind ftdi_sio if it grabbed the cable.
     code, out = ssh("lsusb | grep -i '0403:6014' || echo NONE")
@@ -315,6 +355,10 @@ def preflight(rr: bool, skip_straps: bool = False) -> tuple[float | None, bool]:
         for attempt in range(3):
             if _ble_present(mac, name):
                 log(f"  {label}: advertising")
+                if name == "Polar":
+                    # Strap is confirmed live and unconnected -- the safe window
+                    # to bond for raw ECG (additive; never blocks the capture).
+                    ensure_h10_bonded()
                 break
             if attempt < 2:
                 log(
