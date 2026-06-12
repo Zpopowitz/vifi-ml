@@ -60,36 +60,36 @@ then
   exit 1
 fi
 
-# Drive BlueZ: power on, register a Just-Works agent (H10 needs no PIN), scan to
-# discover, then pair + trust. scan-on is bluetoothctl's discovery mechanism for
-# the bond; it sees the H10 during an ACTIVE scan even though static `devices`
-# listings can miss it.
-echo "Bonding via bluetoothctl..."
-bluetoothctl <<EOF
-power on
-agent on
-default-agent
-scan on
-EOF
-sleep 10
-bluetoothctl scan off >/dev/null 2>&1
+# Drive BlueZ in ONE session whose stdin is kept open by sleeps. This matters:
+# a here-doc closes stdin immediately, so bluetoothctl exits before the ASYNC
+# `pair` completes (and a separate `bluetoothctl pair` process has no agent ->
+# "No agent is registered" -> Just-Works can't auto-accept -> Bonded: no, the
+# failure seen on the bench 2026-06-11). Keeping the session alive through the
+# pair, with a NoInputNoOutput (Just-Works, no PIN) agent, is what actually
+# bonds. "Agent is already registered" from the auto-registered default agent is
+# benign. scan-on is the discovery mechanism for the bond.
+echo "Bonding via bluetoothctl (single session)..."
+{
+  echo "power on";              sleep 1
+  echo "pairable on"
+  echo "agent NoInputNoOutput"; sleep 1
+  echo "default-agent";         sleep 1
+  echo "scan on";               sleep 8
+  echo "scan off"
+  echo "pair ${MAC}";           sleep 12
+  echo "trust ${MAC}";          sleep 2
+  echo "quit"
+} | bluetoothctl 2>&1 | grep -iE "pair|bond|trust|agent|fail|success" | grep -vE "^\[" || true
 
-ok=0
-for attempt in 1 2 3; do
-  echo "  pair attempt ${attempt}..."
-  if bluetoothctl pair "$MAC" 2>&1 | grep -qiE "Paired: yes|Pairing successful|already"; then
-    ok=1; break
-  fi
-  sleep 3
-done
-
-bluetoothctl trust "$MAC" >/dev/null 2>&1
+if bluetoothctl info "$MAC" 2>/dev/null | grep -q "Paired: yes"; then
+  bluetoothctl trust "$MAC" >/dev/null 2>&1
+fi
 
 echo
 echo "=== result ==="
 bluetoothctl info "$MAC" | grep -E "Name|Paired|Trusted|Connected" || true
 
-if [ "$ok" = "1" ] && bluetoothctl info "$MAC" 2>/dev/null | grep -q "Paired: yes"; then
+if bluetoothctl info "$MAC" 2>/dev/null | grep -q "Paired: yes"; then
   echo
   echo "SUCCESS: H10 bonded + trusted. ECG (PMD) will stream on the next capture."
   echo "Verify end-to-end:  .venv/bin/python hr_logger.py --address ${MAC} \\"
