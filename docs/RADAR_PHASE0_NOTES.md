@@ -249,7 +249,8 @@ None of these block *building* firmware; all are needed to *flash / debug*:
 Raw IQ → chest-displacement waveform:
 
 1. **Range FFT** — FFT per chirp across fast-time samples → a range profile
-   (one complex value per ~4 cm bin). Separates the chest from clutter at
+   (one complex value per ~9.8 cm bin; see range-resolution note below).
+   Separates the chest from clutter at
    other ranges.
 2. **Static clutter removal (MTI)** — subtract the slow-time mean (zero-phase,
    needs a full buffer) or a first-order IIR high-pass (streaming, adds phase
@@ -305,8 +306,14 @@ revises this up:**
 - 30 fps still produced weak HRV in the literature; MMECG samples at 200 Hz.
 - **Target ~100 Hz frame rate** (10 ms slow-time resolution, ~3× margin on the
   30 ms IBI target, headroom for peak interpolation).
-- **Sweep bandwidth ≈ 3.75 GHz** for ~4 cm range bins (the IWRL6432's 57–64 GHz
-  band gives ~7 GHz available — plenty).
+- **Range resolution ≈ 9.8 cm/bin**, set by the bandwidth across the
+  ADC-SAMPLED window, NOT the full RF ramp. The deployed chirp
+  (`deploy/radar/MotionDetect.cfg`) sweeps 75 MHz/µs and samples 256 points at
+  12.5 Msps = 20.48 µs → 1.536 GHz → c/(2B) ≈ 9.8 cm (`radar/config.py`). The
+  earlier "≈3.75 GHz → ~4 cm" was an assumption from the chip's 57–64 GHz RF
+  span, not the chirp, and mislabeled range by ~2.5×; corrected 2026-06-17
+  after the tracked chest bin × 9.8 cm matched measured board-to-sternum
+  distance on bed_1/rest_1.
 - For per-beat work prefer **one TX/RX pair at a high frame rate** over many
   chirps per frame. Watch the frame-idle-time budget: raw/cube data ships
   during idle time, so a too-short frame period or too-large cube overruns the
