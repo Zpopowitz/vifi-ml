@@ -50,59 +50,100 @@ class CaptureData:
     keep_chirps: bool
 
 
-def _payloads(path: Path) -> list[dict]:
-    """Decode the raw pickle rows; tolerant of bytes/str field keys+values."""
-    with open(path, "rb") as fh:
-        raw = pickle.load(fh)  # nosec B301  # our own capture artifact
-    out = []
-    for _entry_id, fields in raw:
-        blob = fields.get("json", fields.get(b"json"))
-        if isinstance(blob, bytes):
-            blob = blob.decode()
-        out.append(json.loads(blob))
-    return out
+def _decode(entry: tuple) -> dict:
+    """Decode one ``(entry_id, fields)`` redis row into its bus payload dict.
+
+    Tolerant of bytes/str field keys and values: ``dump_and_pull`` has left
+    both over the project's life.
+    """
+    _entry_id, fields = entry
+    blob = fields.get("json", fields.get(b"json"))
+    if isinstance(blob, bytes):
+        blob = blob.decode()
+    return json.loads(blob)
 
 
 def _cube(payload: dict) -> np.ndarray:
     return np.asarray(payload["adc_real"]) + 1j * np.asarray(payload["adc_imag"])
 
 
-def load_capture(path: str | Path) -> CaptureData:
+def load_capture(path: str | Path, *, with_slots: bool = False) -> CaptureData:
     """Load a capture pickle of either format into a :class:`CaptureData`.
 
-    Keep-chirps entries are grouped into frames by consecutive
-    ``chirp_slot`` 0..3 runs; incomplete groups (trailing partial frame, or
-    a mid-stream gap from a dropped publish) are discarded rather than
-    misaligned into the wrong frame.
+    Streams the raw rows: each JSON blob is decoded, folded into its frame,
+    and released (``raw[i] = None``) before the next is read, so peak memory
+    stays near the pickle's on-disk size instead of simultaneously holding the
+    full parsed-payload list, the 4-chirp slot cube, AND the averaged frames.
+    On the 600 s keep-chirps long-rest this is ~1.9 GB instead of the ~6-8 GB
+    that OOM'd the capture-time learnability QC -- which swallowed the
+    ``MemoryError`` and stamped ``learnability: null`` (see tools/capture.py).
+
+    ``with_slots`` materializes the full ``(n_frames, N_SLOTS, samples, n_rx)``
+    slot cube on ``CaptureData.slots`` for phase-/angle-sensitive work
+    (:func:`per_tx_average`). It defaults to ``False`` because every runtime
+    consumer uses only the averaged ``frames`` view, and the slot cube is the
+    single largest allocation in a load.
+
+    Keep-chirps entries are grouped into frames by consecutive ``chirp_slot``
+    0..3 runs; incomplete groups (trailing partial frame, or a mid-stream gap
+    from a dropped publish) are discarded rather than misaligned into the
+    wrong frame.
     """
-    payloads = _payloads(Path(path))
-    if not payloads:
+    path = Path(path)
+    with open(path, "rb") as fh:
+        raw = pickle.load(fh)  # nosec B301  # our own capture artifact
+    n = len(raw)
+    if n == 0:
         raise ValueError(f"empty capture pickle: {path}")
 
-    keep_chirps = any("chirp_slot" in p for p in payloads)
-    if not keep_chirps:
-        frames = np.stack([_cube(p) for p in payloads])
-        ts = np.asarray([float(p["ts_unix"]) for p in payloads])
-        return CaptureData(frames=frames, slots=None, ts=ts, keep_chirps=False)
+    # Format is homogeneous per capture (the collector runs keep-chirps for a
+    # whole session or not at all), so the first row decides the path.
+    if "chirp_slot" not in _decode(raw[0]):
+        frames: list[np.ndarray] = []
+        ts: list[float] = []
+        for i in range(n):
+            p = _decode(raw[i])
+            raw[i] = None
+            frames.append(_cube(p))
+            ts.append(float(p["ts_unix"]))
+        return CaptureData(
+            frames=np.stack(frames), slots=None, ts=np.asarray(ts), keep_chirps=False
+        )
 
-    groups: list[np.ndarray] = []
-    ts_list: list[float] = []
-    i = 0
-    while i + N_SLOTS <= len(payloads):
-        run = payloads[i : i + N_SLOTS]
-        if [p.get("chirp_slot") for p in run] == list(range(N_SLOTS)):
-            groups.append(np.stack([_cube(p) for p in run]))
-            ts_list.append(float(run[0]["ts_unix"]))
-            i += N_SLOTS
+    # Keep-chirps: fold each consecutive 0..N_SLOTS-1 run into one averaged
+    # frame. A break (slot 0 restart, gap, or out-of-order slot) drops the
+    # partial group -- identical framing to the old window-scan, streamed.
+    frames = []
+    ts = []
+    slot_groups: list[np.ndarray] | None = [] if with_slots else None
+    buf: list[np.ndarray] = []
+    seq: list[int] = []
+    frame_ts = 0.0
+    for i in range(n):
+        p = _decode(raw[i])
+        raw[i] = None
+        slot = p.get("chirp_slot")
+        cube = _cube(p)
+        if slot == 0:
+            buf, seq, frame_ts = [cube], [0], float(p["ts_unix"])
+        elif seq and slot == seq[-1] + 1:
+            buf.append(cube)
+            seq.append(slot)
+            if slot == N_SLOTS - 1:
+                group = np.stack(buf)
+                frames.append(group.mean(axis=0))  # == legacy_average per frame
+                ts.append(frame_ts)
+                if slot_groups is not None:
+                    slot_groups.append(group)
+                buf, seq = [], []
         else:
-            i += 1
-    if not groups:
+            buf, seq = [], []
+    if not frames:
         raise ValueError(f"no complete chirp_slot 0..{N_SLOTS - 1} frames in {path}")
-    slots = np.stack(groups)  # (n_frames, N_SLOTS, samples, n_rx)
     return CaptureData(
-        frames=legacy_average(slots),
-        slots=slots,
-        ts=np.asarray(ts_list),
+        frames=np.stack(frames),
+        slots=np.stack(slot_groups) if slot_groups is not None else None,
+        ts=np.asarray(ts),
         keep_chirps=True,
     )
 
