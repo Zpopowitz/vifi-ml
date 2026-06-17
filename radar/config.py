@@ -46,8 +46,21 @@ class RadarConfig:
     carrier_hz: float = 60.0e9
     """RF carrier. 60 GHz -> 5 mm wavelength -> ~1.26 rad phase per 0.5 mm beat."""
 
-    sweep_bandwidth_hz: float = 3.75e9
-    """Sweep bandwidth. 3.75 GHz -> c / (2 B) = 4 cm range bins."""
+    sweep_bandwidth_hz: float = 1.536e9
+    """Bandwidth across the ADC-SAMPLED window -- what sets range resolution,
+    NOT the full RF ramp. Derived from the deployed chirp profile
+    (deploy/radar/MotionDetect.cfg): freq slope 75 MHz/us (chirpTimingCfg) x
+    ADC window (256 samples / 12.5 Msps = 20.48 us; chirpComnCfg sample-rate
+    code 8 = 100/8 Msps, 256 samples) = 1.536 GHz -> c / (2 B) = 9.77 cm bins.
+
+    The earlier 3.75 GHz (-> 4 cm) was an assumption from the chip's 57-64 GHz
+    RF span (docs/RADAR_PHASE0_NOTES.md), not the chirp, and mislabeled range
+    by ~2.5x. Triangulated three ways: the cfg math; the 23 us ramp-end MUST
+    contain the 20.48 us sampling window (a lower sample rate could not); and
+    empirically the tracked chest bin x 9.77 cm matches the measured
+    board-to-sternum distance -- bed_1 bin 8 -> 78 cm (vs 79), rest_1 bin 10 ->
+    98 cm (vs 100). Vitals are unaffected (they read phase at the tracked bin);
+    this only corrects range REPORTING and the physical range gate."""
 
     samples_per_chirp: int = 256
     """Fast-time ADC samples per chirp -> number of range-FFT bins."""

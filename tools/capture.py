@@ -805,41 +805,52 @@ def board_serial() -> str:
     return out.splitlines()[-1].strip() if out else "unattested"
 
 
-def learnability_check(out: Path) -> dict | None:
+def learnability_check(out: Path) -> dict:
     """Post-capture QC: did the true heartbeat survive into the candidate peaks?
 
     Runs the shared selector windowing (radar.windows) over the just-pulled
     capture and reports the fraction of windows with a candidate near the H10
     truth + the oracle gap. Additive QC: any failure here is logged and
-    swallowed (like RR), it never aborts a capture. Returns the metric dict, or
-    None if it could not run.
+    swallowed (like RR), it never aborts a capture.
+
+    ALWAYS returns a dict carrying a ``status`` so the meta records WHY a QC
+    produced no metrics, instead of the bare ``null`` that used to make a
+    swallowed MemoryError look identical to "no H10 overlap" -- a silent
+    failure of the bench re-seat gate. ``status`` is one of: ``ok`` / ``low``
+    (metrics present), ``no_windows``, or ``skipped`` (``reason`` names why).
     """
     try:
         from radar.hr_selector import learnability  # noqa: PLC0415
         from radar.windows import iter_windows  # noqa: PLC0415
 
         report = learnability(list(iter_windows(out)))
+    except MemoryError:
+        # load_capture streams now (radar/capture_io.py), so this should not
+        # recur; if a capture still exhausts RAM, record it explicitly rather
+        # than collapsing it into an ambiguous null.
+        log("  learnability QC skipped (MemoryError: capture too large for this host)")
+        return {"status": "skipped", "reason": "MemoryError"}
     except Exception as exc:  # QC must never sink a real capture
         log(f"  learnability QC skipped ({type(exc).__name__}: {exc})")
-        return None
+        return {"status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
     if report["n_windows"] == 0:
         log("  learnability: no scorable windows (capture too short / no H10 overlap)")
-        return report
+        return {"status": "no_windows", **report}
     pres = report["candidate_presence"]
     gap = report["oracle_gap_bpm"]
-    flag = "ok" if pres >= LEARNABILITY_WARN else "LOW"
+    ok = pres >= LEARNABILITY_WARN
     log(
-        f"  learnability: candidate_presence={pres:.0%} ({flag}), "
+        f"  learnability: candidate_presence={pres:.0%} ({'ok' if ok else 'LOW'}), "
         f"oracle_gap={gap:.1f} bpm over {report['n_windows']} windows"
     )
-    if pres < LEARNABILITY_WARN:
+    if not ok:
         log(
             f"  WARNING: the true HR peak is present in only {pres:.0%} of windows "
             f"(<{LEARNABILITY_WARN:.0%}). RE-SEAT + RE-AIM and recapture while the "
             "subject is still strapped -- no selector recovers a peak the "
             "front-end never surfaced."
         )
-    return report
+    return {"status": "ok" if ok else "low", **report}
 
 
 def _run_respiratory_battery() -> list[dict]:
@@ -1225,13 +1236,12 @@ def main() -> int:
                             "span>=15 bpm). Consider a redo with a harder/longer bout "
                             "for the wide-range data the selector needs."
                         )
-                # Write provenance BEFORE the optional learnability QC. The QC
-                # loads the FULL capture (radar.capture_io.load_capture
-                # materializes every frame) and can OOM-kill the process on a long
-                # keep-chirps capture; an uncatchable SIGKILL there must still
-                # leave a CORRECT meta.json on disk (learnability=null) rather than
-                # the stale/absent meta a mid-finalize death produced (the
-                # WSL-restart Frankenstein-dir bug).
+                # Write provenance BEFORE the learnability QC. The QC re-loads
+                # the capture; load_capture streams now (radar/capture_io.py), so
+                # an OOM-kill is unlikely, but an uncatchable SIGKILL there must
+                # still leave a CORRECT meta.json on disk (learnability=null)
+                # rather than the stale/absent meta a mid-finalize death produced
+                # (the WSL-restart Frankenstein-dir bug).
                 log("[6/6] provenance")
                 stamp(
                     out,
@@ -1246,26 +1256,28 @@ def main() -> int:
                     board_ser=board_ser,
                     dev_dirty=dirty,
                 )
-                # Learnability QC (additive, H10 captures only): can the selector
-                # actually recover this HR? Warns to re-seat while the subject
-                # waits. Re-stamp to fold the report in only if it survived (None =
-                # skipped / no scorable windows / swallowed error -- learn=null meta
-                # stands).
-                learn = learnability_check(out) if expect_hr else None
-                if learn is not None:
-                    stamp(
-                        out,
-                        args,
-                        stats["n_rr"],
-                        n_hr,
-                        ver,
-                        n_ecg=stats.get("n_ecg", 0),
-                        clock=clock,
-                        events=events,
-                        learn=learn,
-                        board_ser=board_ser,
-                        dev_dirty=dirty,
-                    )
+                # Learnability QC (additive): can the selector actually recover
+                # this HR? Warns to re-seat while the subject waits. Always
+                # re-stamps with a status-bearing report (never a bare null), so
+                # a swallowed MemoryError is never mistaken for a passing QC.
+                learn = (
+                    learnability_check(out)
+                    if expect_hr
+                    else {"status": "n/a", "reason": "no H10 (absence capture)"}
+                )
+                stamp(
+                    out,
+                    args,
+                    stats["n_rr"],
+                    n_hr,
+                    ver,
+                    n_ecg=stats.get("n_ecg", 0),
+                    clock=clock,
+                    events=events,
+                    learn=learn,
+                    board_ser=board_ser,
+                    dev_dirty=dirty,
+                )
                 if ver["capture_ok"]:
                     log(f"\nCAPTURE OK -> {out}")
                     return 0

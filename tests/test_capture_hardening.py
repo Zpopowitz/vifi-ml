@@ -125,8 +125,12 @@ def test_learnability_check_returns_report_dict(tmp_path):
 
 
 def test_learnability_check_swallows_errors(tmp_path):
-    # No capture pickle at all -> QC must return None, never raise.
-    assert cap.learnability_check(tmp_path) is None
+    # No capture pickle at all -> QC must NOT raise. It records a structured
+    # 'skipped' status (never a bare None), so the meta says WHY it has no
+    # metrics instead of looking identical to a passing QC.
+    result = cap.learnability_check(tmp_path)
+    assert result["status"] == "skipped"
+    assert "FileNotFoundError" in result["reason"]
 
 
 def test_respiratory_battery_total_matches_phases():

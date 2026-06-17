@@ -133,7 +133,7 @@ def test_load_averaged_bytes_fields(tmp_path):
 def test_load_keep_chirps(tmp_path):
     p = tmp_path / "radar_cap.pkl"
     _write_keep_chirps(p, n_frames=4)
-    cap = load_capture(p)
+    cap = load_capture(p, with_slots=True)
     assert cap.keep_chirps is True
     assert cap.slots is not None
     assert cap.slots.shape == (4, 4, N_SAMPLES, N_RX)
@@ -147,10 +147,25 @@ def test_load_keep_chirps(tmp_path):
     assert cap.frames.shape == (4, N_SAMPLES, N_RX)
 
 
+def test_keep_chirps_default_omits_slot_cube(tmp_path):
+    """Default load is frugal: it returns the averaged frames but NOT the
+    4-chirp slot cube (the single largest allocation, materialized only on
+    ``with_slots=True``). Frames must be identical to the slots-on average."""
+    p = tmp_path / "radar_cap.pkl"
+    _write_keep_chirps(p, n_frames=4)
+    cap = load_capture(p)
+    assert cap.keep_chirps is True
+    assert cap.slots is None
+    assert cap.frames.shape == (4, N_SAMPLES, N_RX)
+    full = load_capture(p, with_slots=True)
+    np.testing.assert_allclose(cap.frames, full.frames)
+    np.testing.assert_allclose(cap.frames, legacy_average(full.slots))
+
+
 def test_load_keep_chirps_bytes_fields(tmp_path):
     p = tmp_path / "radar_cap.pkl"
     _write_keep_chirps(p, n_frames=2, as_bytes=True)
-    cap = load_capture(p)
+    cap = load_capture(p, with_slots=True)
     assert cap.keep_chirps is True
     assert cap.slots.shape == (2, 4, N_SAMPLES, N_RX)
 
@@ -158,7 +173,7 @@ def test_load_keep_chirps_bytes_fields(tmp_path):
 def test_partial_trailing_frame_dropped(tmp_path):
     p = tmp_path / "radar_cap.pkl"
     _write_keep_chirps(p, n_frames=3, trailing_slots=2)
-    cap = load_capture(p)
+    cap = load_capture(p, with_slots=True)
     assert cap.slots.shape == (3, 4, N_SAMPLES, N_RX)
     assert cap.ts[-1] == pytest.approx(T0 + 2 * FRAME_DT)
 
@@ -168,7 +183,7 @@ def test_midstream_gap_resyncs_without_misalignment(tmp_path):
     not be stitched across the gap into a wrong group."""
     p = tmp_path / "radar_cap.pkl"
     _write_keep_chirps(p, n_frames=4, drop=(1, 2))
-    cap = load_capture(p)
+    cap = load_capture(p, with_slots=True)
     assert cap.slots.shape == (3, 4, N_SAMPLES, N_RX)
     np.testing.assert_allclose(cap.ts, [T0, T0 + 2 * FRAME_DT, T0 + 3 * FRAME_DT])
     np.testing.assert_allclose(cap.slots[1, 0], _slot_cube(2, 0))

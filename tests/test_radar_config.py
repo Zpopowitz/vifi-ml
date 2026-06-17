@@ -14,9 +14,12 @@ def test_default_wavelength_is_5mm() -> None:
     assert RadarConfig().wavelength_m == pytest.approx(5.0e-3, rel=1e-3)
 
 
-def test_default_range_resolution_is_4cm() -> None:
-    # 3.75 GHz sweep -> c / (2B) = 4 cm bins.
-    assert RadarConfig().range_resolution_m == pytest.approx(0.04, rel=1e-3)
+def test_default_range_resolution_matches_chirp_profile() -> None:
+    # ADC-sampled bandwidth 1.536 GHz (deploy/radar/MotionDetect.cfg: 75 MHz/us
+    # x 256 samples / 12.5 Msps) -> c / (2B) = 9.77 cm bins. Empirically the
+    # tracked chest bin x this resolution matches measured board-to-sternum
+    # distance (bed_1 bin 8 -> 78 cm vs 79; rest_1 bin 10 -> 98 cm vs 100).
+    assert RadarConfig().range_resolution_m == pytest.approx(0.0977, rel=1e-2)
 
 
 def test_max_range_spans_all_bins() -> None:
