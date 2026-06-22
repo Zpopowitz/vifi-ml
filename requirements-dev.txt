@@ -13,7 +13,7 @@ pytest==8.4.2
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0
 pytest-timeout==2.4.0
-hypothesis==6.155.2          # property-based DSP testing
+hypothesis==6.155.7          # property-based DSP testing
 
 # Lint + type
 # MUST match .pre-commit-config.yaml (rev) and .github/workflows/ci.yml (lint
